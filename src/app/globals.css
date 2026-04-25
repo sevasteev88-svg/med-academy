@@ -1,26 +1,67 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@theme {
+  /* ── Поверхні (натхнення: форма клубу) ── */
+  --color-background: #050508;
+  --color-surface: #0B1426;
+  --color-surface-hover: #0f1d35;
+  --color-surface-raised: #142240;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  /* ── Фірмовий синій «Чорноморця» ── */
+  --color-brand-blue: #0057B8;
+  --color-brand-blue-light: #1a6fd4;
+  --color-brand-blue-muted: rgba(0, 87, 184, 0.12);
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  /* ── Статуси (ВАШ / тріаж) ── */
+  --color-status-ok: #22c55e;
+  --color-status-warn: #eab308;
+  --color-status-danger: #ef4444;
+
+  /* ── Тіні ── */
+  --shadow-glow: 0 0 24px rgba(0, 87, 184, 0.25);
+  --shadow-glow-sm: 0 0 12px rgba(0, 87, 184, 0.15);
+
+  /* ── Шрифти ── */
+  --font-sans: var(--font-geist-sans), system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), monospace;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: #050508;
+  color: #e2e8f0;
+}
+
+/* Скролбар */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #050508;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
+
+/* Пульсація індикатора */
+@keyframes pulse-dot {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.4;
+  }
+}
+
+@utility animate-pulse-dot {
+  animation: pulse-dot 2s ease-in-out infinite;
 }

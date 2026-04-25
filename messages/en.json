@@ -1,0 +1,67 @@
+{
+  "common": {
+    "appName": "MedAcademy",
+    "loading": "Loading...",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "add": "Add",
+    "back": "Back",
+    "search": "Search",
+    "noData": "No data available"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "players": "Players",
+    "injuries": "Injuries",
+    "anthropometry": "Anthropometry",
+    "teams": "Teams",
+    "medicalStaff": "Medical Staff",
+    "coachingStaff": "Coaching Staff"
+  },
+  "auth": {
+    "signIn": "Sign In",
+    "signOut": "Sign Out",
+    "email": "Email",
+    "password": "Password",
+    "forgotPassword": "Forgot password?"
+  },
+  "home": {
+    "greeting": "Welcome to MedAcademy",
+    "subtitle": "Football team medical tracking and roster management system"
+  },
+  "players": {
+    "title": "Players",
+    "firstName": "First Name",
+    "lastName": "Last Name",
+    "dateOfBirth": "Date of Birth",
+    "position": "Position",
+    "dominantLeg": "Dominant Leg",
+    "dominantArm": "Dominant Arm",
+    "addPlayer": "Add Player"
+  },
+  "injuries": {
+    "title": "Injuries",
+    "type": "Injury Type",
+    "location": "Location",
+    "side": "Side",
+    "severity": "Severity",
+    "mechanism": "Mechanism",
+    "dateOfInjury": "Date of Injury",
+    "expectedReturn": "Expected Return",
+    "actualReturn": "Actual Return",
+    "status": "Status",
+    "description": "Description",
+    "daysMissed": "Days Missed",
+    "statusActive": "Active",
+    "statusRehab": "Rehabilitation",
+    "statusClosed": "Closed"
+  },
+  "anthropometry": {
+    "title": "Anthropometry",
+    "height": "Height (cm)",
+    "weight": "Weight (kg)",
+    "date": "Measurement Date"
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "common": {
+    "appName": "MedAcademy",
+    "loading": "Завантаження...",
+    "save": "Зберегти",
+    "cancel": "Скасувати",
+    "delete": "Видалити",
+    "edit": "Редагувати",
+    "add": "Додати",
+    "back": "Назад",
+    "search": "Пошук",
+    "noData": "Дані відсутні"
+  },
+  "nav": {
+    "dashboard": "Головна",
+    "players": "Гравці",
+    "injuries": "Травми",
+    "anthropometry": "Антропометрія",
+    "teams": "Команди",
+    "medicalStaff": "Медичний штаб",
+    "coachingStaff": "Тренерський штаб"
+  },
+  "auth": {
+    "signIn": "Увійти",
+    "signOut": "Вийти",
+    "email": "Електронна пошта",
+    "password": "Пароль",
+    "forgotPassword": "Забули пароль?"
+  },
+  "home": {
+    "greeting": "Вітаємо в MedAcademy",
+    "subtitle": "Система медичного трекінгу та обліку складу футбольних команд"
+  },
+  "players": {
+    "title": "Гравці",
+    "firstName": "Ім'я",
+    "lastName": "Прізвище",
+    "dateOfBirth": "Дата народження",
+    "position": "Позиція",
+    "dominantLeg": "Робоча нога",
+    "dominantArm": "Робоча рука",
+    "addPlayer": "Додати гравця"
+  },
+  "injuries": {
+    "title": "Травми",
+    "type": "Тип травми",
+    "location": "Локалізація",
+    "side": "Сторона",
+    "severity": "Ступінь тяжкості",
+    "mechanism": "Механізм",
+    "dateOfInjury": "Дата отримання",
+    "expectedReturn": "Прогноз повернення",
+    "actualReturn": "Фактичне повернення",
+    "status": "Статус",
+    "description": "Опис",
+    "daysMissed": "Пропущено днів",
+    "statusActive": "Активна",
+    "statusRehab": "Реабілітація",
+    "statusClosed": "Закрита"
+  },
+  "anthropometry": {
+    "title": "Антропометрія",
+    "height": "Зріст (см)",
+    "weight": "Вага (кг)",
+    "date": "Дата вимірювання"
+  }
+}
