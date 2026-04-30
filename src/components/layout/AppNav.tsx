@@ -14,7 +14,9 @@ const DOCTOR_NAV: NavItem[] = [
   { href: "/availability", label: "Доступність", icon: "🟢" },
   { href: "/injuries/new", label: "Травма", icon: "🩹" },
   { href: "/statistics", label: "Статистика", icon: "📊" },
-  { href: "/reports/weekly", label: "Звіт", icon: "📋" },
+  { href: "/uk/reports/weekly", label: "Звіт", icon: "📋" },
+  { href: "/uk/reports/patterns", label: "Патерни", icon: "🔍" },
+  { href: "/uk/growth", label: "Ріст", icon: "📈" },
 ];
 
 const COACH_NAV: NavItem[] = [
@@ -29,8 +31,11 @@ export default function AppNav({ role, userName }: { role: string; userName: str
   const navItems = role === "coach" ? COACH_NAV : DOCTOR_NAV;
 
   function isActive(href: string): boolean {
-    if (href === "/") return pathname === "/";
-    return pathname.startsWith(href);
+    if (href === "/") return pathname === "/" || pathname === "/uk";
+    const cleanPath = pathname.replace(/^\/uk/, "");
+    const cleanHref = href.replace(/^\/uk/, "");
+    if (cleanHref === "") return false;
+    return cleanPath.startsWith(cleanHref);
   }
 
   function handleLogout() {
@@ -56,10 +61,8 @@ export default function AppNav({ role, userName }: { role: string; userName: str
           </Link>
         ))}
 
-        {/* Спейсер */}
         <div className="flex-1" />
 
-        {/* Роль + Вихід */}
         <div className="flex flex-col items-center gap-2 mb-2">
           <div className="group relative">
             <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
