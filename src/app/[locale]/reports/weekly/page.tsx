@@ -19,7 +19,6 @@ export default async function WeeklyReportPage() {
   const { data: weekExams } = await supabase.from("injury_examinations").select("id").gte("date", weekAgoStr);
   const { data: weekLogs } = await supabase.from("injury_logs").select("id").gte("date", weekAgoStr);
 
-  // PHV/матурація для AI-звіту
   const { data: maturationRaw } = await supabase
     .from("maturation_assessments")
     .select(`consensus_offset, consensus_phv_age, growth_phase, risk_zone, height_velocity, age_at_measurement, players!inner ( first_name, last_name, teams!inner ( name ) )`)
@@ -33,20 +32,13 @@ export default async function WeeklyReportPage() {
   const reportDate = now.toLocaleDateString("uk-UA", { day: "numeric", month: "long", year: "numeric" });
   const weekStart = weekAgo.toLocaleDateString("uk-UA", { day: "numeric", month: "long" });
 
-  // Дані для AI-звіту
   const daysSince = (d: string) => Math.floor((Date.now() - new Date(d).getTime()) / 86400000);
   const daysUntil = (d: string) => Math.floor((new Date(d).getTime() - Date.now()) / 86400000);
 
   const mapInjury = (inj: any) => ({
-    id: inj.id,
-    firstName: inj.players.first_name,
-    lastName: inj.players.last_name,
-    teamName: inj.players.teams.name,
-    location: inj.location,
-    severity: inj.severity,
-    vasScore: inj.vas_score,
-    status: inj.status,
-    daysSinceInjury: daysSince(inj.date_of_injury),
+    id: inj.id, firstName: inj.players.first_name, lastName: inj.players.last_name,
+    teamName: inj.players.teams.name, location: inj.location, severity: inj.severity,
+    vasScore: inj.vas_score, status: inj.status, daysSinceInjury: daysSince(inj.date_of_injury),
     expectedReturn: inj.expected_return_date,
     daysUntilReturn: inj.expected_return_date ? daysUntil(inj.expected_return_date) : null,
   });
@@ -57,24 +49,16 @@ export default async function WeeklyReportPage() {
   const upcomingReturns = allAiInjuries.filter(i => i.expectedReturn).sort((a, b) => (a.daysUntilReturn ?? 999) - (b.daysUntilReturn ?? 999)).slice(0, 10);
 
   const maturationAlerts = (maturationRaw ?? []).map((m: any) => ({
-    firstName: m.players.first_name,
-    lastName: m.players.last_name,
-    teamName: m.players.teams.name,
-    age: m.age_at_measurement?.toFixed(1),
-    growthPhase: m.growth_phase,
-    consensusOffset: m.consensus_offset,
-    riskZone: m.risk_zone,
-    heightVelocity: m.height_velocity,
+    firstName: m.players.first_name, lastName: m.players.last_name,
+    teamName: m.players.teams.name, age: m.age_at_measurement?.toFixed(1),
+    growthPhase: m.growth_phase, consensusOffset: m.consensus_offset,
+    riskZone: m.risk_zone, heightVelocity: m.height_velocity,
   }));
 
   const aiReportData = {
-    activeInjuries: aiActiveInjuries,
-    rehabInjuries: aiRehabInjuries,
-    upcomingReturns,
-    maturationAlerts,
-    totalPlayers: allPlayers.length,
-    availablePlayers: totalOk,
-    unavailablePlayers: totalWarn + totalDanger,
+    activeInjuries: aiActiveInjuries, rehabInjuries: aiRehabInjuries,
+    upcomingReturns, maturationAlerts, totalPlayers: allPlayers.length,
+    availablePlayers: totalOk, unavailablePlayers: totalWarn + totalDanger,
   };
 
   return (
@@ -94,7 +78,7 @@ export default async function WeeklyReportPage() {
 
       <section><h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Нові травми ({(newInjuries??[]).length})</h2>
         {(newInjuries??[]).length===0?<Card><p className="text-status-ok text-sm text-center py-3">Нових травм не зафіксовано ✓</p></Card>:
-        <div className="space-y-2">{(newInjuries??[]).map((inj:any)=>(<Link key={inj.id} href={`/uk/injuries/${inj.id}`}><Card interactive accent={inj.vas_score>=7?"danger":"warn"}><div className="flex justify-between items-start gap-3"><div><div className="font-bold text-white text-sm">{inj.players.last_name} {inj.players.first_name}</div><div className="text-xs text-slate-500 mt-0.5">{inj.players.teams.name} · {INJURY_TYPE_UA[inj.injury_type]} — {LOCATION_UA[inj.location]} · {SEVERITY_UA[inj.severity]}</div></div><Badge variant={vasVariant(inj.vas_score)}>ВАШ {inj.vas_score}/10</Badge></div></Card></Link>))}</div>}
+        <div className="space-y-2">{(newInjuries??[]).map((inj:any)=>(<Link key={inj.id} href={`/injuries/${inj.id}`}><Card interactive accent={inj.vas_score>=7?"danger":"warn"}><div className="flex justify-between items-start gap-3"><div><div className="font-bold text-white text-sm">{inj.players.last_name} {inj.players.first_name}</div><div className="text-xs text-slate-500 mt-0.5">{inj.players.teams.name} · {INJURY_TYPE_UA[inj.injury_type]} — {LOCATION_UA[inj.location]} · {SEVERITY_UA[inj.severity]}</div></div><Badge variant={vasVariant(inj.vas_score)}>ВАШ {inj.vas_score}/10</Badge></div></Card></Link>))}</div>}
       </section>
 
       <section><h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Повернулися ({(closedInjuries??[]).length})</h2>
@@ -104,7 +88,7 @@ export default async function WeeklyReportPage() {
 
       <section><h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Активні травми ({(activeInjuries??[]).length})</h2>
         {(activeInjuries??[]).length===0?<Card><p className="text-status-ok text-sm text-center py-3">Активних травм немає ✓</p></Card>:
-        <div className="space-y-2">{(activeInjuries??[]).map((inj:any)=>(<Link key={inj.id} href={`/uk/injuries/${inj.id}`}><Card interactive accent={inj.vas_score>=7?"danger":"warn"}><div className="flex justify-between items-start gap-3"><div><div className="text-sm font-semibold text-white">{inj.players.last_name} {inj.players.first_name}</div><div className="text-xs text-slate-500 mt-0.5">{inj.players.teams.name} · {INJURY_TYPE_UA[inj.injury_type]} — {LOCATION_UA[inj.location]}</div>{inj.expected_return_date&&<div className="text-xs text-slate-600 mt-0.5">Повернення: {new Date(inj.expected_return_date).toLocaleDateString("uk-UA")}</div>}</div><div className="flex flex-col items-end gap-1"><Badge variant={vasVariant(inj.vas_score)}>ВАШ {inj.vas_score}/10</Badge><Badge variant={inj.status==="active"?"danger":"warn"}>{STATUS_UA[inj.status]}</Badge></div></div></Card></Link>))}</div>}
+        <div className="space-y-2">{(activeInjuries??[]).map((inj:any)=>(<Link key={inj.id} href={`/injuries/${inj.id}`}><Card interactive accent={inj.vas_score>=7?"danger":"warn"}><div className="flex justify-between items-start gap-3"><div><div className="text-sm font-semibold text-white">{inj.players.last_name} {inj.players.first_name}</div><div className="text-xs text-slate-500 mt-0.5">{inj.players.teams.name} · {INJURY_TYPE_UA[inj.injury_type]} — {LOCATION_UA[inj.location]}</div>{inj.expected_return_date&&<div className="text-xs text-slate-600 mt-0.5">Повернення: {new Date(inj.expected_return_date).toLocaleDateString("uk-UA")}</div>}</div><div className="flex flex-col items-end gap-1"><Badge variant={vasVariant(inj.vas_score)}>ВАШ {inj.vas_score}/10</Badge><Badge variant={inj.status==="active"?"danger":"warn"}>{STATUS_UA[inj.status]}</Badge></div></div></Card></Link>))}</div>}
       </section>
 
       <section><h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Активність за тиждень</h2>
@@ -114,7 +98,6 @@ export default async function WeeklyReportPage() {
         </div>
       </section>
 
-      {/* AI-генерація звіту для тренерів */}
       <section className="border-t border-blue-900/15 pt-6">
         <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">🤖 AI-звіт для тренерського штабу</h2>
         <WeeklyReportAI data={aiReportData} />

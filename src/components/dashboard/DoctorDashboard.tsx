@@ -32,11 +32,9 @@ export default async function DoctorDashboard() {
     <div className="min-h-screen bg-background text-slate-200 p-5 md:p-8">
       <div className="max-w-5xl mx-auto space-y-6">
 
-        {/* Шапка з лого та фоном */}
         <header className="relative overflow-hidden rounded-xl border border-blue-900/15">
           <div className="absolute inset-0 bg-[url('/hero-bg.jpg')] bg-cover bg-center opacity-[0.07]" />
           <div className="absolute inset-0 bg-gradient-to-r from-background via-background/95 to-background/80" />
-
           <div className="relative flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 p-5">
             <div className="flex items-center gap-4">
               <Image src="/logo-chr.png" alt="ФК Чорноморець" width={48} height={48} className="rounded-full ring-2 ring-brand-blue/30" />
@@ -60,8 +58,8 @@ export default async function DoctorDashboard() {
         </div>
 
         <div className="flex flex-wrap gap-3">
-          <Link href="/uk/injuries/new" className="bg-brand-blue hover:bg-brand-blue-light text-white font-bold py-2.5 px-5 rounded-lg text-sm transition-colors shadow-glow-sm hover:shadow-glow">+ Фіксація травми</Link>
-          <Link href="/uk/players/new" className="border border-slate-800 text-slate-400 hover:bg-surface-hover font-semibold py-2.5 px-5 rounded-lg text-sm transition-colors">+ Додати гравця</Link>
+          <Link href="/injuries/new" className="bg-brand-blue hover:bg-brand-blue-light text-white font-bold py-2.5 px-5 rounded-lg text-sm transition-colors shadow-glow-sm hover:shadow-glow">+ Фіксація травми</Link>
+          <Link href="/players/new" className="border border-slate-800 text-slate-400 hover:bg-surface-hover font-semibold py-2.5 px-5 rounded-lg text-sm transition-colors">+ Додати гравця</Link>
           <Link href="/uk/reports/weekly" className="border border-slate-800 text-slate-400 hover:bg-surface-hover font-semibold py-2.5 px-5 rounded-lg text-sm transition-colors">📋 Звіт за тиждень</Link>
           <Link href="/uk/reports/patterns" className="border border-slate-800 text-slate-400 hover:bg-surface-hover font-semibold py-2.5 px-5 rounded-lg text-sm transition-colors">🔍 Аналіз патернів</Link>
           <Link href="/uk/growth" className="border border-slate-800 text-slate-400 hover:bg-surface-hover font-semibold py-2.5 px-5 rounded-lg text-sm transition-colors">📈 Моніторинг росту</Link>
@@ -73,7 +71,7 @@ export default async function DoctorDashboard() {
             <h2 className="text-sm font-semibold text-slate-500 mb-3">Найближчі повернення</h2>
             <div className="grid gap-2 md:grid-cols-2">
               {upcomingReturns.map(p => { const days = daysUntil(p.expectedReturn!); const isOverdue = days < 0; return (
-                <Link key={p.id+"-ret"} href={p.id.startsWith("m") ? "#" : `/uk/injuries/${p.id}`}><Card interactive><div className="flex justify-between items-center"><div><div className="text-sm font-semibold text-white">{p.lastName} {p.firstName.charAt(0)}.</div><div className="text-xs text-slate-500">{p.teamName} · {LOCATION_UA[p.location] ?? p.location}</div></div><Badge variant={isOverdue ? "danger" : days <= 3 ? "warn" : "neutral"}>{isOverdue ? `Прострочено ${Math.abs(days)} дн.` : days === 0 ? "Сьогодні" : `Через ${days} дн.`}</Badge></div></Card></Link>
+                <Link key={p.id+"-ret"} href={p.id.startsWith("m") ? "#" : `/injuries/${p.id}`}><Card interactive><div className="flex justify-between items-center"><div><div className="text-sm font-semibold text-white">{p.lastName} {p.firstName.charAt(0)}.</div><div className="text-xs text-slate-500">{p.teamName} · {LOCATION_UA[p.location] ?? p.location}</div></div><Badge variant={isOverdue ? "danger" : days <= 3 ? "warn" : "neutral"}>{isOverdue ? `Прострочено ${Math.abs(days)} дн.` : days === 0 ? "Сьогодні" : `Через ${days} дн.`}</Badge></div></Card></Link>
               ); })}
             </div>
           </section>
@@ -82,7 +80,7 @@ export default async function DoctorDashboard() {
         <section>
           <div className="flex items-center justify-between mb-4"><h2 className="text-sm font-semibold text-slate-500">Тріаж — активні пацієнти</h2>{useMock && <span className="text-[10px] text-slate-600 bg-slate-800 px-2 py-0.5 rounded">Демо-дані</span>}</div>
           <div className="grid gap-3 md:grid-cols-2">
-            {displayPatients.map(p => { const card = (<Card interactive accent={p.vasScore >= 7 ? "danger" : "warn"}><div className="flex justify-between items-start gap-3"><div className="min-w-0"><div className="font-bold text-white text-[15px]">{p.lastName} {p.firstName.charAt(0)}.</div><div className="text-xs text-slate-500 mt-0.5">{p.teamName} · {LOCATION_UA[p.location] ?? p.location} · {SEVERITY_UA[p.severity] ?? p.severity}</div><div className="text-[11px] text-slate-600 mt-1 font-mono">{daysSince(p.dateOfInjury)} дн. з моменту травми</div></div><div className="flex flex-col items-end gap-1.5 shrink-0"><Badge variant={vasVariant(p.vasScore)}>ВАШ {p.vasScore}/10</Badge><Badge variant={p.status === "active" ? "danger" : "warn"}>{p.status === "active" ? "Гостра" : "Реабілітація"}</Badge></div></div></Card>); return p.id.startsWith("m") ? <div key={p.id}>{card}</div> : <Link key={p.id} href={`/uk/injuries/${p.id}`}>{card}</Link>; })}
+            {displayPatients.map(p => { const card = (<Card interactive accent={p.vasScore >= 7 ? "danger" : "warn"}><div className="flex justify-between items-start gap-3"><div className="min-w-0"><div className="font-bold text-white text-[15px]">{p.lastName} {p.firstName.charAt(0)}.</div><div className="text-xs text-slate-500 mt-0.5">{p.teamName} · {LOCATION_UA[p.location] ?? p.location} · {SEVERITY_UA[p.severity] ?? p.severity}</div><div className="text-[11px] text-slate-600 mt-1 font-mono">{daysSince(p.dateOfInjury)} дн. з моменту травми</div></div><div className="flex flex-col items-end gap-1.5 shrink-0"><Badge variant={vasVariant(p.vasScore)}>ВАШ {p.vasScore}/10</Badge><Badge variant={p.status === "active" ? "danger" : "warn"}>{p.status === "active" ? "Гостра" : "Реабілітація"}</Badge></div></div></Card>); return p.id.startsWith("m") ? <div key={p.id}>{card}</div> : <Link key={p.id} href={`/injuries/${p.id}`}>{card}</Link>; })}
           </div>
         </section>
       </div>
