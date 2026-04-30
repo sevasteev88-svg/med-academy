@@ -2,15 +2,14 @@ import { createClient } from "@/utils/supabase/server";
 import Link from "next/link";
 import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
-import { INJURY_TYPE_UA, LOCATION_UA, SEVERITY_UA, STATUS_UA } from "@/lib/constants";
-import WeeklyReportAI from "@/components/reports/WeeklyReportAI";
+import { INJURY_TYPE_UA, LOCATION_UA, SEVERITY_UA, STATUS_UA, TEAM_CATEGORY_UA } from "@/lib/constants";
 
 function vasVariant(v: number): "ok"|"warn"|"danger" { if(v>=7)return"danger";if(v>=4)return"warn";return"ok"; }
 
 export default async function WeeklyReportPage() {
   const supabase = await createClient();
   const now = new Date(); const weekAgo = new Date(now); weekAgo.setDate(weekAgo.getDate() - 7);
-  const weekAgoStr = weekAgo.toISOString().split("T")[0];
+  const weekAgoStr = weekAgo.toISOString().split("T")[0]; const todayStr = now.toISOString().split("T")[0];
 
   const { data: teams } = await supabase.from("teams").select("id, name, category, sort_order, players ( id, first_name, last_name, position, injuries ( id, status, vas_score ) )").order("sort_order", { ascending: true });
   const { data: newInjuries } = await supabase.from("injuries").select("*, players!inner ( first_name, last_name, teams!inner ( name ) )").gte("date_of_injury", weekAgoStr).order("date_of_injury", { ascending: false });
@@ -18,12 +17,6 @@ export default async function WeeklyReportPage() {
   const { data: activeInjuries } = await supabase.from("injuries").select("*, players!inner ( first_name, last_name, teams!inner ( name ) )").in("status", ["active", "rehabilitation"]).order("vas_score", { ascending: false });
   const { data: weekExams } = await supabase.from("injury_examinations").select("id").gte("date", weekAgoStr);
   const { data: weekLogs } = await supabase.from("injury_logs").select("id").gte("date", weekAgoStr);
-
-  // PHV/матурація для AI-звіту
-  const { data: maturationRaw } = await supabase
-    .from("maturation_assessments")
-    .select(`consensus_offset, consensus_phv_age, growth_phase, risk_zone, height_velocity, age_at_measurement, players!inner ( first_name, last_name, teams!inner ( name ) )`)
-    .in("risk_zone", ["yellow", "red"]);
 
   const allPlayers = (teams??[]).flatMap((t:any) => t.players??[]);
   function playerStatus(p:any):"ok"|"warn"|"danger" { const a=(p.injuries??[]).filter((i:any)=>i.status==="active"||i.status==="rehabilitation"); if(!a.length)return"ok"; const m=Math.max(...a.map((i:any)=>i.vas_score??0)); if(m>=7)return"danger";if(m>=4)return"warn";return"ok"; }
@@ -33,54 +26,10 @@ export default async function WeeklyReportPage() {
   const reportDate = now.toLocaleDateString("uk-UA", { day: "numeric", month: "long", year: "numeric" });
   const weekStart = weekAgo.toLocaleDateString("uk-UA", { day: "numeric", month: "long" });
 
-  // Дані для AI-звіту
-  const daysSince = (d: string) => Math.floor((Date.now() - new Date(d).getTime()) / 86400000);
-  const daysUntil = (d: string) => Math.floor((new Date(d).getTime() - Date.now()) / 86400000);
-
-  const mapInjury = (inj: any) => ({
-    id: inj.id,
-    firstName: inj.players.first_name,
-    lastName: inj.players.last_name,
-    teamName: inj.players.teams.name,
-    location: inj.location,
-    severity: inj.severity,
-    vasScore: inj.vas_score,
-    status: inj.status,
-    daysSinceInjury: daysSince(inj.date_of_injury),
-    expectedReturn: inj.expected_return_date,
-    daysUntilReturn: inj.expected_return_date ? daysUntil(inj.expected_return_date) : null,
-  });
-
-  const aiActiveInjuries = (activeInjuries ?? []).filter((i: any) => i.status === "active").map(mapInjury);
-  const aiRehabInjuries = (activeInjuries ?? []).filter((i: any) => i.status === "rehabilitation").map(mapInjury);
-  const allAiInjuries = [...aiActiveInjuries, ...aiRehabInjuries];
-  const upcomingReturns = allAiInjuries.filter(i => i.expectedReturn).sort((a, b) => (a.daysUntilReturn ?? 999) - (b.daysUntilReturn ?? 999)).slice(0, 10);
-
-  const maturationAlerts = (maturationRaw ?? []).map((m: any) => ({
-    firstName: m.players.first_name,
-    lastName: m.players.last_name,
-    teamName: m.players.teams.name,
-    age: m.age_at_measurement?.toFixed(1),
-    growthPhase: m.growth_phase,
-    consensusOffset: m.consensus_offset,
-    riskZone: m.risk_zone,
-    heightVelocity: m.height_velocity,
-  }));
-
-  const aiReportData = {
-    activeInjuries: aiActiveInjuries,
-    rehabInjuries: aiRehabInjuries,
-    upcomingReturns,
-    maturationAlerts,
-    totalPlayers: allPlayers.length,
-    availablePlayers: totalOk,
-    unavailablePlayers: totalWarn + totalDanger,
-  };
-
   return (
     <div className="min-h-screen bg-background text-slate-200 p-5 md:p-8"><div className="max-w-4xl mx-auto space-y-6">
       <Link href="/" className="text-slate-500 hover:text-slate-300 text-sm transition-colors">← Дашборд</Link>
-      <div className="border-b border-blue-900/15 pb-5"><h1 className="text-lg font-bold text-white tracking-tight">📋 Тижневий звіт</h1><p className="text-xs text-slate-500 mt-1">ФК «Чорноморець» · Медичний штаб · {weekStart} — {reportDate}</p></div>
+      <div className="border-b border-blue-900/15 pb-5"><h1 className="text-lg font-bold text-white tracking-tight">📋 Тижневий звіт</h1><p className="text-xs text-slate-500 mt-1">Період: {weekStart} — {reportDate}</p></div>
 
       <section><h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Доступність складу</h2>
         <div className="grid grid-cols-4 gap-3">
@@ -112,12 +61,6 @@ export default async function WeeklyReportPage() {
           <Card><div className="text-[10px] uppercase tracking-widest text-slate-600 mb-1">Оглядів</div><div className="text-2xl font-extrabold font-mono text-white">{(weekExams??[]).length}</div></Card>
           <Card><div className="text-[10px] uppercase tracking-widest text-slate-600 mb-1">Записів</div><div className="text-2xl font-extrabold font-mono text-white">{(weekLogs??[]).length}</div></Card>
         </div>
-      </section>
-
-      {/* AI-генерація звіту для тренерів */}
-      <section className="border-t border-blue-900/15 pt-6">
-        <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">🤖 AI-звіт для тренерського штабу</h2>
-        <WeeklyReportAI data={aiReportData} />
       </section>
 
       <div className="text-center text-xs text-slate-600 pt-4 border-t border-blue-900/15">ФК «Чорноморець» · Медичний штаб · {reportDate}</div>
