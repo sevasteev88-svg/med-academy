@@ -10,6 +10,7 @@ import InjuryJournal from "@/components/injuries/InjuryJournal";
 import DeleteButton from "@/components/ui/DeleteButton";
 import { deleteInjuryAction } from "@/actions/delete-injury-action";
 import { INJURY_TYPE_UA, LOCATION_UA, SIDE_UA, SEVERITY_UA, MECHANISM_UA, STATUS_UA } from "@/lib/constants";
+import InjuryAISection from "@/components/injuries/InjuryAISection";
 
 function vasVariant(v: number): "ok"|"warn"|"danger" { if(v>=7)return"danger";if(v>=4)return"warn";return"ok"; }
 function daysSince(d: string) { return Math.floor((Date.now()-new Date(d).getTime())/86400000); }
@@ -53,6 +54,10 @@ export default async function InjuryDetailPage({ params }: { params: Promise<{id
           <DeleteButton onDelete={handleDelete} itemName="травму" />
         </div>
       </Card>
+
+      {/* AI-асистент */}
+      <InjuryAISection injuryId={id} />
+
       {injury.status !== "closed" && <ExaminationForm injuryId={id} currentVas={injury.vas_score} />}
       <ExaminationHistory exams={exams ?? []} />
       <RehabTracker injuryId={id} phases={phases ?? []} injuryStatus={injury.status} />
