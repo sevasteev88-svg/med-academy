@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 
 /**
- * POST /api/ai/injury-patterns
+ * POST /api/ai/weekly-report
  *
- * Приймає повну історію травм + дані матурації →
- * Claude аналізує патерни та кореляції →
- * повертає структурований аналіз.
+ * Приймає медичні дані команди → відправляє в Claude API →
+ * повертає згенерований тижневий звіт українською.
+ *
+ * Потребує ANTHROPIC_API_KEY в env-змінних Vercel.
  */
 
 export async function POST(request: NextRequest) {
@@ -20,6 +21,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const data = await request.json();
+
     const prompt = buildPrompt(data);
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -31,7 +33,7 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-20250514",
-        max_tokens: 6000,
+        max_tokens: 4000,
         messages: [{ role: "user", content: prompt }],
       }),
     });
@@ -51,9 +53,9 @@ export async function POST(request: NextRequest) {
       .map((b: any) => b.text)
       .join("\n");
 
-    return NextResponse.json({ analysis: text });
+    return NextResponse.json({ report: text });
   } catch (err) {
-    console.error("Pattern analysis error:", err);
+    console.error("Weekly report error:", err);
     return NextResponse.json(
       { error: "Внутрішня помилка сервера" },
       { status: 500 }
@@ -61,97 +63,80 @@ export async function POST(request: NextRequest) {
   }
 }
 
+// ─── Побудова промпту ───────────────────────────────────────
+
 function buildPrompt(data: any): string {
-  return `Ти — AI-аналітик спортивної медицини ФК «Чорноморець» (юнацька академія, вікові категорії U13–U19).
-Проаналізуй базу травм і знайди закономірності, кореляції та фактори ризику.
+  const today = new Date().toLocaleDateString("uk-UA", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
 
-## Дані для аналізу:
+  return `Ти — AI-асистент медичного штабу ФК «Чорноморець» (юнацька академія).
+Склади тижневий медичний звіт для тренерського штабу українською мовою.
 
-### Усі травми (${data.injuries?.length ?? 0}):
-${formatInjuryHistory(data.injuries)}
+Дата звіту: ${today}
 
-### Дані матурації гравців (${data.maturation?.length ?? 0}):
-${formatMaturation(data.maturation)}
+## Дані для звіту:
 
-### Рецидиви (гравці з >1 травмою) (${data.recurrences?.length ?? 0}):
-${formatRecurrences(data.recurrences)}
+### Активні травми (${data.activeInjuries?.length ?? 0}):
+${formatInjuries(data.activeInjuries)}
 
-### Статистика по командах:
-${formatTeamStats(data.teamStats)}
+### Реабілітація (${data.rehabInjuries?.length ?? 0}):
+${formatInjuries(data.rehabInjuries)}
 
-## Що шукати:
+### Найближчі повернення:
+${formatReturns(data.upcomingReturns)}
 
-1. **Травми × матурація**: чи є кореляція між фазою росту (pre-PHV/PHV/post-PHV) та типом/локалізацією травми? Апофізити в PHV? ACL в post-PHV?
+### Моніторинг росту (PHV):
+${formatMaturation(data.maturationAlerts)}
 
-2. **Позиційні патерни**: чи певні позиції (воротарі, захисники, нападники) мають характерні травми?
+### Загальна статистика:
+- Всього гравців: ${data.totalPlayers ?? 0}
+- Доступних: ${data.availablePlayers ?? 0}
+- Недоступних: ${data.unavailablePlayers ?? 0}
 
-3. **Механізм**: співвідношення contact / non-contact / overuse. Що переважає? Чи є зв'язок з віковою групою?
+## Вимоги до звіту:
 
-4. **Рецидиви**: хто травмується повторно? Яка локалізація найчастіше рецидивує? Чи достатній був час відновлення?
+1. **Резюме** — 2-3 речення про загальну ситуацію
+2. **Доступність** — хто НЕ може тренуватись/грати, чому, скільки ще
+3. **Повернення** — хто повертається цього тижня, з рекомендаціями
+4. **Червона зона** — гравці з ВАШ ≥ 7, потребують уваги
+5. **Матурація** — гравці у фазі PHV або червоній зоні ризику, рекомендації щодо навантажень
+6. **Рекомендації тренерам** — конкретні поради: кого берегти, кому знизити навантаження, на що звернути увагу
 
-5. **Темпоральні патерни**: чи є скупчення травм у певні місяці (початок сезону, після перерви)?
-
-6. **Severity × recovery**: чи відповідає фактичний час відновлення очікуваному? Хто повертається раніше/пізніше?
-
-7. **Тренди**: кількість травм зростає/знижується? Зміна типу травм з часом?
-
-## Формат відповіді:
-
-### 🔍 Ключові знахідки
-3-5 найважливіших патернів з конкретними цифрами
-
-### 📊 Кореляція травми–матурація
-Аналіз зв'язку фаз росту з типами травм
-
-### ⚠️ Фактори ризику
-Хто з поточного складу в зоні підвищеного ризику і чому
-
-### 🔄 Рецидиви
-Аналіз повторних травм, причини
-
-### 💡 Рекомендації
-Конкретні дії для профілактики: програми, протоколи, зміни навантажень
-
-Пиши українською, стисло, з конкретними прізвищами та цифрами.
-Якщо даних недостатньо для висновку — чесно вкажи це і поясни що потрібно збирати.`;
+Пиши стисло, конкретно, без води. Використовуй прізвища гравців.
+Формат: Markdown з заголовками ##.
+Мова: українська.`;
 }
 
-function formatInjuryHistory(injuries: any[] | undefined): string {
-  if (!injuries?.length) return "Немає даних";
+function formatInjuries(injuries: any[] | undefined): string {
+  if (!injuries?.length) return "Немає";
   return injuries
     .map(
-      (i) =>
-        `- ${i.lastName} ${i.firstName} (${i.teamName}, ${i.position}, ${i.age}р.): ${i.injuryType} ${i.location} ${i.side}, ${i.severity}, ${i.mechanism}, ВАШ ${i.vasScore}/10, дата: ${i.dateOfInjury}, статус: ${i.status}, пропущено: ${i.daysMissed ?? "?"}дн.${i.growthPhase ? `, фаза: ${i.growthPhase}` : ""}`
+      (inj) =>
+        `- ${inj.lastName} ${inj.firstName} (${inj.teamName}, ${inj.position ?? ""}): ${inj.location}, ${inj.severity}, ВАШ ${inj.vasScore}/10, ${inj.daysSinceInjury} дн. з травми${inj.expectedReturn ? `, очікуване повернення: ${inj.expectedReturn}` : ""}`
     )
     .join("\n");
 }
 
-function formatMaturation(maturation: any[] | undefined): string {
-  if (!maturation?.length) return "Немає даних";
-  return maturation
-    .map(
-      (m) =>
-        `- ${m.lastName} ${m.firstName} (${m.teamName}, ${m.age}р.): фаза ${m.growthPhase}, offset ${m.consensusOffset > 0 ? "+" : ""}${m.consensusOffset}, ризик: ${m.riskZone}${m.heightVelocity ? `, Δ ${m.heightVelocity} см/р` : ""}`
-    )
-    .join("\n");
-}
-
-function formatRecurrences(recurrences: any[] | undefined): string {
-  if (!recurrences?.length) return "Немає повторних травм";
-  return recurrences
+function formatReturns(returns: any[] | undefined): string {
+  if (!returns?.length) return "Немає запланованих повернень";
+  return returns
     .map(
       (r) =>
-        `- ${r.lastName} ${r.firstName} (${r.teamName}): ${r.injuryCount} травм — ${r.locations}`
+        `- ${r.lastName} ${r.firstName} (${r.teamName}): ${r.location}, повернення ${r.expectedReturn} (${r.daysUntilReturn > 0 ? `через ${r.daysUntilReturn} дн.` : "прострочено"})`
     )
     .join("\n");
 }
 
-function formatTeamStats(stats: any[] | undefined): string {
-  if (!stats?.length) return "Немає даних";
-  return stats
+function formatMaturation(alerts: any[] | undefined): string {
+  if (!alerts?.length) return "Немає даних або всі в зеленій зоні";
+  return alerts
     .map(
-      (s) =>
-        `- ${s.teamName}: ${s.totalInjuries} травм, ${s.totalPlayers} гравців, ${s.injuryRate} травм/гравець`
+      (a) =>
+        `- ${a.lastName} ${a.firstName} (${a.teamName}, ${a.age}р.): фаза ${a.growthPhase}, offset ${a.consensusOffset > 0 ? "+" : ""}${a.consensusOffset}, зона ризику: ${a.riskZone}${a.heightVelocity ? `, Δ зріст ${a.heightVelocity} см/рік` : ""}`
     )
     .join("\n");
 }
