@@ -79,7 +79,7 @@ export default async function WeeklyReportPage() {
 
   return (
     <div className="min-h-screen bg-background text-slate-200 p-5 md:p-8"><div className="max-w-4xl mx-auto space-y-6">
-      <Link href="/" className="text-slate-500 hover:text-slate-300 text-sm transition-colors">← Дашборд</Link>
+      <Link href="/uk" className="text-slate-500 hover:text-slate-300 text-sm transition-colors">← Дашборд</Link>
       <div className="border-b border-blue-900/15 pb-5"><h1 className="text-lg font-bold text-white tracking-tight">📋 Тижневий звіт</h1><p className="text-xs text-slate-500 mt-1">ФК «Чорноморець» · Медичний штаб · {weekStart} — {reportDate}</p></div>
 
       <section><h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Доступність складу</h2>
@@ -94,7 +94,7 @@ export default async function WeeklyReportPage() {
 
       <section><h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Нові травми ({(newInjuries??[]).length})</h2>
         {(newInjuries??[]).length===0?<Card><p className="text-status-ok text-sm text-center py-3">Нових травм не зафіксовано ✓</p></Card>:
-        <div className="space-y-2">{(newInjuries??[]).map((inj:any)=>(<Link key={inj.id} href={`/injuries/${inj.id}`}><Card interactive accent={inj.vas_score>=7?"danger":"warn"}><div className="flex justify-between items-start gap-3"><div><div className="font-bold text-white text-sm">{inj.players.last_name} {inj.players.first_name}</div><div className="text-xs text-slate-500 mt-0.5">{inj.players.teams.name} · {INJURY_TYPE_UA[inj.injury_type]} — {LOCATION_UA[inj.location]} · {SEVERITY_UA[inj.severity]}</div></div><Badge variant={vasVariant(inj.vas_score)}>ВАШ {inj.vas_score}/10</Badge></div></Card></Link>))}</div>}
+        <div className="space-y-2">{(newInjuries??[]).map((inj:any)=>(<Link key={inj.id} href={`/uk/injuries/${inj.id}`}><Card interactive accent={inj.vas_score>=7?"danger":"warn"}><div className="flex justify-between items-start gap-3"><div><div className="font-bold text-white text-sm">{inj.players.last_name} {inj.players.first_name}</div><div className="text-xs text-slate-500 mt-0.5">{inj.players.teams.name} · {INJURY_TYPE_UA[inj.injury_type]} — {LOCATION_UA[inj.location]} · {SEVERITY_UA[inj.severity]}</div></div><Badge variant={vasVariant(inj.vas_score)}>ВАШ {inj.vas_score}/10</Badge></div></Card></Link>))}</div>}
       </section>
 
       <section><h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Повернулися ({(closedInjuries??[]).length})</h2>
@@ -104,7 +104,7 @@ export default async function WeeklyReportPage() {
 
       <section><h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Активні травми ({(activeInjuries??[]).length})</h2>
         {(activeInjuries??[]).length===0?<Card><p className="text-status-ok text-sm text-center py-3">Активних травм немає ✓</p></Card>:
-        <div className="space-y-2">{(activeInjuries??[]).map((inj:any)=>(<Link key={inj.id} href={`/injuries/${inj.id}`}><Card interactive accent={inj.vas_score>=7?"danger":"warn"}><div className="flex justify-between items-start gap-3"><div><div className="text-sm font-semibold text-white">{inj.players.last_name} {inj.players.first_name}</div><div className="text-xs text-slate-500 mt-0.5">{inj.players.teams.name} · {INJURY_TYPE_UA[inj.injury_type]} — {LOCATION_UA[inj.location]}</div>{inj.expected_return_date&&<div className="text-xs text-slate-600 mt-0.5">Повернення: {new Date(inj.expected_return_date).toLocaleDateString("uk-UA")}</div>}</div><div className="flex flex-col items-end gap-1"><Badge variant={vasVariant(inj.vas_score)}>ВАШ {inj.vas_score}/10</Badge><Badge variant={inj.status==="active"?"danger":"warn"}>{STATUS_UA[inj.status]}</Badge></div></div></Card></Link>))}</div>}
+        <div className="space-y-2">{(activeInjuries??[]).map((inj:any)=>(<Link key={inj.id} href={`/uk/injuries/${inj.id}`}><Card interactive accent={inj.vas_score>=7?"danger":"warn"}><div className="flex justify-between items-start gap-3"><div><div className="text-sm font-semibold text-white">{inj.players.last_name} {inj.players.first_name}</div><div className="text-xs text-slate-500 mt-0.5">{inj.players.teams.name} · {INJURY_TYPE_UA[inj.injury_type]} — {LOCATION_UA[inj.location]}</div>{inj.expected_return_date&&<div className="text-xs text-slate-600 mt-0.5">Повернення: {new Date(inj.expected_return_date).toLocaleDateString("uk-UA")}</div>}</div><div className="flex flex-col items-end gap-1"><Badge variant={vasVariant(inj.vas_score)}>ВАШ {inj.vas_score}/10</Badge><Badge variant={inj.status==="active"?"danger":"warn"}>{STATUS_UA[inj.status]}</Badge></div></div></Card></Link>))}</div>}
       </section>
 
       <section><h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Активність за тиждень</h2>

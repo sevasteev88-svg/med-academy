@@ -30,16 +30,28 @@ export default function WeeklyReportAI({ data }: { data: ReportData }) {
         body: JSON.stringify(data),
       });
 
-      const json = await res.json();
+      const text = await res.text();
+      let json: any;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        setError(`Сервер повернув невалідну відповідь: ${text.slice(0, 200)}`);
+        return;
+      }
 
       if (!res.ok) {
-        setError(json.error || "Помилка генерації звіту");
+        setError(json.error || `Помилка ${res.status}: ${text.slice(0, 200)}`);
+        return;
+      }
+
+      if (!json.report) {
+        setError("Claude не повернув текст звіту. Перевірте ANTHROPIC_API_KEY у Vercel Settings → Environment Variables.");
         return;
       }
 
       setReport(json.report);
-    } catch {
-      setError("Не вдалось зʼєднатись з сервером");
+    } catch (err: any) {
+      setError(`Не вдалось зʼєднатись: ${err?.message ?? "невідома помилка"}`);
     } finally {
       setLoading(false);
     }
