@@ -63,6 +63,7 @@ export default async function DoctorDashboard() {
           <Link href="/injuries/new" className="bg-brand-blue hover:bg-brand-blue-light text-white font-bold py-2.5 px-5 rounded-lg text-sm transition-colors shadow-glow-sm hover:shadow-glow">+ Фіксація травми</Link>
           <Link href="/players/new" className="border border-slate-800 text-slate-400 hover:bg-surface-hover font-semibold py-2.5 px-5 rounded-lg text-sm transition-colors">+ Додати гравця</Link>
           <Link href="/reports/weekly" className="border border-slate-800 text-slate-400 hover:bg-surface-hover font-semibold py-2.5 px-5 rounded-lg text-sm transition-colors">📋 Звіт за тиждень</Link>
+          <Link href="/reports/patterns" className="border border-slate-800 text-slate-400 hover:bg-surface-hover font-semibold py-2.5 px-5 rounded-lg text-sm transition-colors">🔍 Аналіз патернів</Link>
           <Link href="/growth" className="border border-slate-800 text-slate-400 hover:bg-surface-hover font-semibold py-2.5 px-5 rounded-lg text-sm transition-colors">📈 Моніторинг росту</Link>
           <Link href="/growth/new" className="border border-slate-800 text-slate-400 hover:bg-surface-hover font-semibold py-2.5 px-5 rounded-lg text-sm transition-colors">📏 Новий вимір</Link>
         </div>
