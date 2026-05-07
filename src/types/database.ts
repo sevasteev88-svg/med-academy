@@ -1,15 +1,11 @@
 /**
- * Типи бази даних — розширені мультиметодним PHV-модулем.
+ * Типи бази даних.
  *
- * Зміни:
- * - Player: додано sex
- * - AnthropometryLog: додано sitting_height, leg_length
- * - Новий: MaturationAssessment (з полями для кожного методу)
+ * Для автогенерації з Supabase виконай:
+ *   npx supabase gen types typescript --project-id YOUR_PROJECT_REF > src/types/database.ts
  */
 
-// ─── Enums ──────────────────────────────────────────────────
-
-export type Sex = "male" | "female";
+// ─── Enums: загальні ────────────────────────────────────────
 
 export type DominantSide = "left" | "right" | "both";
 
@@ -51,9 +47,63 @@ export type InjuryMechanism = "contact" | "non_contact" | "overuse";
 
 export type InjuryStatus = "active" | "rehabilitation" | "closed";
 
-export type GrowthPhase = "pre_phv" | "phv" | "post_phv";
+// ─── Enums: класифікація м'язових пошкоджень ────────────────
 
-export type RiskZone = "green" | "yellow" | "red";
+/**
+ * Мюнхенський консенсус (MCIC) — Munich Consensus Classification
+ *
+ * Тип 1 — Функціональні (без макроскопічного розриву):
+ *   1A — Перевтома (overexertion)
+ *   1B — Мікроушкодження DOMS
+ *
+ * Тип 2 — Нервово-м'язові функціональні:
+ *   2A — Спінальна (проблеми зі спиною)
+ *   2B — М'язова (локальний нейром'язовий збій)
+ *
+ * Тип 3 — Структурні (є розрив волокон):
+ *   3A — Мікророзрив (< 0.5 cm)
+ *   3B — Частковий розрив (≥ 0.5 cm)
+ *
+ * Тип 4 — Повний розрив або відрив від кістки
+ */
+export type MunichGrade =
+  | "1A"
+  | "1B"
+  | "2A"
+  | "2B"
+  | "3A"
+  | "3B"
+  | "4";
+
+/**
+ * BAMIC — British Athletics Muscle Injury Classification
+ *
+ * Ступінь 0–4 (тяжкість) + буква локалізації:
+ *   a — міофасціальне (по краях м'яза)
+ *   b — внутрішньом'язове (в брюшці)
+ *   c — інтрам'язове сухожилля (T-junction) ⚠️
+ *
+ * Увага: суфікс "c" (T-junction) = подвійний термін реабілітації!
+ */
+export type BamicGrade = 0 | 1 | 2 | 3 | 4;
+export type BamicLocation = "a" | "b" | "c";
+
+/** Яку класифікаційну систему використовував лікар */
+export type ClassificationSystem = "munich" | "bamic" | "ismult" | "none";
+
+// ─── Прогноз повернення в стрій ─────────────────────────────
+
+/**
+ * Розрахований прогноз RTP (Return to Play).
+ * Зберігається поряд з травмою для аналітики.
+ */
+export type RtpPrediction = {
+  min_days: number;
+  max_days: number;
+  is_t_junction_risk: boolean;     // true → "червоний прапор" T-junction
+  confidence: "high" | "medium" | "low";
+  notes: string | null;
+};
 
 // ─── Row types ──────────────────────────────────────────────
 
@@ -69,7 +119,6 @@ export type Player = {
   first_name: string;
   last_name: string;
   date_of_birth: string;
-  sex: Sex;
   position: string;
   dominant_leg: DominantSide;
   dominant_arm: DominantSide;
@@ -82,36 +131,6 @@ export type AnthropometryLog = {
   date: string;
   height: number;
   weight: number;
-  sitting_height: number | null;
-  leg_length: number | null;
-  created_at: string;
-};
-
-export type MaturationAssessment = {
-  id: string;
-  player_id: string;
-  anthropometry_log_id: string;
-  age_at_measurement: number;
-
-  // Результати кожного методу
-  mirwald_offset: number | null;
-  mirwald_phv_age: number | null;
-  moore1_offset: number | null;
-  moore1_phv_age: number | null;
-  moore2_offset: number | null;
-  moore2_phv_age: number | null;
-  fransen_phv_age: number | null;
-
-  // Консенсус
-  consensus_offset: number;
-  consensus_phv_age: number;
-  methods_used: string[];
-
-  growth_phase: GrowthPhase;
-  height_velocity: number | null;
-  weight_velocity: number | null;
-  risk_zone: RiskZone;
-  risk_factors: string[];
   created_at: string;
 };
 
@@ -129,6 +148,23 @@ export type Injury = {
   status: InjuryStatus;
   description: string | null;
   created_at: string;
+
+  // ─── Класифікація м'язових пошкоджень (нові поля) ──────
+  classification_system: ClassificationSystem;
+
+  /** Мюнхенський консенсус — тип пошкодження */
+  munich_grade: MunichGrade | null;
+
+  /** BAMIC — числова ступінь (0–4) */
+  bamic_grade: BamicGrade | null;
+
+  /** BAMIC — локалізація (a/b/c). c = T-junction ⚠️ */
+  bamic_location: BamicLocation | null;
+
+  /** Розрахований прогноз RTP (кешується при збереженні) */
+  rtp_prediction: RtpPrediction | null;
+
+  // computed (не в БД)
   days_missed?: number | null;
 };
 
@@ -138,10 +174,4 @@ export type InjuryLog = {
   date: string;
   note: string;
   created_at: string;
-};
-
-/** Гравець з останньою оцінкою матурації (для дашборду) */
-export type PlayerWithMaturation = Player & {
-  latest_maturation: MaturationAssessment | null;
-  latest_anthropometry: AnthropometryLog | null;
 };
