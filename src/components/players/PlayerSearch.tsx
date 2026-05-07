@@ -7,8 +7,7 @@ export default function PlayerSearch() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const timerRef = useRef<ReturnType<typeof setTimeout>>();
-
+  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const currentQuery = searchParams.get("q") ?? "";
 
   function handleChange(value: string) {

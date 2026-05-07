@@ -58,7 +58,6 @@ export default function PlayerGrowthChart({
 
   const sorted = [...measurements].sort((a, b) => a.age - b.age);
 
-  // Дані для кожного режиму
   const heightData = sorted.map((m) => ({
     age: m.age,
     date: m.date,
@@ -137,12 +136,7 @@ export default function PlayerGrowthChart({
                 stroke="#64748b"
                 fontSize={11}
                 tickFormatter={(v) => `${v}`}
-                label={{
-                  value: "см",
-                  position: "insideTopLeft",
-                  fill: "#64748b",
-                  fontSize: 10,
-                }}
+                label={{ value: "см", position: "insideTopLeft", fill: "#64748b", fontSize: 10 }}
               />
               <YAxis
                 yAxisId="w"
@@ -150,12 +144,7 @@ export default function PlayerGrowthChart({
                 stroke="#64748b"
                 fontSize={11}
                 tickFormatter={(v) => `${v}`}
-                label={{
-                  value: "кг",
-                  position: "insideTopRight",
-                  fill: "#64748b",
-                  fontSize: 10,
-                }}
+                label={{ value: "кг", position: "insideTopRight", fill: "#64748b", fontSize: 10 }}
               />
               {estimatedPhvAge && (
                 <ReferenceArea
@@ -164,44 +153,16 @@ export default function PlayerGrowthChart({
                   yAxisId="h"
                   fill="#eab308"
                   fillOpacity={0.08}
-                  label={{
-                    value: "PHV",
-                    position: "insideTop",
-                    fill: "#eab308",
-                    fontSize: 10,
-                  }}
+                  label={{ value: "PHV", position: "insideTop", fill: "#eab308", fontSize: 10 }}
                 />
               )}
               <Tooltip
-                contentStyle={{
-                  backgroundColor: "#0f172a",
-                  border: "1px solid #1e293b",
-                  borderRadius: "8px",
-                  fontSize: "12px",
-                }}
+                contentStyle={{ backgroundColor: "#0f172a", border: "1px solid #1e293b", borderRadius: "8px", fontSize: "12px" }}
                 labelFormatter={(v) => `Вік: ${v} р.`}
               />
               <Legend wrapperStyle={{ fontSize: "11px" }} />
-              <Line
-                yAxisId="h"
-                type="monotone"
-                dataKey="height"
-                name="Зріст (см)"
-                stroke="#3b82f6"
-                strokeWidth={2}
-                dot={{ r: 4, fill: "#3b82f6" }}
-                activeDot={{ r: 6 }}
-              />
-              <Line
-                yAxisId="w"
-                type="monotone"
-                dataKey="weight"
-                name="Вага (кг)"
-                stroke="#22c55e"
-                strokeWidth={2}
-                dot={{ r: 4, fill: "#22c55e" }}
-                activeDot={{ r: 6 }}
-              />
+              <Line yAxisId="h" type="monotone" dataKey="height" name="Зріст (см)" stroke="#3b82f6" strokeWidth={2} dot={{ r: 4, fill: "#3b82f6" }} activeDot={{ r: 6 }} />
+              <Line yAxisId="w" type="monotone" dataKey="weight" name="Вага (кг)" stroke="#22c55e" strokeWidth={2} dot={{ r: 4, fill: "#22c55e" }} activeDot={{ r: 6 }} />
             </LineChart>
           </ResponsiveContainer>
         )}
@@ -210,74 +171,29 @@ export default function PlayerGrowthChart({
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={velocityData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-              <XAxis
-                dataKey="age"
-                stroke="#64748b"
-                fontSize={11}
-                tickFormatter={(v) => `${v}р.`}
-              />
-              <YAxis
-                stroke="#64748b"
-                fontSize={11}
-                label={{
-                  value: "см/рік",
-                  position: "insideTopLeft",
-                  fill: "#64748b",
-                  fontSize: 10,
-                }}
-              />
+              <XAxis dataKey="age" stroke="#64748b" fontSize={11} tickFormatter={(v) => `${v}р.`} />
+              <YAxis stroke="#64748b" fontSize={11} label={{ value: "см/рік", position: "insideTopLeft", fill: "#64748b", fontSize: 10 }} />
               {estimatedPhvAge && (
                 <ReferenceLine
                   x={estimatedPhvAge}
                   stroke="#eab308"
                   strokeDasharray="5 5"
-                  label={{
-                    value: "PHV",
-                    position: "top",
-                    fill: "#eab308",
-                    fontSize: 10,
-                  }}
+                  label={{ value: "PHV", position: "top", fill: "#eab308", fontSize: 10 }}
                 />
               )}
               <ReferenceLine
                 y={8}
                 stroke="#ef4444"
                 strokeDasharray="3 3"
-                label={{
-                  value: "Поріг ризику (8 см/р)",
-                  position: "right",
-                  fill: "#ef4444",
-                  fontSize: 9,
-                }}
+                label={{ value: "Поріг ризику (8 см/р)", position: "right", fill: "#ef4444", fontSize: 9 }}
               />
               <Tooltip
-                contentStyle={{
-                  backgroundColor: "#0f172a",
-                  border: "1px solid #1e293b",
-                  borderRadius: "8px",
-                  fontSize: "12px",
-                }}
+                contentStyle={{ backgroundColor: "#0f172a", border: "1px solid #1e293b", borderRadius: "8px", fontSize: "12px" }}
                 labelFormatter={(v) => `Вік: ${v} р.`}
               />
               <Legend wrapperStyle={{ fontSize: "11px" }} />
-              <Line
-                type="monotone"
-                dataKey="heightVelocity"
-                name="Δ Зріст (см/рік)"
-                stroke="#f59e0b"
-                strokeWidth={2.5}
-                dot={{ r: 5, fill: "#f59e0b" }}
-                activeDot={{ r: 7 }}
-              />
-              <Line
-                type="monotone"
-                dataKey="weightVelocity"
-                name="Δ Вага (кг/рік)"
-                stroke="#8b5cf6"
-                strokeWidth={2}
-                dot={{ r: 4, fill: "#8b5cf6" }}
-                activeDot={{ r: 6 }}
-              />
+              <Line type="monotone" dataKey="heightVelocity" name="Δ Зріст (см/рік)" stroke="#f59e0b" strokeWidth={2.5} dot={{ r: 5, fill: "#f59e0b" }} activeDot={{ r: 7 }} />
+              <Line type="monotone" dataKey="weightVelocity" name="Δ Вага (кг/рік)" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 4, fill: "#8b5cf6" }} activeDot={{ r: 6 }} />
             </LineChart>
           </ResponsiveContainer>
         )}
@@ -286,47 +202,23 @@ export default function PlayerGrowthChart({
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={maturityData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-              <XAxis
-                dataKey="age"
-                stroke="#64748b"
-                fontSize={11}
-                tickFormatter={(v) => `${v}р.`}
-              />
-              <YAxis
-                stroke="#64748b"
-                fontSize={11}
-                label={{
-                  value: "Offset (р.)",
-                  position: "insideTopLeft",
-                  fill: "#64748b",
-                  fontSize: 10,
-                }}
-              />
+              <XAxis dataKey="age" stroke="#64748b" fontSize={11} tickFormatter={(v) => `${v}р.`} />
+              <YAxis stroke="#64748b" fontSize={11} label={{ value: "Offset (р.)", position: "insideTopLeft", fill: "#64748b", fontSize: 10 }} />
               <ReferenceArea
                 y1={-0.5}
                 y2={0.5}
                 fill="#eab308"
                 fillOpacity={0.1}
-                label={{
-                  value: "PHV зона",
-                  position: "insideRight",
-                  fill: "#eab308",
-                  fontSize: 10,
-                }}
+                label={{ value: "PHV зона", position: "insideRight", fill: "#eab308", fontSize: 10 }}
               />
               <ReferenceLine y={0} stroke="#eab308" strokeDasharray="5 5" />
               <Tooltip
-                contentStyle={{
-                  backgroundColor: "#0f172a",
-                  border: "1px solid #1e293b",
-                  borderRadius: "8px",
-                  fontSize: "12px",
-                }}
+                contentStyle={{ backgroundColor: "#0f172a", border: "1px solid #1e293b", borderRadius: "8px", fontSize: "12px" }}
                 labelFormatter={(v) => `Вік: ${v} р.`}
-                formatter={(value: number) => [
-                  `${value > 0 ? "+" : ""}${value.toFixed(2)} р.`,
-                  "Offset",
-                ]}
+                formatter={(value) => {
+                  const num = typeof value === "number" ? value : Number(value);
+                  return [`${num > 0 ? "+" : ""}${num.toFixed(2)} р.`, "Offset"];
+                }}
               />
               <Line
                 type="monotone"
@@ -337,20 +229,14 @@ export default function PlayerGrowthChart({
                 dot={(props: any) => {
                   const { cx, cy, payload } = props;
                   const color =
-                    payload.phase === "phv"
-                      ? "#eab308"
-                      : payload.phase === "post_phv"
-                        ? "#22c55e"
-                        : "#64748b";
+                    payload.phase === "phv" ? "#eab308"
+                    : payload.phase === "post_phv" ? "#22c55e"
+                    : "#64748b";
                   return (
                     <circle
                       key={`dot-${payload.age}`}
-                      cx={cx}
-                      cy={cy}
-                      r={6}
-                      fill={color}
-                      stroke="#0f172a"
-                      strokeWidth={2}
+                      cx={cx} cy={cy} r={6}
+                      fill={color} stroke="#0f172a" strokeWidth={2}
                     />
                   );
                 }}
@@ -360,22 +246,14 @@ export default function PlayerGrowthChart({
         )}
       </div>
 
-      {/* Легенда фаз */}
       {mode === "maturity" && (
         <div className="flex gap-4 text-xs text-slate-500 justify-center">
-          <span className="flex items-center gap-1">
-            <span className="w-2.5 h-2.5 rounded-full bg-slate-500" /> Pre-PHV
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="w-2.5 h-2.5 rounded-full bg-yellow-500" /> PHV
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="w-2.5 h-2.5 rounded-full bg-green-500" /> Post-PHV
-          </span>
+          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-slate-500" /> Pre-PHV</span>
+          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-yellow-500" /> PHV</span>
+          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-green-500" /> Post-PHV</span>
         </div>
       )}
 
-      {/* Таблиця вимірів */}
       <details className="text-xs">
         <summary className="text-slate-500 cursor-pointer hover:text-slate-300 transition-colors">
           Всі виміри ({sorted.length})
@@ -397,49 +275,26 @@ export default function PlayerGrowthChart({
             <tbody>
               {sorted.map((m, i) => (
                 <tr key={i} className="border-b border-slate-800/50">
-                  <td className="py-1.5 px-2 text-slate-400">
-                    {new Date(m.date).toLocaleDateString("uk-UA")}
-                  </td>
+                  <td className="py-1.5 px-2 text-slate-400">{new Date(m.date).toLocaleDateString("uk-UA")}</td>
+                  <td className="py-1.5 px-2 text-center font-mono text-slate-300">{m.age.toFixed(1)}</td>
+                  <td className="py-1.5 px-2 text-center font-mono text-slate-300">{m.height}</td>
+                  <td className="py-1.5 px-2 text-center font-mono text-slate-300">{m.weight}</td>
+                  <td className="py-1.5 px-2 text-center font-mono text-slate-400">{m.sittingHeight ?? "—"}</td>
                   <td className="py-1.5 px-2 text-center font-mono text-slate-300">
-                    {m.age.toFixed(1)}
-                  </td>
-                  <td className="py-1.5 px-2 text-center font-mono text-slate-300">
-                    {m.height}
-                  </td>
-                  <td className="py-1.5 px-2 text-center font-mono text-slate-300">
-                    {m.weight}
-                  </td>
-                  <td className="py-1.5 px-2 text-center font-mono text-slate-400">
-                    {m.sittingHeight ?? "—"}
-                  </td>
-                  <td className="py-1.5 px-2 text-center font-mono text-slate-300">
-                    {m.consensusOffset != null
-                      ? `${m.consensusOffset > 0 ? "+" : ""}${m.consensusOffset.toFixed(2)}`
-                      : "—"}
+                    {m.consensusOffset != null ? `${m.consensusOffset > 0 ? "+" : ""}${m.consensusOffset.toFixed(2)}` : "—"}
                   </td>
                   <td className="py-1.5 px-2 text-center font-mono">
-                    <span
-                      className={
-                        m.heightVelocity != null && m.heightVelocity > 8
-                          ? "text-yellow-500"
-                          : "text-slate-400"
-                      }
-                    >
+                    <span className={m.heightVelocity != null && m.heightVelocity > 8 ? "text-yellow-500" : "text-slate-400"}>
                       {m.heightVelocity?.toFixed(1) ?? "—"}
                     </span>
                   </td>
                   <td className="py-1.5 px-2 text-center">
-                    <span
-                      className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
-                        m.growthPhase === "phv"
-                          ? "bg-yellow-500/20 text-yellow-500"
-                          : m.growthPhase === "post_phv"
-                            ? "bg-green-500/20 text-green-500"
-                            : m.growthPhase === "pre_phv"
-                              ? "bg-slate-700 text-slate-400"
-                              : "text-slate-600"
-                      }`}
-                    >
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                      m.growthPhase === "phv" ? "bg-yellow-500/20 text-yellow-500"
+                      : m.growthPhase === "post_phv" ? "bg-green-500/20 text-green-500"
+                      : m.growthPhase === "pre_phv" ? "bg-slate-700 text-slate-400"
+                      : "text-slate-600"
+                    }`}>
                       {m.growthPhase ?? "—"}
                     </span>
                   </td>
