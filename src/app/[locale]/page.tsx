@@ -12,7 +12,7 @@
 import { createClient } from "@/utils/supabase/server";
 import Link from "next/link";
 import {
-  FirstAidKit,
+  Bandage,
   Activity,
   CheckCircle,
   Calendar,
@@ -254,7 +254,7 @@ export default async function DoctorDashboard({
   ]);
 
   const STAT_CARDS: StatCard[] = [
-    { icon: <FirstAidKit size={14} />, value: activeInjuries ?? 4,  label: "Активні травми",    accent: "red",   href: `/${locale}/injuries` },
+    { icon: <Bandage size={14} />, value: activeInjuries ?? 4,  label: "Активні травми",    accent: "red",   href: `/${locale}/injuries` },
     { icon: <Activity     size={14} />, value: onRehab      ?? 7,  label: "На реабілітації",   accent: "amber", href: `/${locale}/injuries?status=rehabilitation` },
     { icon: <CheckCircle  size={14} />, value: cleared       ?? 22, label: "Готові до матчу",   accent: "green", href: `/${locale}/availability` },
     { icon: <Calendar     size={14} />, value: examsThisWeek ?? 12, label: "Огляди на тижні",  accent: "blue",  href: `/${locale}/exams` },
