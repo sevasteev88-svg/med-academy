@@ -234,8 +234,10 @@ export default function InjuryFormClient({ players, locale }: { players: Player[
   const [vas,            setVas]            = useState(5);
   const [description,    setDescription]    = useState("");
 
-  // Класифікації (тільки для м'язових)
-  const [classSystem,    setClassSystem]    = useState<"none" | "munich" | "bamic" | "barcelona">("none");
+  // Класифікації (тільки для м'язових) — всі три можна заповнити одночасно
+  const [showMunich,     setShowMunich]     = useState(false);
+  const [showBamic,      setShowBamic]      = useState(false);
+  const [showMlgr,       setShowMlgr]       = useState(false);
   const [munichGrade,    setMunichGrade]    = useState("");
   const [bamicGrade,     setBamicGrade]     = useState("");
   const [bamicLocation,  setBamicLocation]  = useState("");
@@ -259,16 +261,15 @@ export default function InjuryFormClient({ players, locale }: { players: Player[
     }
     setError(null);
 
-    // Формуємо класифікаційний рядок
-    let classNote = "";
+    // Формуємо класифікаційний рядок — всі активні системи
+    const classParts: string[] = [];
     if (isMuscular) {
-      if (classSystem === "munich" && munichGrade)
-        classNote = `Munich: ${munichGrade.toUpperCase()}`;
-      else if (classSystem === "bamic" && bamicGrade)
-        classNote = `BAMIC: ${bamicGrade}${bamicLocation}`;
-      else if (classSystem === "barcelona" && mlgrGrade)
-        classNote = `MLG-R: ${mlgrGrade.toUpperCase()}`;
+      if (munichGrade)              classParts.push(`Munich: ${munichGrade.toUpperCase()}`);
+      if (bamicGrade && bamicLocation) classParts.push(`BAMIC: ${bamicGrade}${bamicLocation}`);
+      else if (bamicGrade)          classParts.push(`BAMIC: ${bamicGrade}`);
+      if (mlgrGrade)                classParts.push(`MLG-R: ${mlgrGrade.toUpperCase()}`);
     }
+    const classNote = classParts.join(" | ");
 
     startTransition(async () => {
       const supabase = createClient();
@@ -421,27 +422,65 @@ export default function InjuryFormClient({ players, locale }: { players: Player[
         {isMuscular && (
           <div className="mb-4">
             <SectionLabel badge="тільки для м'язових">Класифікація пошкодження</SectionLabel>
-
-            {/* Вибір системи */}
-            <div className="flex gap-2 mb-3">
-              {[
-                { value: "none",      label: "Не застос." },
-                { value: "munich",    label: "Munich 2012" },
-                { value: "bamic",     label: "BAMIC" },
-                { value: "barcelona", label: "MLG-R" },
-              ].map((opt) => (
-                <button key={opt.value} type="button"
-                  onClick={() => setClassSystem(opt.value as any)}
-                  className={`flex-1 py-2 rounded-lg text-[10px] font-medium border transition-all ${
-                    classSystem === opt.value
-                      ? "bg-blue-500/18 text-blue-400 border-blue-500/40"
-                      : "bg-slate-900/80 text-slate-500 border-blue-900/18 hover:border-blue-500/25"
-                  }`}>{opt.label}</button>
-              ))}
+            <div className="text-[9px] text-slate-600 mb-3">
+              Можна обрати кілька систем одночасно — всі збережуться в картці
             </div>
 
+            {/* Тогл-кнопки для кожної системи */}
+            <div className="flex gap-2 mb-3">
+              <button type="button"
+                onClick={() => setShowMunich(!showMunich)}
+                className={`flex-1 py-2 rounded-lg text-[10px] font-medium border transition-all ${
+                  showMunich
+                    ? "bg-blue-500/18 text-blue-400 border-blue-500/40"
+                    : "bg-slate-900/80 text-slate-500 border-blue-900/18 hover:border-blue-500/25"
+                }`}>
+                {showMunich ? "✓ " : ""}Munich 2012
+              </button>
+              <button type="button"
+                onClick={() => setShowBamic(!showBamic)}
+                className={`flex-1 py-2 rounded-lg text-[10px] font-medium border transition-all ${
+                  showBamic
+                    ? "bg-blue-500/18 text-blue-400 border-blue-500/40"
+                    : "bg-slate-900/80 text-slate-500 border-blue-900/18 hover:border-blue-500/25"
+                }`}>
+                {showBamic ? "✓ " : ""}BAMIC
+              </button>
+              <button type="button"
+                onClick={() => setShowMlgr(!showMlgr)}
+                className={`flex-1 py-2 rounded-lg text-[10px] font-medium border transition-all ${
+                  showMlgr
+                    ? "bg-blue-500/18 text-blue-400 border-blue-500/40"
+                    : "bg-slate-900/80 text-slate-500 border-blue-900/18 hover:border-blue-500/25"
+                }`}>
+                {showMlgr ? "✓ " : ""}MLG-R
+              </button>
+            </div>
+
+            {/* Підсумок вибраних кодів */}
+            {(munichGrade || (bamicGrade && bamicLocation) || mlgrGrade) && (
+              <div className="mb-3 px-3 py-2 bg-green-500/8 border border-green-500/20 rounded-lg flex flex-wrap gap-2">
+                <span className="text-[9px] text-slate-500 self-center">Збережеться:</span>
+                {munichGrade && (
+                  <span className="text-[10px] font-medium text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">
+                    Munich {munichGrade.toUpperCase()}
+                  </span>
+                )}
+                {bamicGrade && bamicLocation && (
+                  <span className="text-[10px] font-medium text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                    BAMIC {bamicGrade}{bamicLocation}
+                  </span>
+                )}
+                {mlgrGrade && (
+                  <span className="text-[10px] font-medium text-violet-400 bg-violet-500/10 px-2 py-0.5 rounded border border-violet-500/20">
+                    MLG-R {mlgrGrade.toUpperCase()}
+                  </span>
+                )}
+              </div>
+            )}
+
             {/* Munich */}
-            {classSystem === "munich" && (
+            {showMunich && (
               <div className="flex flex-col gap-1.5">
                 <div className="text-[9px] text-slate-600 mb-1">Munich Consensus Classification 2012</div>
                 {MUNICH_GRADES.map((g) => (
@@ -457,7 +496,7 @@ export default function InjuryFormClient({ players, locale }: { players: Player[
             )}
 
             {/* BAMIC */}
-            {classSystem === "bamic" && (
+            {showBamic && (
               <div>
                 <div className="text-[9px] text-slate-600 mb-2">
                   British Athletics Muscle Injury Classification · Hollabaugh 2024
@@ -515,7 +554,7 @@ export default function InjuryFormClient({ players, locale }: { players: Player[
             )}
 
             {/* MLG-R */}
-            {classSystem === "barcelona" && (
+            {showMlgr && (
               <div>
                 <div className="text-[9px] text-slate-600 mb-2">
                   MLG-R · Valle X, Alentorn-Geli E, Pruna R et al. · Sports Med 2017
