@@ -1,92 +1,20 @@
 @import "tailwindcss";
 
 @theme {
-  --color-background: #050508;
-  --color-surface: #0B1426;
-  --color-surface-hover: #0f1d35;
-  --color-surface-raised: #142240;
-  --color-brand-blue: #0057B8;
-  --color-brand-blue-light: #1a6fd4;
-  --color-brand-blue-muted: rgba(0, 87, 184, 0.12);
-  --color-status-ok: #22c55e;
-  --color-status-warn: #eab308;
-  --color-status-danger: #ef4444;
-  --shadow-glow: 0 0 24px rgba(0, 87, 184, 0.25);
-  --shadow-glow-sm: 0 0 12px rgba(0, 87, 184, 0.15);
-  --font-sans: var(--font-geist-sans), system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), monospace;
+  /* ── Фон і поверхні ── */
+  --color-background: #07090F;
+  --color-surface:    #0C1022;
+
+  /* ── Бренд ── */
+  --color-brand-blue: #1A6FD4;
+
+  /* ── Статуси ── */
+  --color-status-ok:     #22C55E;
+  --color-status-warn:   #F59E0B;
+  --color-status-danger: #EF4444;
 }
 
 body {
-  background-color: #050508;
-  color: #e2e8f0;
-}
-
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: #050508; }
-::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #334155; }
-
-@keyframes pulse-dot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-
-@utility animate-pulse-dot {
-  animation: pulse-dot 2s ease-in-out infinite;
-}
-
-/* ═══ Стилі для друку (PDF експорт) ═══ */
-@media print {
-  /* Ховаємо навігацію та інтерактивні елементи */
-  aside, nav, .print\\:hidden, button, a[href="/injuries/new"] {
-    display: none !important;
-  }
-
-  /* Скидаємо фон та кольори для друку */
-  body, .bg-background {
-    background: white !important;
-    color: #111 !important;
-  }
-
-  .bg-surface, .bg-surface-hover, .bg-surface-raised {
-    background: #f8f9fa !important;
-    border-color: #dee2e6 !important;
-  }
-
-  /* Текстові кольори для друку */
-  .text-white, .text-slate-200, .text-slate-300 {
-    color: #111 !important;
-  }
-
-  .text-slate-400, .text-slate-500, .text-slate-600 {
-    color: #555 !important;
-  }
-
-  /* Статус-кольори залишаємо */
-  .text-status-ok { color: #16a34a !important; }
-  .text-status-warn { color: #ca8a04 !important; }
-  .text-status-danger { color: #dc2626 !important; }
-
-  /* Бейджі */
-  .bg-status-ok\\/10, .bg-status-ok\\/\\[0\\.08\\] { background: #dcfce7 !important; }
-  .bg-status-warn\\/10, .bg-status-warn\\/\\[0\\.08\\] { background: #fef9c3 !important; }
-  .bg-status-danger\\/10, .bg-status-danger\\/\\[0\\.08\\] { background: #fef2f2 !important; }
-
-  /* Прибираємо відступ від навігації */
-  main {
-    margin-left: 0 !important;
-    padding-bottom: 0 !important;
-  }
-
-  /* Не розривати картки між сторінками */
-  .rounded-xl {
-    break-inside: avoid;
-  }
-
-  /* Заголовок сторінки */
-  @page {
-    margin: 1.5cm;
-    size: A4;
-  }
+  background-color: #07090F;
+  color: #f3f4f6;
 }
