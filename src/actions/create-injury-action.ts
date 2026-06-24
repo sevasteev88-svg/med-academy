@@ -79,10 +79,9 @@ async function insertInjury(input: CreateInjuryInput) {
 
   if (error) return { error: error.message };
 
-  revalidatePath("/[locale]/injuries", "page");
-  revalidatePath("/[locale]/players/[id]", "page");
   revalidatePath("/injuries", "page");
   revalidatePath("/players/[id]", "page");
+  revalidatePath("/", "page");
 
   return { data, rtpPrediction, isCriticalTJunction };
 }

@@ -152,8 +152,9 @@ export async function saveAnthropometryWithPhv(input: SaveAnthropometryInput) {
 
   if (matErr) return { error: matErr.message };
 
-  revalidatePath("/[locale]/players", "page");
-  revalidatePath("/[locale]/growth", "page");
+  revalidatePath("/players", "page");
+  revalidatePath("/growth", "page");
+  revalidatePath("/players/[id]/growth", "page");
 
   return {
     data: {

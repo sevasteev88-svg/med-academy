@@ -1,4 +1,4 @@
-// src/app/[locale]/exams/new/[injuryId]/page.tsx
+// src/app/exams/new/[injuryId]/page.tsx
 // Server Component — завантажує дані, передає у Client Component
 
 import { createClient } from "@/utils/supabase/server";
@@ -8,9 +8,9 @@ import ExamFormClient from "./ExamFormClient";
 export default async function ExamPage({
   params,
 }: {
-  params: Promise<{ locale: string; injuryId: string }>;
+  params: Promise<{ injuryId: string }>;
 }) {
-  const { locale, injuryId } = await params;
+  const { injuryId } = await params;
   const supabase = await createClient();
 
   // Завантажуємо травму з даними гравця
@@ -52,7 +52,6 @@ export default async function ExamPage({
   return (
     <ExamFormClient
       injuryId={injuryId}
-      locale={locale}
       playerName={playerName}
       injuryInfo={injuryInfo}
       prevLogs={prevLogs ?? []}

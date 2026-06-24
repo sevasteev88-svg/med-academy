@@ -1,4 +1,4 @@
-// src/app/[locale]/exams/new/[injuryId]/page.tsx
+// src/app/exams/new/[injuryId]/ExamFormClient.tsx
 // Форма нового огляду для конкретної травми
 
 "use client";
@@ -125,13 +125,11 @@ function VasSlider({
 // ── Головна форма (Client Component) ─────────────────────────────────────────
 export default function ExamFormClient({
   injuryId,
-  locale,
   playerName,
   injuryInfo,
   prevLogs,
 }: {
   injuryId: string;
-  locale: string;
   playerName: string;
   injuryInfo: string;
   prevLogs: { date: string; note: string }[];
@@ -187,7 +185,7 @@ export default function ExamFormClient({
         })
         .eq("id", injuryId);
 
-      router.push(`/${locale}/exams/new`);
+      router.push(`/exams/new`);
     });
   }
 
@@ -206,7 +204,7 @@ export default function ExamFormClient({
         {/* Topbar */}
         <div className="flex items-center gap-3 py-3 border-b border-blue-900/15 mb-0">
           <button
-            onClick={() => router.push(`/${locale}/exams/new`)}
+            onClick={() => router.push(`/exams/new`)}
             className="w-8 h-8 rounded-lg bg-blue-500/12 border border-blue-500/25 flex items-center justify-center text-blue-400 hover:bg-blue-500/20 transition-colors flex-shrink-0"
           >
             ←
@@ -395,7 +393,7 @@ export default function ExamFormClient({
         <div className="flex gap-2 pt-2 border-t border-blue-900/12">
           <button
             type="button"
-            onClick={() => router.push(`/${locale}/exams/new`)}
+            onClick={() => router.push(`/exams/new`)}
             className="flex-1 py-2.5 rounded-lg text-[12px] font-medium text-blue-400 border border-blue-500/28 bg-blue-500/8 hover:bg-blue-500/15 transition-colors"
           >
             Скасувати

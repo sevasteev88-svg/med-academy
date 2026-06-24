@@ -12,11 +12,11 @@ const DOCTOR_NAV: NavItem[] = [
   { href: "/", label: "Дашборд", icon: "🏠" },
   { href: "/players", label: "Реєстр", icon: "👥" },
   { href: "/availability", label: "Доступність", icon: "🟢" },
-  { href: "/injuries/new", label: "Травма", icon: "🩹" },
+  { href: "/injuries", label: "Травми", icon: "🩹" },
   { href: "/statistics", label: "Статистика", icon: "📊" },
-  { href: "/uk/reports/weekly", label: "Звіт", icon: "📋" },
-  { href: "/uk/reports/patterns", label: "Патерни", icon: "🔍" },
-  { href: "/uk/growth", label: "Ріст", icon: "📈" },
+  { href: "/reports/weekly", label: "Звіт", icon: "📋" },
+  { href: "/reports/patterns", label: "Патерни", icon: "🔍" },
+  { href: "/growth", label: "Ріст", icon: "📈" },
 ];
 
 const COACH_NAV: NavItem[] = [
@@ -31,11 +31,8 @@ export default function AppNav({ role, userName }: { role: string; userName: str
   const navItems = role === "coach" ? COACH_NAV : DOCTOR_NAV;
 
   function isActive(href: string): boolean {
-    if (href === "/") return pathname === "/" || pathname === "/uk";
-    const cleanPath = pathname.replace(/^\/uk/, "");
-    const cleanHref = href.replace(/^\/uk/, "");
-    if (cleanHref === "") return false;
-    return cleanPath.startsWith(cleanHref);
+    if (href === "/") return pathname === "/";
+    return pathname.startsWith(href);
   }
 
   function handleLogout() {

@@ -1,4 +1,4 @@
-// src/app/[locale]/exams/new/page.tsx
+// src/app/exams/new/page.tsx
 // Список травмованих гравців для вибору нового огляду
 
 import { createClient } from "@/utils/supabase/server";
@@ -76,12 +76,7 @@ function Avatar({
 }
 
 // ── Головна сторінка ─────────────────────────────────────────────────────────
-export default async function ExamsNewPage({
-  params,
-}: {
-  params: Promise<{ locale: string }>;
-}) {
-  const { locale } = await params;
+export default async function ExamsNewPage() {
   const supabase = await createClient();
 
   // Всі активні та реабілітаційні травми з даними гравця
@@ -154,7 +149,7 @@ export default async function ExamsNewPage({
         {/* Topbar */}
         <div className="flex items-center gap-3 py-3 border-b border-blue-900/15 mb-4">
           <Link
-            href={`/${locale}`}
+            href="/"
             className="w-8 h-8 rounded-lg bg-blue-500/12 border border-blue-500/25 flex items-center justify-center text-blue-400 hover:bg-blue-500/20 transition-colors flex-shrink-0"
           >
             ←
@@ -190,7 +185,7 @@ export default async function ExamsNewPage({
                 return (
                   <Link
                     key={inj.id}
-                    href={`/${locale}/exams/new/${inj.id}`}
+                    href={`/exams/new/${inj.id}`}
                     className="bg-slate-900/80 border border-blue-900/15 rounded-lg p-2.5 flex items-center gap-2.5 hover:border-blue-500/35 transition-colors group"
                   >
                     <Avatar initials={initials(p)} zone="red" />
@@ -234,7 +229,7 @@ export default async function ExamsNewPage({
                 return (
                   <Link
                     key={inj.id}
-                    href={`/${locale}/exams/new/${inj.id}`}
+                    href={`/exams/new/${inj.id}`}
                     className="bg-slate-900/80 border border-blue-900/15 rounded-lg p-2.5 flex items-center gap-2.5 hover:border-blue-500/35 transition-colors group"
                   >
                     <Avatar initials={initials(p)} zone="amber" />

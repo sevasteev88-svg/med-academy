@@ -157,7 +157,7 @@ export default async function InjuryPatternsPage() {
             </p>
           </div>
           <Link
-            href="/uk"
+            href="/"
             className="text-sm text-slate-500 hover:text-white transition-colors"
           >
             ← Дашборд
