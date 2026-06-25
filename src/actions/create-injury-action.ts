@@ -2,20 +2,12 @@
 
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
-import {
-  calculateCombinedRtp,
-  isBamicTJunctionRisk,
-} from "@/lib/rtp-calculator";
 import type {
-  BamicGrade,
-  BamicLocation,
-  ClassificationSystem,
   InjuryLocation,
   InjuryMechanism,
   InjurySeverity,
   InjurySide,
   InjuryType,
-  MunichGrade,
 } from "@/types/database";
 
 export type CreateInjuryState = {
@@ -33,27 +25,12 @@ type CreateInjuryInput = {
   dateOfInjury: string;
   expectedReturnDate?: string;
   description?: string;
-  classificationSystem?: ClassificationSystem;
-  munichGrade?: MunichGrade | null;
-  bamicGrade?: BamicGrade | null;
-  bamicLocation?: BamicLocation | null;
 };
 
 async function insertInjury(input: CreateInjuryInput) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: "Unauthorized" };
-
-  const rtpPrediction = calculateCombinedRtp({
-    munichGrade: input.munichGrade,
-    bamicGrade: input.bamicGrade,
-    bamicLocation: input.bamicLocation,
-  });
-
-  const isCriticalTJunction =
-    input.bamicGrade != null &&
-    input.bamicLocation != null &&
-    isBamicTJunctionRisk(input.bamicGrade, input.bamicLocation);
 
   const { data, error } = await supabase
     .from("injuries")
@@ -62,17 +39,14 @@ async function insertInjury(input: CreateInjuryInput) {
       injury_type: input.injuryType,
       location: input.location,
       side: input.side,
-      severity: isCriticalTJunction && input.severity !== "career_threatening" ? "severe" : input.severity,
+      severity: input.severity,
       mechanism: input.mechanism,
       date_of_injury: input.dateOfInjury,
       expected_return_date: input.expectedReturnDate ?? null,
       description: input.description ?? null,
       status: "active",
-      classification_system: input.classificationSystem ?? "none",
-      munich_grade: input.munichGrade ?? null,
-      bamic_grade: input.bamicGrade ?? null,
-      bamic_location: input.bamicLocation ?? null,
-      rtp_prediction: rtpPrediction ?? null,
+      // Класифікація (MLG-R/BAMIC/Munich) додається окремо через
+      // класифікатор у картці травми — classify-injury-action.
     })
     .select()
     .single();
@@ -83,7 +57,7 @@ async function insertInjury(input: CreateInjuryInput) {
   revalidatePath("/players/[id]", "page");
   revalidatePath("/", "page");
 
-  return { data, rtpPrediction, isCriticalTJunction };
+  return { data };
 }
 
 export async function createInjury(input: CreateInjuryInput) {
@@ -111,7 +85,6 @@ export async function createInjuryAction(
   const result = await insertInjury({
     playerId, injuryType, location, side, severity, mechanism,
     dateOfInjury, expectedReturnDate, description,
-    classificationSystem: "none",
   });
 
   if ("error" in result && result.error) return { error: result.error };
