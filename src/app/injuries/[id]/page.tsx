@@ -6,7 +6,7 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
 import Link from "next/link";
-import { LOCATION_UA, INJURY_TYPE_UA, SEVERITY_UA, STATUS_UA, MECHANISM_UA, SIDE_UA } from "@/lib/constants";
+import { LOCATION_UA, INJURY_TYPE_UA, SEVERITY_UA, STATUS_UA, MECHANISM_UA, SIDE_UA, EXAM_GRADE_UA, ROM_GRADE_UA, MUSCLE_TONE_UA } from "@/lib/constants";
 import ClassificationSection from "./ClassificationSection";
 
 type Props = { params: Promise<{ id: string }> };
@@ -43,22 +43,6 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-// Парсинг текстового огляду з injury_logs.note (тимчасово, до структурних оглядів)
-function parseExamNote(note: string) {
-  const parts = note.split(" | ");
-  const get = (prefix: string) =>
-    parts.find((p) => p.startsWith(prefix))?.replace(prefix, "").trim();
-  return {
-    vas: get("ВАШ:"),
-    dynamics: get("Динаміка:"),
-    swelling: get("Набряк:"),
-    weightBearing: get("Навантаження:"),
-    treatment: get("Призначення:"),
-    gonio: get("Гоніо:"),
-    notes: get("Нотатки:"),
-  };
-}
-
 export default async function InjuryDetailPage({ params }: Props) {
   const { id } = await params;
   const supabase = await createClient();
@@ -76,9 +60,9 @@ export default async function InjuryDetailPage({ params }: Props) {
   const teamName = player?.teams?.name ?? "";
   const initials = player ? `${player.last_name?.[0] ?? ""}${player.first_name?.[0] ?? ""}` : "??";
 
-  // Огляди (журнал)
-  const { data: logs } = await supabase
-    .from("injury_logs")
+  // Огляди (структуровані) з injury_examinations
+  const { data: exams } = await supabase
+    .from("injury_examinations")
     .select("*")
     .eq("injury_id", id)
     .order("date", { ascending: false });
@@ -147,7 +131,7 @@ export default async function InjuryDetailPage({ params }: Props) {
             <div className="text-[9px] text-slate-600 mt-0.5">днів до RTP</div>
           </div>
           <div className="bg-slate-900/80 border border-blue-900/18 rounded-lg p-2.5 text-center">
-            <div className="text-[18px] font-medium text-blue-400">{logs?.length ?? 0}</div>
+            <div className="text-[18px] font-medium text-blue-400">{exams?.length ?? 0}</div>
             <div className="text-[9px] text-slate-600 mt-0.5">оглядів</div>
           </div>
         </div>
@@ -212,34 +196,50 @@ export default async function InjuryDetailPage({ params }: Props) {
 
         {/* Журнал оглядів */}
         <div className="mb-4">
-          <SectionLabel>Журнал оглядів ({logs?.length ?? 0})</SectionLabel>
+          <SectionLabel>Журнал оглядів ({exams?.length ?? 0})</SectionLabel>
 
-          {(!logs || logs.length === 0) && (
+          {(!exams || exams.length === 0) && (
             <div className="text-center py-6 text-[11px] text-slate-600">Оглядів ще не було</div>
           )}
 
           <div className="flex flex-col gap-2">
-            {(logs ?? []).map((log) => {
-              const ex = parseExamNote(log.note);
+            {(exams ?? []).map((ex) => {
+              const vasColor =
+                ex.vas_score >= 7 ? "text-red-400" : ex.vas_score >= 4 ? "text-amber-400" : "text-green-400";
+              // Показуємо клінічні поля тільки якщо вони не дефолтні/порожні
+              const clinical: { label: string; value: string }[] = [];
+              if (ex.edema && ex.edema !== "none") clinical.push({ label: "Набряк", value: EXAM_GRADE_UA[ex.edema] ?? ex.edema });
+              if (ex.hematoma && ex.hematoma !== "none") clinical.push({ label: "Гематома", value: EXAM_GRADE_UA[ex.hematoma] ?? ex.hematoma });
+              if (ex.rom && ex.rom !== "full") clinical.push({ label: "ROM", value: ROM_GRADE_UA[ex.rom] ?? ex.rom });
+              if (ex.palpation_pain && ex.palpation_pain !== "none") clinical.push({ label: "Пальпація", value: EXAM_GRADE_UA[ex.palpation_pain] ?? ex.palpation_pain });
+              if (ex.muscle_tone && ex.muscle_tone !== "normal") clinical.push({ label: "Тонус", value: MUSCLE_TONE_UA[ex.muscle_tone] ?? ex.muscle_tone });
+
               return (
-                <div key={log.id} className="bg-slate-900/80 border border-blue-900/15 rounded-lg overflow-hidden">
+                <div key={ex.id} className="bg-slate-900/80 border border-blue-900/15 rounded-lg overflow-hidden">
                   <div className="flex items-center justify-between px-3 py-2 border-b border-blue-900/10">
-                    <span className="text-[11px] font-medium text-slate-300">{fmtDate(log.date)}</span>
-                    {ex.vas && (
-                      <span className={`text-[11px] font-medium ${
-                        Number(ex.vas) >= 7 ? "text-red-400" : Number(ex.vas) >= 4 ? "text-amber-400" : "text-green-400"
-                      }`}>
-                        ВАШ {ex.vas}/10
-                      </span>
-                    )}
+                    <span className="text-[11px] font-medium text-slate-300">{fmtDate(ex.date)}</span>
+                    <span className={`text-[11px] font-medium ${vasColor}`}>ВАШ {ex.vas_score}/10</span>
                   </div>
-                  <div className="px-3 py-2 flex flex-col gap-1">
-                    {ex.dynamics && <div className="text-[10px] text-slate-500">Динаміка: {ex.dynamics}</div>}
-                    {ex.gonio && <div className="text-[10px] text-slate-500">📐 {ex.gonio}</div>}
-                    {ex.notes && <p className="text-[11px] text-slate-400 leading-relaxed">{ex.notes}</p>}
-                    {ex.treatment && <div className="text-[10px] text-slate-500">Призначення: {ex.treatment}</div>}
-                    {/* Якщо нотатка не розпарсилась — показуємо як є */}
-                    {!ex.vas && !ex.notes && <p className="text-[11px] text-slate-400 leading-relaxed">{log.note}</p>}
+                  <div className="px-3 py-2 flex flex-col gap-1.5">
+                    {clinical.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {clinical.map((c) => (
+                          <span key={c.label} className="text-[10px] px-2 py-0.5 rounded bg-slate-800/70 text-slate-400 border border-blue-900/15">
+                            {c.label}: <span className="text-slate-300">{c.value}</span>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {ex.objective_note && (
+                      <p className="text-[11px] text-slate-400 leading-relaxed whitespace-pre-line">
+                        <span className="text-slate-600">Об'єктивно: </span>{ex.objective_note}
+                      </p>
+                    )}
+                    {ex.subjective_note && (
+                      <p className="text-[11px] text-slate-400 leading-relaxed whitespace-pre-line">
+                        <span className="text-slate-600">Суб'єктивно: </span>{ex.subjective_note}
+                      </p>
+                    )}
                   </div>
                 </div>
               );
