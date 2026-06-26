@@ -1,6 +1,13 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
+import {
+  INJURY_TYPE_UA,
+  LOCATION_UA,
+  MECHANISM_UA,
+  SEVERITY_UA,
+} from "@/lib/constants";
+import { GROWTH_PHASE_LABELS } from "@/lib/phv-calculator";
 
 type Summary = {
   totalInjuries: number;
@@ -12,27 +19,6 @@ type Summary = {
   byMechanism: Record<string, number>;
   bySeverity: Record<string, number>;
   byPhase: Record<string, number>;
-};
-
-const TYPE_UA: Record<string, string> = {
-  muscular: "М'язова", ligament: "Зв'язкова", bone: "Кісткова",
-  tendon: "Сухожилкова", cartilage: "Хрящова", concussion: "Струс мозку",
-  contusion: "Забій", other: "Інше",
-};
-const LOC_UA: Record<string, string> = {
-  knee: "Коліно", ankle: "Гомілковостоп", shoulder: "Плече", hip: "Стегно (кульш.)",
-  thigh: "Стегно", calf: "Гомілка", foot: "Стопа", groin: "Пах",
-  back: "Спина", neck: "Шия", wrist: "Зап'ясток", head: "Голова", other: "Інше",
-};
-const MECH_UA: Record<string, string> = {
-  contact: "Контактна", non_contact: "Безконтактна", overuse: "Перевантаження",
-};
-const SEV_UA: Record<string, string> = {
-  minimal: "Мінімальна", mild: "Легка", moderate: "Середня",
-  severe: "Тяжка", career_threatening: "Критична",
-};
-const PHASE_UA: Record<string, string> = {
-  pre_phv: "Pre-PHV", phv: "PHV", post_phv: "Post-PHV",
 };
 
 export default function InjuryPatternsAI({
@@ -105,32 +91,32 @@ export default function InjuryPatternsAI({
           <BreakdownCard
             title="За локалізацією"
             data={summary.byLocation}
-            labels={LOC_UA}
+            labels={LOCATION_UA}
             total={summary.totalInjuries}
           />
           <BreakdownCard
             title="За типом"
             data={summary.byType}
-            labels={TYPE_UA}
+            labels={INJURY_TYPE_UA}
             total={summary.totalInjuries}
           />
           <BreakdownCard
             title="За механізмом"
             data={summary.byMechanism}
-            labels={MECH_UA}
+            labels={MECHANISM_UA}
             total={summary.totalInjuries}
           />
           <BreakdownCard
             title="За тяжкістю"
             data={summary.bySeverity}
-            labels={SEV_UA}
+            labels={SEVERITY_UA}
             total={summary.totalInjuries}
           />
           {Object.keys(summary.byPhase).length > 0 && (
             <BreakdownCard
               title="За фазою матурації"
               data={summary.byPhase}
-              labels={PHASE_UA}
+              labels={GROWTH_PHASE_LABELS}
               total={Object.values(summary.byPhase).reduce((a, b) => a + b, 0)}
               className="md:col-span-2"
             />
@@ -143,7 +129,7 @@ export default function InjuryPatternsAI({
         <button
           onClick={runAnalysis}
           disabled={loading || noData}
-          className="w-full bg-brand-blue hover:bg-blue-700 disabled:opacity-50 text-white font-bold py-4 px-6 rounded-xl transition-all shadow-lg shadow-brand-blue/20 text-sm"
+          className="w-full bg-brand-blue hover:bg-brand-blue-light disabled:opacity-50 text-white font-bold py-4 px-6 rounded-xl transition-all shadow-glow-sm text-sm"
         >
           {loading ? (
             <span className="flex items-center justify-center gap-3">
@@ -171,13 +157,13 @@ export default function InjuryPatternsAI({
             <button
               onClick={runAnalysis}
               disabled={loading}
-              className="border border-slate-800 text-slate-400 hover:bg-slate-800 font-semibold py-2 px-4 rounded-lg text-sm transition-colors"
+              className="border border-slate-800 text-slate-400 hover:bg-surface-hover font-semibold py-2 px-4 rounded-lg text-sm transition-colors"
             >
               {loading ? "Аналізую…" : "🔄 Повторити"}
             </button>
             <button
               onClick={copyToClipboard}
-              className="border border-slate-800 text-slate-400 hover:bg-slate-800 font-semibold py-2 px-4 rounded-lg text-sm transition-colors"
+              className="border border-slate-800 text-slate-400 hover:bg-surface-hover font-semibold py-2 px-4 rounded-lg text-sm transition-colors"
             >
               {copied ? "✓ Скопійовано" : "📋 Копіювати"}
             </button>
