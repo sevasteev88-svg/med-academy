@@ -1,17 +1,24 @@
-@import "tailwindcss";
+﻿@import "tailwindcss";
 
 @theme {
   /* ── Фон і поверхні ── */
-  --color-background: #07090F;
-  --color-surface:    #0C1022;
+  --color-background:      #07090F;
+  --color-surface:         #0C1022;
+  --color-surface-raised:  #131A33; /* поля вводу, спливаючі підказки */
+  --color-surface-hover:   #1B2240; /* ховер пунктів меню та кнопок */
 
   /* ── Бренд ── */
-  --color-brand-blue: #1A6FD4;
+  --color-brand-blue:       #1A6FD4;
+  --color-brand-blue-light: #2E82E8; /* ховер синіх кнопок */
 
   /* ── Статуси ── */
   --color-status-ok:     #22C55E;
   --color-status-warn:   #F59E0B;
   --color-status-danger: #EF4444;
+
+  /* ── Свічення під кнопками ── */
+  --shadow-glow-sm: 0 0 12px rgba(26, 111, 212, 0.25);
+  --shadow-glow:    0 0 24px rgba(26, 111, 212, 0.40);
 }
 
 body {
