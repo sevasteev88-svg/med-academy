@@ -12,10 +12,22 @@ function playerStatus(player: any): "ok" | "warn" | "danger" {
   if (maxVas >= 4) return "warn";
   return "ok";
 }
+// Зона ризику росту (PHV) — остання оцінка. Показуємо лише yellow/red.
+function growthZone(player: any): "yellow" | "red" | null {
+  const assessments = player.maturation_assessments ?? [];
+  if (assessments.length === 0) return null;
+  const latest = [...assessments].sort(
+    (a: any, b: any) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  )[0];
+  if (latest.risk_zone === "red") return "red";
+  if (latest.risk_zone === "yellow") return "yellow";
+  return null;
+}
 
 export default async function AvailabilityPage() {
   const supabase = await createClient();
-  const { data: teams } = await supabase.from("teams").select("id, name, category, sort_order, players ( id, first_name, last_name, position, injuries ( id, status, vas_score, location ) )").order("sort_order", { ascending: true });
+  const { data: teams } = await supabase.from("teams").select("id, name, category, sort_order, players ( id, first_name, last_name, position, injuries ( id, status, vas_score, location ), maturation_assessments ( risk_zone, created_at ) )").order("sort_order", { ascending: true });
 
   const youth = (teams ?? []).filter((t: any) => t.category === "youth");
   const academy = (teams ?? []).filter((t: any) => t.category === "academy");
@@ -36,9 +48,16 @@ export default async function AvailabilityPage() {
         <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
           {players.map((player: any) => {
             const status = playerStatus(player);
+            const zone = growthZone(player);
             return (
               <Link key={player.id} href={`/players/${player.id}`}>
-                <div className={`rounded-lg p-2 text-center transition-all cursor-pointer hover:scale-105 ${status === "ok" ? "bg-status-ok/[0.08]" : status === "warn" ? "bg-status-warn/[0.08] ring-2 ring-status-warn/30" : "bg-status-danger/[0.08] ring-2 ring-status-danger/30"}`}>
+                <div className={`relative rounded-lg p-2 text-center transition-all cursor-pointer hover:scale-105 ${status === "ok" ? "bg-status-ok/[0.08]" : status === "warn" ? "bg-status-warn/[0.08] ring-2 ring-status-warn/30" : "bg-status-danger/[0.08] ring-2 ring-status-danger/30"}`}>
+                  {zone && (
+                    <span
+                      title={zone === "red" ? "Зона росту: червона (PHV)" : "Зона росту: жовта (PHV)"}
+                      className={`absolute top-1 right-1 w-2 h-2 rounded-full ring-1 ring-background ${zone === "red" ? "bg-status-danger" : "bg-status-warn"}`}
+                    />
+                  )}
                   <div className={`w-3 h-3 rounded-full mx-auto mb-1 ${status === "ok" ? "bg-status-ok" : status === "warn" ? "bg-status-warn" : "bg-status-danger"}`} />
                   <div className="text-[11px] font-bold text-white truncate">{player.last_name}</div>
                   <div className="text-[9px] text-slate-500">{POSITION_LABELS[player.position] ?? player.position}</div>
@@ -67,10 +86,11 @@ export default async function AvailabilityPage() {
         <Card><div className="flex items-center gap-3"><div className="w-4 h-4 rounded-full bg-status-danger" /><div><div className="text-2xl font-extrabold font-mono text-status-danger">{totalDanger}</div><div className="text-[10px] text-slate-500 uppercase">Травмованих</div></div></div></Card>
       </div>
 
-      <div className="flex gap-4 text-xs text-slate-500">
+      <div className="flex gap-4 text-xs text-slate-500 flex-wrap">
         <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-status-ok" /> Готовий</span>
         <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-status-warn" /> Обмежений</span>
         <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-status-danger" /> Травмований</span>
+        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full ring-1 ring-slate-600 bg-status-warn" /> Кутова мітка — зона росту (PHV)</span>
       </div>
 
       {youth.length > 0 && <section className="space-y-4"><h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">{TEAM_CATEGORY_UA.youth}</h2>{youth.map(renderTeam)}</section>}
