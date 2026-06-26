@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@/utils/supabase/server";
 
 /**
  * POST /api/ai/weekly-report
@@ -7,9 +8,19 @@ import { NextRequest, NextResponse } from "next/server";
  * повертає згенерований тижневий звіт українською.
  *
  * Потребує ANTHROPIC_API_KEY в env-змінних Vercel.
+ * Доступ лише для авторизованих користувачів.
  */
 
 export async function POST(request: NextRequest) {
+  // Перевірка авторизації — не пускаємо анонімні запити до платного API
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: "Не авторизовано" }, { status: 401 });
+  }
+
   const apiKey = process.env.ANTHROPIC_API_KEY;
 
   if (!apiKey) {
