@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useActionState } from "react";
 import { createPlayerAction, type CreatePlayerState } from "@/actions/create-player-action";
@@ -65,10 +65,19 @@ export default function AddPlayerForm({ teams }: { teams: Team[] }) {
           </div>
         </div>
 
-        {/* Дата народження */}
-        <div>
-          <label className={labelClass}>Дата народження *</label>
-          <input name="dateOfBirth" type="date" required className={inputClass} />
+        {/* Дата народження + Стать */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={labelClass}>Дата народження *</label>
+            <input name="dateOfBirth" type="date" required className={inputClass} />
+          </div>
+          <div>
+            <label className={labelClass}>Стать *</label>
+            <select name="sex" required className={inputClass} defaultValue="male">
+              <option value="male">Хлопець</option>
+              <option value="female">Дівчина</option>
+            </select>
+          </div>
         </div>
 
         {/* Позиція */}

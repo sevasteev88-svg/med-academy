@@ -1,4 +1,4 @@
-"use server";
+﻿"use server";
 
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
@@ -19,6 +19,7 @@ export async function updatePlayerAction(
   const firstName = formData.get("firstName") as string;
   const lastName = formData.get("lastName") as string;
   const dateOfBirth = formData.get("dateOfBirth") as string;
+  const sex = formData.get("sex") as string;
   const position = formData.get("position") as string;
   const dominantLeg = formData.get("dominantLeg") as string;
   const dominantArm = formData.get("dominantArm") as string;
@@ -34,6 +35,7 @@ export async function updatePlayerAction(
       first_name: firstName.trim(),
       last_name: lastName.trim(),
       date_of_birth: dateOfBirth,
+      sex: sex === "female" ? "female" : "male",
       position,
       dominant_leg: dominantLeg || "right",
       dominant_arm: dominantArm || "right",

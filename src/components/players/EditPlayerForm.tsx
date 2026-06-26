@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useActionState } from "react";
 import { updatePlayerAction, type UpdatePlayerState } from "@/actions/update-player-action";
@@ -8,7 +8,7 @@ import { POSITION_LABELS, POSITION_FULL, TEAM_CATEGORY_UA } from "@/lib/constant
 type Team = { id: string; name: string; category: string };
 type Player = {
   id: string; team_id: string; first_name: string; last_name: string;
-  date_of_birth: string; position: string; dominant_leg: string; dominant_arm: string;
+  date_of_birth: string; sex: string | null; position: string; dominant_leg: string; dominant_arm: string;
 };
 
 const positions = Object.entries(POSITION_LABELS);
@@ -62,9 +62,18 @@ export default function EditPlayerForm({ player, teams }: { player: Player; team
           </div>
         </div>
 
-        <div>
-          <label className={labelClass}>Дата народження *</label>
-          <input name="dateOfBirth" type="date" required defaultValue={player.date_of_birth} className={inputClass} />
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={labelClass}>Дата народження *</label>
+            <input name="dateOfBirth" type="date" required defaultValue={player.date_of_birth} className={inputClass} />
+          </div>
+          <div>
+            <label className={labelClass}>Стать *</label>
+            <select name="sex" required className={inputClass} defaultValue={player.sex ?? "male"}>
+              <option value="male">Хлопець</option>
+              <option value="female">Дівчина</option>
+            </select>
+          </div>
         </div>
 
         <div>
