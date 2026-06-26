@@ -25,6 +25,14 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
   const { data: injuries } = await query; const injuryList = injuries ?? [];
   const { data: anthroData } = await supabase.from("anthropometry_logs").select("*").eq("player_id", id).order("date", { ascending: false });
   const measurements = anthroData ?? [];
+  // Остання оцінка матурації (для блоку PHV)
+  const { data: matData } = await supabase
+    .from("maturation_assessments")
+    .select("growth_phase, risk_zone, consensus_offset, age_at_measurement, created_at")
+    .eq("player_id", id)
+    .order("created_at", { ascending: false })
+    .limit(1);
+  const maturation = matData?.[0] ?? null;
   const totalInjuries = injuryList.length;
   const totalDaysMissed = injuryList.reduce((s,i) => s + calcDaysMissed(i), 0);
   const activeCount = injuryList.filter(i => i.status === "active").length;
@@ -55,7 +63,7 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
           <DeleteButton onDelete={handleDelete} itemName="гравця" />
         </div>
       </Card>
-      <AnthropometrySection playerId={id} measurements={measurements} />
+      <AnthropometrySection playerId={id} measurements={measurements} maturation={maturation}/>
       <section><h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Період аналізу травм</h2><PeriodSelector /></section>
       <section>
         <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Статистика травм <span className="text-slate-600 normal-case tracking-normal ml-2 font-normal">({periodLabel})</span></h2>

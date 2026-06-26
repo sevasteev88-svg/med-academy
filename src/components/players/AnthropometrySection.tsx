@@ -6,16 +6,36 @@ import {
   type AddAnthroState,
 } from "@/actions/add-anthropometry-action";
 import Card from "@/components/ui/Card";
+import Link from "next/link";
+import { GROWTH_PHASE_LABELS, RISK_ZONE_LABELS } from "@/lib/phv-calculator";
 
 type Measurement = { id: string; date: string; height: number; weight: number };
+type Maturation = {
+  growth_phase: string;
+  risk_zone: string;
+  consensus_offset: number;
+  age_at_measurement: number;
+  created_at: string;
+} | null;
+
+const ZONE_STYLE: Record<string, string> = {
+  green:  "bg-status-ok/15 text-status-ok border-status-ok/30",
+  yellow: "bg-status-warn/15 text-status-warn border-status-warn/30",
+  red:    "bg-status-danger/15 text-status-danger border-status-danger/30",
+};
+const PHASE_STYLE: Record<string, string> = {
+  pre_phv:  "bg-slate-700/40 text-slate-300 border-slate-600/40",
+  phv:      "bg-status-warn/15 text-status-warn border-status-warn/30",
+  post_phv: "bg-status-ok/15 text-status-ok border-status-ok/30",
+};
 
 const inputClass = "w-full bg-surface-raised border border-blue-900/20 rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-brand-blue/50 focus:ring-1 focus:ring-brand-blue/30 transition-colors";
 const labelClass = "block text-xs text-slate-500 mb-1.5";
 
 export default function AnthropometrySection({
-  playerId, measurements,
+  playerId, measurements, maturation = null,
 }: {
-  playerId: string; measurements: Measurement[];
+  playerId: string; measurements: Measurement[]; maturation?: Maturation;
 }) {
   const [state, formAction, isPending] = useActionState<AddAnthroState, FormData>(addAnthropometryAction, {});
   const formRef = useRef<HTMLFormElement>(null);
@@ -37,10 +57,38 @@ export default function AnthropometrySection({
     <section className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">Антропометрія</h2>
-        <button onClick={() => setShowForm(!showForm)} className="text-xs font-semibold text-brand-blue hover:text-brand-blue-light transition-colors">
-          {showForm ? "Сховати" : "+ Додати замір"}
-        </button>
+        <div className="flex items-center gap-4">
+          <Link href={`/players/${playerId}/growth`} className="text-xs font-semibold text-brand-blue hover:text-brand-blue-light transition-colors">
+            Крива росту →
+          </Link>
+          <button onClick={() => setShowForm(!showForm)} className="text-xs font-semibold text-brand-blue hover:text-brand-blue-light transition-colors">
+            {showForm ? "Сховати" : "+ Додати замір"}
+          </button>
+        </div>
       </div>
+
+      <Card>
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="text-[10px] uppercase tracking-widest text-slate-600">Матурація (PHV)</div>
+          {maturation ? (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className={`px-2 py-0.5 text-xs font-semibold rounded-md border ${PHASE_STYLE[maturation.growth_phase] ?? "bg-slate-800 text-slate-400 border-slate-700"}`}>
+                {GROWTH_PHASE_LABELS[maturation.growth_phase as keyof typeof GROWTH_PHASE_LABELS] ?? maturation.growth_phase}
+              </span>
+              <span className={`px-2 py-0.5 text-xs font-semibold rounded-md border ${ZONE_STYLE[maturation.risk_zone] ?? "bg-slate-800 text-slate-400 border-slate-700"}`}>
+                Зона: {RISK_ZONE_LABELS[maturation.risk_zone as keyof typeof RISK_ZONE_LABELS] ?? maturation.risk_zone}
+              </span>
+              <span className="text-[10px] text-slate-600">
+                {maturation.age_at_measurement?.toFixed(1)}р. · {new Date(maturation.created_at).toLocaleDateString("uk-UA")}
+              </span>
+            </div>
+          ) : (
+            <Link href="/growth/new" className="text-xs text-slate-500 hover:text-brand-blue transition-colors">
+              Матурацію не розраховано → розрахувати
+            </Link>
+          )}
+        </div>
+      </Card>
 
       {last && (
         <div className="grid grid-cols-2 gap-3">
