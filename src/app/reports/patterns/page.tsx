@@ -23,8 +23,8 @@ export default async function InjuryPatternsPage() {
     .from("maturation_assessments")
     .select(
       `player_id, consensus_offset, consensus_phv_age, growth_phase,
-       risk_zone, height_velocity, age_at_measurement,
-       players!inner ( first_name, last_name, teams!inner ( name ) )`
+       risk_zone, height_velocity, age_at_measurement, created_at,
+       players!inner ( first_name, last_name, date_of_birth, teams!inner ( name ) )`
     )
     .order("created_at", { ascending: false });
 
@@ -41,12 +41,33 @@ export default async function InjuryPatternsPage() {
   const daysBetween = (a: string, b: string) =>
     Math.floor((new Date(b).getTime() - new Date(a).getTime()) / 86400000);
 
-  // Мап матурації: player_id → останній assessment
+  // Останній assessment на гравця (для зведеного списку матурації)
   const maturationMap = new Map<string, any>();
+  // Усі assessment-и гравця (для темпорального матчингу травма↔фаза)
+  const maturationByPlayer = new Map<string, any[]>();
   for (const m of maturationRaw ?? []) {
     if (!maturationMap.has(m.player_id)) {
-      maturationMap.set(m.player_id, m);
+      maturationMap.set(m.player_id, m); // перший у DESC = найсвіжіший
     }
+    if (!maturationByPlayer.has(m.player_id)) maturationByPlayer.set(m.player_id, []);
+    maturationByPlayer.get(m.player_id)!.push(m);
+  }
+
+  // Оцінка матурації, найближча за датою до дати травми.
+  // Дата виміру ≈ дата народження + вік на момент виміру (age_at_measurement).
+  function matNearestToInjury(playerId: string, dob: string, injuryDate: string) {
+    const list = maturationByPlayer.get(playerId);
+    if (!list || list.length === 0) return null;
+    const injMs = new Date(injuryDate).getTime();
+    const dobMs = new Date(dob).getTime();
+    let best = list[0];
+    let bestDiff = Infinity;
+    for (const m of list) {
+      const measMs = dobMs + (m.age_at_measurement ?? 0) * 365.25 * 86400000;
+      const diff = Math.abs(measMs - injMs);
+      if (diff < bestDiff) { bestDiff = diff; best = m; }
+    }
+    return best;
   }
 
   // Травми з розширеними даними
