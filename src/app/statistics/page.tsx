@@ -37,6 +37,25 @@ export default async function StatisticsPage() {
   const playerDays:Record<string,{name:string;team:string;days:number;count:number}> = {};
   for (const inj of injuries) { const pid=(inj as any).players.last_name+" "+(inj as any).players.first_name; if(!playerDays[pid])playerDays[pid]={name:pid,team:(inj as any).players.teams.name,days:0,count:0}; playerDays[pid].days+=calcDaysMissed(inj); playerDays[pid].count++; }
   const topMissed = Object.values(playerDays).sort((a,b)=>b.days-a.days).slice(0,5);
+  // ── Класифікатор: грейди MLG-R (живі дані) ──
+  const muscularInjuries = injuries.filter((i: any) => i.injury_type === "muscular");
+  const gradeMap: Record<string, number> = { "0": 0, "1": 0, "2": 0, "3": 0 };
+  let gradedCount = 0;
+  for (const inj of injuries) {
+    if ((inj as any).mlgr_grade != null) {
+      gradeMap[String((inj as any).mlgr_grade)] = (gradeMap[String((inj as any).mlgr_grade)] ?? 0) + 1;
+      gradedCount++;
+    }
+  }
+  const gradeRows = ["0", "1", "2", "3"].map((g) => ({ grade: g, count: gradeMap[g] ?? 0 }));
+
+  // ── Рецидиви (заглушка поки немає даних) ──
+  const reinjuryCount = injuries.filter((i: any) => (i.mlgr_reinjury ?? 0) > 0).length;
+
+  // ── RTP прогноз vs факт (заглушка: потрібні закриті класифіковані травми) ──
+  const closedClassified = injuries.filter(
+    (i: any) => i.status === "closed" && i.is_classified
+  );
 
   function RankingCard({title,items,colorClass}:{title:string;items:{name:string;count:number;days:number}[];colorClass:string}) {
     if(!items.length)return null; const max=Math.max(1,...items.map(i=>i.count));
@@ -64,6 +83,82 @@ export default async function StatisticsPage() {
         <RankingCard title="По механізму" items={byMechanism} colorClass="bg-cyan-500" />
         <Card><div className="text-xs text-slate-500 mb-3 font-semibold">Топ пропущених днів</div><div className="space-y-2">{topMissed.map((p,i)=>(<div key={p.name} className="flex justify-between items-center"><div className="flex items-center gap-2 min-w-0"><span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${i===0?"bg-status-danger/20 text-status-danger":i===1?"bg-status-warn/20 text-status-warn":"bg-slate-800 text-slate-500"}`}>{i+1}</span><div className="min-w-0"><div className="text-sm text-white truncate">{p.name}</div><div className="text-[10px] text-slate-600">{p.team} · {p.count} травм</div></div></div><span className="text-sm font-mono font-bold text-status-danger shrink-0">{p.days} дн.</span></div>))}</div></Card>
       </div>
+      <section>
+        <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Класифікатор м'язових травм</h2>
+        <div className="grid md:grid-cols-3 gap-3">
+
+          {/* Грейди MLG-R — живі дані */}
+          <Card>
+            <div className="text-xs text-slate-500 mb-3 font-semibold">Грейди MLG-R</div>
+            {gradedCount === 0 ? (
+              <p className="text-xs text-slate-600 py-2">Немає класифікованих травм</p>
+            ) : (
+              <div className="space-y-2">
+                {gradeRows.map((r) => {
+                  const max = Math.max(1, ...gradeRows.map((x) => x.count));
+                  return (
+                    <div key={r.grade} className="flex justify-between items-center">
+                      <span className="text-sm text-slate-300">Grade {r.grade}</span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <div className="h-1.5 rounded-full bg-blue-500/30 w-16 overflow-hidden">
+                          <div className="h-full rounded-full bg-blue-500" style={{ width: `${(r.count / max) * 100}%` }} />
+                        </div>
+                        <span className="text-xs font-mono text-slate-400 w-6 text-right">{r.count}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+                <div className="text-[10px] text-slate-600 pt-1">
+                  Класифіковано: {gradedCount} з {muscularInjuries.length} м'язових
+                </div>
+              </div>
+            )}
+          </Card>
+
+          {/* Рецидиви — заглушка поки немає даних */}
+          <Card>
+            <div className="text-xs text-slate-500 mb-3 font-semibold">Рецидиви</div>
+            {reinjuryCount > 0 ? (
+              <div>
+                <div className="text-2xl font-extrabold font-mono text-status-danger">{reinjuryCount}</div>
+                <div className="text-[10px] text-slate-600 mt-1">травм з рецидивом (MLG-R «R»)</div>
+              </div>
+            ) : (
+              <p className="text-xs text-slate-600 py-2">Дані накопичуються — рецидивів ще не зафіксовано</p>
+            )}
+          </Card>
+
+          {/* RTP прогноз vs факт — заглушка */}
+          <Card>
+            <div className="text-xs text-slate-500 mb-3 font-semibold">Прогноз RTP vs факт</div>
+            {closedClassified.length > 0 ? (
+              <div className="space-y-2">
+                {closedClassified.map((inj: any) => {
+                  const fact = calcDaysMissed(inj);
+                  const min = inj.rtp_min_days, max = inj.rtp_max_days;
+                  const inRange = min != null && max != null && fact >= min && fact <= max;
+                  return (
+                    <div key={inj.id} className="flex justify-between items-center text-xs">
+                      <span className="text-slate-400">
+                        {(inj.players?.last_name ?? "")} {(inj.players?.first_name?.[0] ?? "")}.
+                      </span>
+                      <span className="font-mono text-slate-300">
+                        {fact} дн. / ~{min}–{max}
+                        <span className={inRange ? "text-status-ok ml-1" : "text-status-warn ml-1"}>
+                          {inRange ? "✓" : "≠"}
+                        </span>
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-600 py-2">Дані накопичуються — потрібні закриті класифіковані травми</p>
+            )}
+          </Card>
+
+        </div>
+      </section>
       {totalInjuries===0&&<Card><p className="text-slate-500 text-center py-8">Статистика з'явиться після додавання даних.</p></Card>}
     </div></div>
   );
