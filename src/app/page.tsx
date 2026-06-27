@@ -52,6 +52,20 @@ function growthZone(player: any): "yellow" | "red" | null {
   if (latest.risk_zone === "yellow") return "yellow";
   return null;
 }
+// Короткий код класифікації (пріоритет: MLG-R → BAMIC → Munich)
+function classCode(inj: any): string | null {
+  if (!inj?.is_classified) return null;
+  return inj.mlgr_code || inj.bamic_code || inj.munich_type || null;
+}
+
+// RTP-прогноз у вигляді "~21–28 дн." (якщо розрахований)
+function rtpLabel(inj: any): string | null {
+  const min = inj?.rtp_min_days;
+  const max = inj?.rtp_max_days;
+  if (min == null && max == null) return null;
+  if (min != null && max != null) return `~${min}–${max} дн.`;
+  return `~${min ?? max} дн.`;
+}
 
 function initials(p: any): string {
   if (!p) return "??";
@@ -142,6 +156,7 @@ export default async function Home() {
     .from("injuries")
     .select(`
       id, location, injury_type, vas_score, status,
+      is_classified, mlgr_code, bamic_code, munich_type, rtp_min_days, rtp_max_days, rtp_risk,
       players ( first_name, last_name, teams ( name ), maturation_assessments ( risk_zone, created_at ) )
     `)
     .in("status", ["active", "rehabilitation"])
@@ -229,6 +244,11 @@ export default async function Home() {
                     <div className="text-[10px] text-slate-600 truncate">
                       {p?.teams?.name ?? "—"} · {INJURY_TYPE_UA[inj.injury_type] ?? inj.injury_type} · {LOCATION_UA[inj.location] ?? inj.location}
                     </div>
+                    {classCode(inj) && (
+                      <div className="text-[10px] text-blue-400/80 truncate mt-0.5 font-mono">
+                        {classCode(inj)}{rtpLabel(inj) && <span className="text-slate-500 font-sans"> · RTP {rtpLabel(inj)}</span>}
+                      </div>
+                    )}
                   </div>
                   {gZone && (
                     <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium border flex-shrink-0 ${gZone === "red" ? "bg-red-500/10 text-red-400 border-red-500/25" : "bg-amber-500/10 text-amber-400 border-amber-500/25"}`}>
