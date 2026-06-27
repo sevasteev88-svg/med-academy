@@ -5,7 +5,7 @@ export default async function NewMeasurementPage() {
   const supabase = await createClient();
   const { data: players } = await supabase
     .from("players")
-    .select("id, first_name, last_name, sex")
+    .select("id, first_name, last_name, sex, date_of_birth")
     .order("last_name");
 
   return (

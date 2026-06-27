@@ -63,7 +63,7 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
           <DeleteButton onDelete={handleDelete} itemName="гравця" />
         </div>
       </Card>
-      <AnthropometrySection playerId={id} measurements={measurements} maturation={maturation}/>
+       <AnthropometrySection playerId={id} measurements={measurements} maturation={maturation} dateOfBirth={player.date_of_birth} />
       <section><h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Період аналізу травм</h2><PeriodSelector /></section>
       <section>
         <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Статистика травм <span className="text-slate-600 normal-case tracking-normal ml-2 font-normal">({periodLabel})</span></h2>

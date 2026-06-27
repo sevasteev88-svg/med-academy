@@ -1,12 +1,11 @@
 "use server";
 
 /**
- * Server Action: збереження антропометрії + мультиметодний розрахунок PHV.
+ * Server Action: збереження антропометрії (+ опційний розрахунок PHV).
  *
- * 1. Зберігає вимір в anthropometry_logs
- * 2. Знаходить попередній вимір → velocity
- * 3. Рахує PHV усіма доступними методами
- * 4. Зберігає консенсусну оцінку в maturation_assessments
+ * 1. Зберігає вимір в anthropometry_logs (зріст, вага, % жиру, зріст сидячи)
+ * 2. PHV рахується ТІЛЬКИ якщо computePhv === true (мʼяка опція за віком)
+ * 3. Якщо PHV порахувати неможливо (немає статі тощо) — вимір все одно зберігається
  */
 
 import { createClient } from "@/utils/supabase/server";
@@ -23,7 +22,9 @@ type SaveAnthropometryInput = {
   date: string;
   height: number;
   weight: number;
-  sittingHeight: number | null; // null = рахуємо тільки Moore-2
+  bodyFatPct: number | null;
+  sittingHeight: number | null; // null = частина методів PHV недоступна
+  computePhv: boolean;          // рахувати PHV чи ні
 };
 
 export async function saveAnthropometryWithPhv(input: SaveAnthropometryInput) {
@@ -58,6 +59,9 @@ export async function saveAnthropometryWithPhv(input: SaveAnthropometryInput) {
   if (input.sittingHeight != null) {
     insertData.sitting_height = input.sittingHeight;
   }
+  if (input.bodyFatPct != null) {
+    insertData.body_fat_pct = input.bodyFatPct;
+  }
 
   const { data: anthro, error: anthroErr } = await supabase
     .from("anthropometry_logs")
@@ -67,6 +71,17 @@ export async function saveAnthropometryWithPhv(input: SaveAnthropometryInput) {
 
   if (anthroErr || !anthro) {
     return { error: anthroErr?.message ?? "Помилка збереження виміру" };
+  }
+
+  // ── Якщо PHV не потрібен (старший вік / вимкнено лікарем) — зупиняємось тут ──
+  if (!input.computePhv || !player.sex) {
+    revalidatePath("/players", "page");
+    revalidatePath("/growth", "page");
+    revalidatePath(`/players/${input.playerId}`);
+    revalidatePath(`/players/${input.playerId}/growth`);
+    return {
+      data: { anthropometry: anthro, maturation: null, phvResult: null },
+    };
   }
 
   // 4. Попередній вимір → velocity
@@ -154,7 +169,8 @@ export async function saveAnthropometryWithPhv(input: SaveAnthropometryInput) {
 
   revalidatePath("/players", "page");
   revalidatePath("/growth", "page");
-  revalidatePath("/players/[id]/growth", "page");
+  revalidatePath(`/players/${input.playerId}`);
+  revalidatePath(`/players/${input.playerId}/growth`);
 
   return {
     data: {

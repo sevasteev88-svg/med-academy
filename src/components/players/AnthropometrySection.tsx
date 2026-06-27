@@ -1,10 +1,8 @@
 "use client";
 
-import { useActionState, useRef, useState, useEffect } from "react";
-import {
-  addAnthropometryAction,
-  type AddAnthroState,
-} from "@/actions/add-anthropometry-action";
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { saveAnthropometryWithPhv } from "@/actions/save-anthropometry-action";
 import Card from "@/components/ui/Card";
 import Link from "next/link";
 import { GROWTH_PHASE_LABELS, RISK_ZONE_LABELS } from "@/lib/phv-calculator";
@@ -33,25 +31,74 @@ const inputClass = "w-full bg-surface-raised border border-blue-900/20 rounded-l
 const labelClass = "block text-xs text-slate-500 mb-1.5";
 
 export default function AnthropometrySection({
-  playerId, measurements, maturation = null,
+  playerId, measurements, maturation = null, dateOfBirth,
 }: {
-  playerId: string; measurements: Measurement[]; maturation?: Maturation;
+  playerId: string; measurements: Measurement[]; maturation?: Maturation; dateOfBirth: string;
 }) {
-  const [state, formAction, isPending] = useActionState<AddAnthroState, FormData>(addAnthropometryAction, {});
-  const formRef = useRef<HTMLFormElement>(null);
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
   const [showForm, setShowForm] = useState(false);
-
-  useEffect(() => {
-    if (state.success) {
-      formRef.current?.reset();
-    }
-  }, [state.success]);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
 
   const sorted = [...measurements].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   const last = sorted[sorted.length - 1];
   const prev = sorted[sorted.length - 2];
   const heightDelta = last && prev ? +(last.height - prev.height).toFixed(1) : null;
   const weightDelta = last && prev ? +(last.weight - prev.weight).toFixed(1) : null;
+
+  const [form, setForm] = useState({
+    date: new Date().toISOString().split("T")[0],
+    height: "",
+    weight: "",
+    bodyFat: "",
+  });
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+  }
+
+  // Вік на дату виміру → чи рахувати PHV (≤16)
+  function ageAt(date: string): number {
+    return (new Date(date).getTime() - new Date(dateOfBirth).getTime()) / (365.25 * 86400000);
+  }
+
+  function handleSubmit() {
+    setError(null);
+    setSuccess(false);
+
+    const height = parseFloat(form.height);
+    const weight = parseFloat(form.weight);
+    if (isNaN(height) || isNaN(weight)) {
+      setError("Введіть зріст і вагу");
+      return;
+    }
+    if (height < 100 || height > 220) { setError("Зріст має бути 100–220 см"); return; }
+    if (weight < 30 || weight > 150) { setError("Вага має бути 30–150 кг"); return; }
+
+    const bodyFatPct = form.bodyFat ? parseFloat(form.bodyFat) : null;
+    const computePhv = ageAt(form.date) <= 16;
+
+    startTransition(async () => {
+      const res = await saveAnthropometryWithPhv({
+        playerId,
+        date: form.date,
+        height,
+        weight,
+        bodyFatPct,
+        sittingHeight: null, // швидка форма — без зросту сидячи
+        computePhv,
+      });
+
+      if (res.error) {
+        setError(res.error);
+      } else {
+        setSuccess(true);
+        setForm((p) => ({ ...p, height: "", weight: "", bodyFat: "" }));
+        router.refresh();
+      }
+    });
+  }
 
   return (
     <section className="space-y-4">
@@ -121,28 +168,34 @@ export default function AnthropometrySection({
 
       {showForm && (
         <Card>
-          <form ref={formRef} action={formAction} className="space-y-3">
-            <input type="hidden" name="playerId" value={playerId} />
-            <div className="grid grid-cols-3 gap-3">
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div>
                 <label className={labelClass}>Дата *</label>
-                <input name="date" type="date" required defaultValue={new Date().toISOString().split("T")[0]} className={inputClass} />
+                <input name="date" type="date" value={form.date} onChange={handleChange} className={inputClass} />
               </div>
               <div>
                 <label className={labelClass}>Зріст (см) *</label>
-                <input name="height" type="number" step="0.1" min="100" max="220" required placeholder="175.0" defaultValue={last?.height} className={inputClass} />
+                <input name="height" type="number" step="0.1" placeholder="175.0" value={form.height} onChange={handleChange} className={inputClass} />
               </div>
               <div>
                 <label className={labelClass}>Вага (кг) *</label>
-                <input name="weight" type="number" step="0.1" min="30" max="150" required placeholder="70.0" defaultValue={last?.weight} className={inputClass} />
+                <input name="weight" type="number" step="0.1" placeholder="70.0" value={form.weight} onChange={handleChange} className={inputClass} />
+              </div>
+              <div>
+                <label className={labelClass}>% жиру</label>
+                <input name="bodyFat" type="number" step="0.1" placeholder="12.5" value={form.bodyFat} onChange={handleChange} className={inputClass} />
               </div>
             </div>
-            {state.error && <div className="text-xs text-status-danger">{state.error}</div>}
-            {state.success && <div className="text-xs text-status-ok">Замір збережено</div>}
-            <button type="submit" disabled={isPending} className="bg-brand-blue hover:bg-brand-blue-light disabled:opacity-50 text-white font-bold py-2 px-4 rounded-lg text-sm transition-colors">
+            <p className="text-[10px] text-slate-600">
+              PHV розраховується автоматично для віку ≤16 р. Для повної оцінки (зі зростом сидячи) скористайтесь «Крива росту → Новий вимір».
+            </p>
+            {error && <div className="text-xs text-status-danger">{error}</div>}
+            {success && <div className="text-xs text-status-ok">Замір збережено</div>}
+            <button onClick={handleSubmit} disabled={isPending} className="bg-brand-blue hover:bg-brand-blue-light disabled:opacity-50 text-white font-bold py-2 px-4 rounded-lg text-sm transition-colors">
               {isPending ? "Зберігаємо..." : "Зберегти"}
             </button>
-          </form>
+          </div>
         </Card>
       )}
 

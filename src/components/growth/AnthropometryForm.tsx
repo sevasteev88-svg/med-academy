@@ -8,7 +8,6 @@ import {
   METHOD_LABELS,
   PHASE_TYPICAL_INJURIES,
   RECOMMENDED_AGE_RANGE,
-  type GrowthPhase,
   type RiskZone,
   type MethodName,
   type PhvResult,
@@ -19,13 +18,20 @@ type Player = {
   first_name: string;
   last_name: string;
   sex: string;
+  date_of_birth: string;
 };
+
+// Вік на дату виміру (десятковий)
+function ageAt(dob: string, date: string): number {
+  return (new Date(date).getTime() - new Date(dob).getTime()) / (365.25 * 86400000);
+}
 
 export default function AnthropometryForm({ players }: { players: Player[] }) {
   const [isPending, startTransition] = useTransition();
   const [result, setResult] = useState<PhvResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [hasSittingHeight, setHasSittingHeight] = useState(true);
+  const [computePhv, setComputePhv] = useState(true);
 
   const [form, setForm] = useState({
     playerId: "",
@@ -33,6 +39,7 @@ export default function AnthropometryForm({ players }: { players: Player[] }) {
     height: "",
     weight: "",
     sittingHeight: "",
+    bodyFat: "",
   });
 
   function handleChange(
@@ -42,6 +49,21 @@ export default function AnthropometryForm({ players }: { players: Player[] }) {
   }
 
   const selectedPlayer = players.find((p) => p.id === form.playerId);
+
+  // Предзаповнення галочки PHV: вкл якщо вік на дату виміру ≤ 16
+  function syncPhvByAge(playerId: string, date: string) {
+    const pl = players.find((p) => p.id === playerId);
+    if (!pl) return;
+    setComputePhv(ageAt(pl.date_of_birth, date) <= 16);
+  }
+
+  function handlePlayerOrDate(
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+  ) {
+    handleChange(e);
+    const next = { ...form, [e.target.name]: e.target.value };
+    syncPhvByAge(next.playerId, next.date);
+  }
 
   function handleSubmit() {
     setError(null);
@@ -55,9 +77,10 @@ export default function AnthropometryForm({ players }: { players: Player[] }) {
     const height = parseFloat(form.height);
     const weight = form.weight ? parseFloat(form.weight) : 0;
     const sittingHeight =
-      hasSittingHeight && form.sittingHeight
+      computePhv && hasSittingHeight && form.sittingHeight
         ? parseFloat(form.sittingHeight)
         : null;
+    const bodyFatPct = form.bodyFat ? parseFloat(form.bodyFat) : null;
 
     if (sittingHeight != null && sittingHeight >= height) {
       setError("Зріст сидячи має бути менший за загальний зріст");
@@ -70,13 +93,18 @@ export default function AnthropometryForm({ players }: { players: Player[] }) {
         date: form.date,
         height,
         weight,
+        bodyFatPct,
         sittingHeight,
+        computePhv,
       });
 
       if (res.error) {
         setError(res.error);
       } else if (res.data?.phvResult) {
         setResult(res.data.phvResult);
+      } else {
+        setError(null);
+        setResult(null);
       }
     });
   }
@@ -102,7 +130,7 @@ export default function AnthropometryForm({ players }: { players: Player[] }) {
             <select
               name="playerId"
               value={form.playerId}
-              onChange={handleChange}
+              onChange={handlePlayerOrDate}
               className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-brand-blue focus:outline-none"
             >
               <option value="">Оберіть гравця…</option>
@@ -131,7 +159,7 @@ export default function AnthropometryForm({ players }: { players: Player[] }) {
               type="date"
               name="date"
               value={form.date}
-              onChange={handleChange}
+              onChange={handlePlayerOrDate}
               className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-brand-blue focus:outline-none"
             />
           </div>
@@ -166,42 +194,81 @@ export default function AnthropometryForm({ players }: { players: Player[] }) {
             />
           </div>
 
-          {/* Зріст сидячи toggle + input */}
+          {/* % жиру (Tanita) */}
           <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="text-sm text-gray-400">Зріст сидячи (см)</label>
-              <label className="flex items-center gap-2 text-xs text-gray-500 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={hasSittingHeight}
-                  onChange={(e) => setHasSittingHeight(e.target.checked)}
-                  className="rounded"
-                />
-                Виміряно
-              </label>
-            </div>
-            {hasSittingHeight ? (
+            <label className="block text-sm text-gray-400 mb-1">% жиру (Tanita)</label>
+            <input
+              type="number"
+              name="bodyFat"
+              value={form.bodyFat}
+              onChange={handleChange}
+              placeholder="12.5"
+              step="0.1"
+              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-brand-blue focus:outline-none"
+            />
+          </div>
+
+          {/* Галочка PHV */}
+          <div className="md:col-span-2">
+            <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
               <input
-                type="number"
-                name="sittingHeight"
-                value={form.sittingHeight}
-                onChange={handleChange}
-                placeholder="86.0"
-                step="0.1"
-                className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-brand-blue focus:outline-none"
+                type="checkbox"
+                checked={computePhv}
+                onChange={(e) => setComputePhv(e.target.checked)}
+                className="rounded"
               />
-            ) : (
-              <div className="text-xs text-gray-600 bg-gray-900 border border-gray-800 rounded-lg px-3 py-2">
-                Без зросту сидячи працює тільки Moore-2 (хлопці) та Moore-1 (дівчата).
-                Для повної оцінки рекомендуємо вимірювати.
-              </div>
-            )}
-            {hasSittingHeight && (
+              Розрахувати PHV
+              {selectedPlayer && (
+                <span className="text-xs text-gray-600">
+                  (вік на дату виміру: {ageAt(selectedPlayer.date_of_birth, form.date).toFixed(1)} р.)
+                </span>
+              )}
+            </label>
+            {!computePhv && (
               <p className="text-[10px] text-gray-600 mt-1">
-                Вимірюється сидячи на антропометрі, спина пряма, стегна горизонтально
+                PHV найточніший для віку ≤16 р. Для старших вимикається — зберігається лише вимір.
               </p>
             )}
           </div>
+
+          {/* Зріст сидячи — лише коли рахуємо PHV */}
+          {computePhv && (
+            <div className="md:col-span-2">
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-sm text-gray-400">Зріст сидячи (см)</label>
+                <label className="flex items-center gap-2 text-xs text-gray-500 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={hasSittingHeight}
+                    onChange={(e) => setHasSittingHeight(e.target.checked)}
+                    className="rounded"
+                  />
+                  Виміряно
+                </label>
+              </div>
+              {hasSittingHeight ? (
+                <input
+                  type="number"
+                  name="sittingHeight"
+                  value={form.sittingHeight}
+                  onChange={handleChange}
+                  placeholder="86.0"
+                  step="0.1"
+                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-brand-blue focus:outline-none"
+                />
+              ) : (
+                <div className="text-xs text-gray-600 bg-gray-900 border border-gray-800 rounded-lg px-3 py-2">
+                  Без зросту сидячи працює тільки Moore-2 (хлопці) та Moore-1 (дівчата).
+                  Для повної оцінки рекомендуємо вимірювати.
+                </div>
+              )}
+              {hasSittingHeight && (
+                <p className="text-[10px] text-gray-600 mt-1">
+                  Вимірюється сидячи на антропометрі, спина пряма, стегна горизонтально
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         <button
@@ -209,7 +276,7 @@ export default function AnthropometryForm({ players }: { players: Player[] }) {
           disabled={isPending}
           className="mt-6 bg-brand-blue hover:bg-blue-700 disabled:opacity-50 text-white font-bold py-3 px-6 rounded-lg transition-colors shadow-lg shadow-brand-blue/20"
         >
-          {isPending ? "Розрахунок…" : "Зберегти та розрахувати PHV"}
+          {isPending ? "Збереження…" : computePhv ? "Зберегти та розрахувати PHV" : "Зберегти вимір"}
         </button>
 
         {error && <p className="mt-3 text-sm text-status-danger">{error}</p>}

@@ -163,6 +163,7 @@ export type AnthropometryLog = {
   weight: number;        // numeric
   sitting_height: number | null;
   leg_length: number | null;
+  body_fat_pct: number | null;  // % жиру (Tanita, біоімпеданс)
   created_at: string;
 };
 
