@@ -40,6 +40,18 @@ function vasZone(vas: number | null): "red" | "amber" | "green" {
   if (vas >= 4) return "amber";
   return "green";
 }
+// Зона ризику росту (PHV) — остання оцінка. Повертаємо лише yellow/red.
+function growthZone(player: any): "yellow" | "red" | null {
+  const assessments = player?.maturation_assessments ?? [];
+  if (assessments.length === 0) return null;
+  const latest = [...assessments].sort(
+    (a: any, b: any) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  )[0];
+  if (latest.risk_zone === "red") return "red";
+  if (latest.risk_zone === "yellow") return "yellow";
+  return null;
+}
 
 function initials(p: any): string {
   if (!p) return "??";
@@ -130,7 +142,7 @@ export default async function Home() {
     .from("injuries")
     .select(`
       id, location, injury_type, vas_score, status,
-      players ( first_name, last_name, teams ( name ) )
+      players ( first_name, last_name, teams ( name ), maturation_assessments ( risk_zone, created_at ) )
     `)
     .in("status", ["active", "rehabilitation"])
     .order("vas_score", { ascending: false, nullsFirst: false })
@@ -202,6 +214,7 @@ export default async function Home() {
               const zone = vasZone(inj.vas_score);
               const c = ACCENT[zone];
               const p = inj.players;
+              const gZone = growthZone(p);
               return (
                 <Link
                   key={inj.id}
@@ -217,6 +230,11 @@ export default async function Home() {
                       {p?.teams?.name ?? "—"} · {INJURY_TYPE_UA[inj.injury_type] ?? inj.injury_type} · {LOCATION_UA[inj.location] ?? inj.location}
                     </div>
                   </div>
+                  {gZone && (
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium border flex-shrink-0 ${gZone === "red" ? "bg-red-500/10 text-red-400 border-red-500/25" : "bg-amber-500/10 text-amber-400 border-amber-500/25"}`}>
+                      PHV: {gZone === "red" ? "червона" : "жовта"}
+                    </span>
+                  )}
                   {inj.vas_score != null && (
                     <span className={`px-2 py-0.5 rounded text-[10px] font-medium border flex-shrink-0 ${c.badge}`}>
                       ВАШ {inj.vas_score}/10
