@@ -55,7 +55,7 @@ export async function addExaminationAction(
     }
   }
   if (nextExamDate) {
-    injuryUpdate.expected_return_date = nextExamDate;
+    injuryUpdate.next_exam_date = nextExamDate;
   }
 
   await supabase.from("injuries").update(injuryUpdate).eq("id", injuryId);

@@ -204,6 +204,8 @@ export type Injury = {
   date_of_injury: string;
   expected_return_date: string | null;
   actual_return_date: string | null;
+  next_exam_date: string | null;  // дата наступного контрольного огляду (НЕ прогноз RTP)
+
   status: InjuryStatus;
   description: string | null;
   days_missed: number | null;
