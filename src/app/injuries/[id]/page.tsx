@@ -68,9 +68,11 @@ export default async function InjuryDetailPage({ params }: Props) {
     .order("date", { ascending: false });
 
   const injDays = daysSince(injury.date_of_injury);
+  const isClosed = injury.status === "closed";
   const rtpDays = injury.expected_return_date
     ? Math.ceil((new Date(injury.expected_return_date).getTime() - Date.now()) / 86400000)
     : null;
+  const rtpOverdue = rtpDays != null && rtpDays <= 0 && !isClosed;
 
   return (
     <div
@@ -125,8 +127,16 @@ export default async function InjuryDetailPage({ params }: Props) {
             <div className="text-[9px] text-slate-600 mt-0.5">днів травми</div>
           </div>
           <div className="bg-slate-900/80 border border-blue-900/18 rounded-lg p-2.5 text-center">
-            <div className={`text-[18px] font-medium ${rtpDays != null && rtpDays > 0 ? "text-amber-400" : rtpDays != null ? "text-green-400" : "text-slate-500"}`}>
-              {rtpDays != null ? (rtpDays > 0 ? `+${rtpDays}` : "Готовий") : "—"}
+            <div className={`text-[18px] font-medium ${
+              rtpDays == null ? "text-slate-500"
+              : rtpDays > 0 ? "text-amber-400"
+              : rtpOverdue ? "text-red-400"
+              : "text-green-400"
+            }`}>
+              {rtpDays == null ? "—"
+                : rtpDays > 0 ? `+${rtpDays}`
+                : rtpOverdue ? "Прострочено"
+                : "Готовий"}
             </div>
             <div className="text-[9px] text-slate-600 mt-0.5">днів до RTP</div>
           </div>
