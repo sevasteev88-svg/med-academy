@@ -191,6 +191,16 @@ export default async function InjuryDetailPage({ params }: Props) {
             <Row label="Дата травми" value={fmtDate(injury.date_of_injury)} />
             {injury.expected_return_date && <Row label="Очік. повернення" value={fmtDate(injury.expected_return_date)} />}
             {injury.actual_return_date && <Row label="Факт. повернення" value={fmtDate(injury.actual_return_date)} />}
+            {injury.next_exam_date && !isClosed && (
+              <Row
+                label="Наступний огляд"
+                value={
+                  <span className={new Date(injury.next_exam_date) < new Date(new Date().toDateString()) ? "text-red-400" : "text-slate-300"}>
+                    {fmtDate(injury.next_exam_date)}
+                  </span>
+                }
+              />
+            )}
           </div>
         </div>
 
