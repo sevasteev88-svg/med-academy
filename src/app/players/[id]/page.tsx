@@ -58,7 +58,7 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
           <div className="flex flex-col items-end gap-2">{activeInjuries.length === 0 ? <Badge variant="ok">Готовий до гри</Badge> : activeInjuries.map((inj:any) => <Badge key={inj.id} variant={vasVariant(inj.vas_score)}>ВАШ {inj.vas_score}/10</Badge>)}</div>
         </div>
         <div className="mt-4 pt-4 border-t border-blue-900/15 flex flex-wrap gap-2">
-          <Link href={`/injuries/new?player=${id}`} className="bg-brand-blue hover:bg-brand-blue-light text-white font-bold py-2 px-4 rounded-lg text-xs transition-colors shadow-glow-sm">+ Фіксувати травму</Link>
+          <Link href={`/injuries/new?playerId=${id}`} className="bg-brand-blue hover:bg-brand-blue-light text-white font-bold py-2 px-4 rounded-lg text-xs transition-colors shadow-glow-sm">+ Фіксувати травму</Link>
           <Link href={`/players/${id}/edit`} className="border border-slate-800 text-slate-400 hover:bg-surface-hover font-semibold py-2 px-4 rounded-lg text-xs transition-colors">✏️ Редагувати</Link>
           <DeleteButton onDelete={handleDelete} itemName="гравця" />
         </div>
