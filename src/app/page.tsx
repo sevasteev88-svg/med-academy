@@ -34,11 +34,9 @@ function todayUk(): string {
   });
 }
 
-function vasZone(vas: number | null): "red" | "amber" | "green" {
-  if (vas == null) return "green";
-  if (vas >= 7) return "red";
-  if (vas >= 4) return "amber";
-  return "green";
+function vasZone(vas: number | null): "red" | "amber" {
+  if (vas != null && vas >= 7) return "red";
+  return "amber";
 }
 // Зона ризику росту (PHV) — остання оцінка. Повертаємо лише yellow/red.
 function growthZone(player: any): "yellow" | "red" | null {
