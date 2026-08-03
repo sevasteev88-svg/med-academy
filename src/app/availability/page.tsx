@@ -3,15 +3,8 @@ import Link from "next/link";
 import Card from "@/components/ui/Card";
 import PrintButton from "@/components/ui/PrintButton";
 import { POSITION_LABELS, TEAM_CATEGORY_UA } from "@/lib/constants";
+import { playerStatus } from "@/lib/player-status";
 
-function playerStatus(player: any): "ok" | "warn" | "danger" {
-  const active = (player.injuries ?? []).filter((i: any) => i.status === "active" || i.status === "rehabilitation");
-  if (active.length === 0) return "ok";
-  const maxVas = Math.max(...active.map((i: any) => i.vas_score ?? 0));
-  if (maxVas >= 7) return "danger";
-  if (maxVas >= 4) return "warn";
-  return "ok";
-}
 // Зона ризику росту (PHV) — остання оцінка. Показуємо лише yellow/red.
 function growthZone(player: any): "yellow" | "red" | null {
   const assessments = player.maturation_assessments ?? [];

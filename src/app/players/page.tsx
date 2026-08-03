@@ -4,6 +4,7 @@ import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
 import PlayerSearch from "@/components/players/PlayerSearch";
 import { POSITION_LABELS, TEAM_CATEGORY_UA } from "@/lib/constants";
+import { playerStatus } from "@/lib/player-status";
 
 function calcAge(dob: string): number {
   return Math.floor((Date.now() - new Date(dob).getTime()) / (365.25 * 86400000));
@@ -46,16 +47,7 @@ export default async function PlayersPage({
   const academy = filterPlayers((teams ?? []).filter((t: any) => t.category === "academy"));
   const totalFiltered = [...youth, ...academy].reduce((s, t: any) => s + (t.players?.length ?? 0), 0);
 
-  function playerStatus(player: any): "ok" | "warn" | "danger" {
-    const active = (player.injuries ?? []).filter(
-      (i: any) => i.status === "active" || i.status === "rehabilitation"
-    );
-    if (active.length === 0) return "ok";
-    const maxVas = Math.max(...active.map((i: any) => i.vas_score ?? 0));
-    if (maxVas >= 7) return "danger";
-    if (maxVas >= 4) return "warn";
-    return "ok";
-  }
+  
 
   function statusLabel(s: "ok" | "warn" | "danger"): string {
     if (s === "ok") return "Готовий";
