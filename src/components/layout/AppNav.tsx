@@ -13,6 +13,7 @@ const DOCTOR_NAV: NavItem[] = [
   { href: "/players", label: "Реєстр", icon: "👥" },
   { href: "/availability", label: "Доступність", icon: "🟢" },
   { href: "/injuries", label: "Травми", icon: "🩹" },
+  { href: "/exams/upcoming", label: "Огляди", icon: "🗓️" },
   { href: "/statistics", label: "Статистика", icon: "📊" },
   { href: "/reports/weekly", label: "Звіт", icon: "📋" },
   { href: "/reports/patterns", label: "Патерни", icon: "🔍" },
