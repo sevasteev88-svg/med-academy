@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState, useTransition } from "react";
+import Link from "next/link";
 import Card from "@/components/ui/Card";
-import { setPlayerPinAction } from "@/actions/rehab-portal-action";
+import { setPlayerPinAction, saveDoctorInstructionAction } from "@/actions/rehab-portal-action";
 import type { RehabCheckinData } from "@/types/rehab-portal";
 
 export default function PlayerRehabCheckinHistory({
@@ -22,6 +23,12 @@ export default function PlayerRehabCheckinHistory({
   const [newPin, setNewPin] = useState("");
   const [isEditingPin, setIsEditingPin] = useState(false);
   const [pinFeedback, setPinFeedback] = useState<string | null>(null);
+
+  // Doctor instruction state
+  const [instructionText, setInstructionText] = useState("");
+  const [appointmentTime, setAppointmentTime] = useState("");
+  const [instructionFeedback, setInstructionFeedback] = useState<string | null>(null);
+
   const [isPending, startTransition] = useTransition();
 
   const handleSavePin = (e: React.FormEvent) => {
@@ -45,6 +52,27 @@ export default function PlayerRehabCheckinHistory({
     });
   };
 
+  const handleSendInstruction = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!instructionText.trim()) return;
+
+    setInstructionFeedback(null);
+    startTransition(async () => {
+      const res = await saveDoctorInstructionAction({
+        playerId,
+        instruction: instructionText,
+        appointmentTime: appointmentTime || undefined,
+      });
+
+      if (res.success) {
+        setInstructionFeedback("✓ Вказівку надіслано в телефон футболіста!");
+        setTimeout(() => setInstructionFeedback(null), 4000);
+      } else {
+        setInstructionFeedback(res.error || "Помилка відправки");
+      }
+    });
+  };
+
   return (
     <Card className="border border-sky-500/20 bg-slate-900/60 backdrop-blur-md space-y-4">
       {/* Header */}
@@ -58,7 +86,7 @@ export default function PlayerRehabCheckinHistory({
               Кабінет Гравця та Звіти Відновлення
             </h3>
             <p className="text-[11px] text-slate-400">
-              Самозвіти футболіста з телефону (біль ВАШ, набряк, ЛФК)
+              Самозвіти футболіста з телефону (біль ВАШ, набряк, ЛФК, сон)
             </p>
           </div>
         </div>
@@ -117,8 +145,53 @@ export default function PlayerRehabCheckinHistory({
         </div>
       )}
 
+      {/* Doctor Daily Instruction Form */}
+      <form onSubmit={handleSendInstruction} className="p-3.5 rounded-2xl bg-slate-950/70 border border-sky-500/20 space-y-2.5">
+        <div className="flex items-center justify-between text-xs">
+          <label className="font-bold text-sky-300 flex items-center gap-1.5">
+            <span>👨‍⚕️</span> Надіслати персональну вказівку на телефон гравця:
+          </label>
+          <div className="flex items-center gap-1 text-[10px] text-slate-400">
+            <span>Час огляду:</span>
+            <input
+              type="time"
+              value={appointmentTime}
+              onChange={(e) => setAppointmentTime(e.target.value)}
+              className="bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-white"
+            />
+          </div>
+        </div>
+
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={instructionText}
+            onChange={(e) => setInstructionText(e.target.value)}
+            placeholder="Наприклад: 'Сьогодні біг без різких гальмувань. О 16:00 чекаю на лімфодренаж...'"
+            className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-400"
+          />
+          <button
+            type="submit"
+            disabled={isPending || !instructionText.trim()}
+            className="px-3.5 py-1.5 bg-sky-500 hover:bg-sky-400 text-white font-bold text-xs rounded-xl shadow-md transition-all active:scale-95 disabled:opacity-50 shrink-0"
+          >
+            Надіслати ✉️
+          </button>
+        </div>
+
+        {instructionFeedback && (
+          <div className="text-[11px] text-emerald-400 font-medium">
+            {instructionFeedback}
+          </div>
+        )}
+      </form>
+
       {/* Checkins List */}
       <div className="space-y-2">
+        <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+          <span>📋</span> Історія самозвітів футболіста ({checkins.length}):
+        </h4>
+
         {checkins.length === 0 ? (
           <div className="p-6 text-center rounded-xl border border-dashed border-white/10 text-xs text-slate-500">
             Гравець ще не вносив щоденних звітів з телефону. Надайте йому PIN-код (<strong>{pin}</strong>) для входу на сторінці <Link href="/rehab-portal" className="text-sky-400 hover:underline">/rehab-portal</Link>.

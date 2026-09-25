@@ -84,6 +84,43 @@ export async function verifyPlayerPinAction(playerId: string, enteredPin: string
     }
   }
 
+  // 5. Отримуємо щоденне напуття/призначення від лікаря
+  const { data: instructionLogs } = await supabase
+    .from("injury_logs")
+    .select("note")
+    .eq("player_id", playerId)
+    .like("note", "[DOCTOR_INSTRUCTION]%")
+    .order("date", { ascending: false })
+    .limit(1);
+
+  let doctorInstruction: any = null;
+  if (instructionLogs && instructionLogs.length > 0) {
+    try {
+      const raw = instructionLogs[0].note.replace("[DOCTOR_INSTRUCTION] ", "");
+      doctorInstruction = JSON.parse(raw);
+    } catch {}
+  }
+
+  // 6. Отримуємо останні чек-іни для побудови графіка динаміки (VAS & Сон)
+  const { data: pastCheckinLogs } = await supabase
+    .from("injury_logs")
+    .select("note, date")
+    .eq("player_id", playerId)
+    .like("note", "[REHAB_CHECKIN]%")
+    .order("date", { ascending: true })
+    .limit(14);
+
+  const pastCheckins: any[] = (pastCheckinLogs || [])
+    .map((l) => {
+      try {
+        const raw = l.note.replace("[REHAB_CHECKIN] ", "");
+        return JSON.parse(raw);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+
   return {
     success: true,
     player: {
@@ -93,6 +130,8 @@ export async function verifyPlayerPinAction(playerId: string, enteredPin: string
       position: player.position,
       injuries: injuries || [],
       currentRtpPhase,
+      doctorInstruction,
+      pastCheckins,
     },
   };
 }
@@ -166,5 +205,42 @@ export async function setPlayerPinAction(playerId: string, newPin: string) {
   }
 
   revalidatePath(`/players/${playerId}`);
+  return { success: true };
+}
+
+/**
+ * Встановлення або оновлення персональної вказівки лікаря на день
+ */
+export async function saveDoctorInstructionAction({
+  playerId,
+  instruction,
+  appointmentTime,
+}: {
+  playerId: string;
+  instruction: string;
+  appointmentTime?: string;
+}) {
+  const supabase = await createClient();
+
+  const payload: DoctorDailyInstruction = {
+    player_id: playerId,
+    instruction: instruction.trim(),
+    appointment_time: appointmentTime?.trim() || undefined,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { error } = await supabase.from("injury_logs").insert({
+    player_id: playerId,
+    category: "prescription",
+    date: new Date().toISOString().split("T")[0],
+    note: `[DOCTOR_INSTRUCTION] ${JSON.stringify(payload)}`,
+  });
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  revalidatePath(`/players/${playerId}`);
+  revalidatePath("/rehab-portal");
   return { success: true };
 }

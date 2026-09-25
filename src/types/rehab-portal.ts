@@ -1,3 +1,20 @@
+export interface RehabExerciseItem {
+  id: string;
+  name: string;
+  setsReps: string;
+  targetArea: string;
+  technique: string;
+  completed?: boolean;
+}
+
+export interface DailyRecoveryQuest {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+  completed: boolean;
+}
+
 export interface RehabCheckinData {
   id?: string;
   injury_id: string;
@@ -8,6 +25,9 @@ export interface RehabCheckinData {
   swelling: "none" | "mild" | "moderate" | "severe";
   stiffness_minutes: number; // 0, 15, 30, 60
   exercises_completed: "full" | "partial" | "none";
+  completed_exercise_ids?: string[];
+  completed_quests?: string[];
+  psychological_readiness?: number; // 1-10 (I-PRRS)
   sleep_quality: number; // 1-5
   fatigue_level: number; // 1-5
   player_comment?: string;
@@ -16,5 +36,12 @@ export interface RehabCheckinData {
 export interface PlayerPinRecord {
   player_id: string;
   pin: string; // 4 digits
+  updated_at: string;
+}
+
+export interface DoctorDailyInstruction {
+  player_id: string;
+  instruction: string;
+  appointment_time?: string;
   updated_at: string;
 }
