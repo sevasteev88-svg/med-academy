@@ -67,15 +67,43 @@ export default async function StatisticsPage() {
   }));
 
   return (
-    <div className="min-h-screen bg-background text-slate-200 p-5 md:p-8"><div className="max-w-5xl mx-auto space-y-6">
-      <header className="pb-5 border-b border-blue-900/15"><h1 className="text-lg font-bold text-white tracking-tight">📊 Статистика травм</h1><p className="text-xs text-slate-500 mt-1">Зведена аналітика за весь час</p></header>
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <Card><div className="text-[10px] uppercase tracking-widest text-slate-600 mb-1">Всього</div><div className="text-2xl font-extrabold font-mono text-white">{totalInjuries}</div></Card>
-        <Card><div className="text-[10px] uppercase tracking-widest text-slate-600 mb-1">Днів пропущено</div><div className="text-2xl font-extrabold font-mono text-status-danger">{totalDaysMissed}</div></Card>
-        <Card><div className="text-[10px] uppercase tracking-widest text-slate-600 mb-1">Активних</div><div className="text-2xl font-extrabold font-mono text-status-danger">{activeCount}</div></Card>
-        <Card><div className="text-[10px] uppercase tracking-widest text-slate-600 mb-1">Реабілітація</div><div className="text-2xl font-extrabold font-mono text-status-warn">{rehabCount}</div></Card>
-        <Card><div className="text-[10px] uppercase tracking-widest text-slate-600 mb-1">Сер. пропуск</div><div className="text-2xl font-extrabold font-mono text-white">{avgDaysMissed}</div></Card>
-      </div>
+    <div className="min-h-screen bg-transparent text-slate-100 p-4 sm:p-6 md:p-8">
+      <div className="max-w-6xl mx-auto space-y-6">
+        <header className="pb-4 border-b border-sky-500/15">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.8)]" />
+            <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+              Статистика та аналітика травматизму
+            </h1>
+          </div>
+          <p className="text-xs text-slate-400 mt-1">
+            Зведена епідеміологія, розподіл локалізацій та аналіз ефективності реабілітації
+          </p>
+        </header>
+
+        {/* Метрики */}
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          <div className="p-4 rounded-2xl bg-slate-900/60 backdrop-blur-md border border-sky-500/15 shadow-[0_4px_20px_rgba(0,0,0,0.3)]">
+            <div className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-1">Всього травм</div>
+            <div className="text-2xl font-black font-mono text-white">{totalInjuries}</div>
+          </div>
+          <div className="p-4 rounded-2xl bg-slate-900/60 backdrop-blur-md border border-rose-500/20 shadow-[0_4px_20px_rgba(0,0,0,0.3)]">
+            <div className="text-[10px] uppercase tracking-wider text-rose-400 font-bold mb-1">Днів пропущено</div>
+            <div className="text-2xl font-black font-mono text-rose-400">{totalDaysMissed}</div>
+          </div>
+          <div className="p-4 rounded-2xl bg-slate-900/60 backdrop-blur-md border border-rose-500/20 shadow-[0_4px_20px_rgba(0,0,0,0.3)]">
+            <div className="text-[10px] uppercase tracking-wider text-rose-400 font-bold mb-1">Активних</div>
+            <div className="text-2xl font-black font-mono text-white">{activeCount}</div>
+          </div>
+          <div className="p-4 rounded-2xl bg-slate-900/60 backdrop-blur-md border border-amber-500/20 shadow-[0_4px_20px_rgba(0,0,0,0.3)]">
+            <div className="text-[10px] uppercase tracking-wider text-amber-400 font-bold mb-1">Реабілітація</div>
+            <div className="text-2xl font-black font-mono text-amber-400">{rehabCount}</div>
+          </div>
+          <div className="p-4 rounded-2xl bg-slate-900/60 backdrop-blur-md border border-emerald-500/20 shadow-[0_4px_20px_rgba(0,0,0,0.3)] col-span-2 sm:col-span-1">
+            <div className="text-[10px] uppercase tracking-wider text-emerald-400 font-bold mb-1">Сер. пропуск</div>
+            <div className="text-2xl font-black font-mono text-white">{avgDaysMissed} <span className="text-xs text-slate-400 font-normal">дн.</span></div>
+          </div>
+        </div>
 
       {/* Інтерактивна анатомічна теплова карта */}
       <BodyHeatmap injuries={injuryPoints} />

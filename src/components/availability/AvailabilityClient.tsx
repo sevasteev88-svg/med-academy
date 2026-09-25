@@ -129,25 +129,25 @@ ${injuredList ? `📋 *Гравці в лазареті / модифікован
     ).length;
 
     return (
-      <div key={team.id} className="bg-surface/60 border border-blue-900/15 rounded-xl p-4">
-        <div className="flex items-center justify-between mb-3 border-b border-blue-900/10 pb-2">
-          <div className="flex items-center gap-2">
-            <h3 className="text-base font-bold text-white">{team.name}</h3>
-            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">
+      <div key={team.id} className="p-5 rounded-2xl bg-slate-900/60 backdrop-blur-md border border-sky-500/15 shadow-[0_4px_25px_rgba(0,0,0,0.35)] space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-sky-500/10">
+          <div className="flex items-center gap-2.5">
+            <h3 className="text-base font-black text-white">{team.name}</h3>
+            <span className="text-xs px-2.5 py-0.5 rounded-full bg-slate-800/80 text-sky-400 border border-sky-500/20 font-mono">
               {okInTeam}/{totalInTeam} доступних
             </span>
           </div>
-          <span className="text-[11px] text-slate-500 hidden sm:inline">
-            {team.category === "youth" ? "Молодіжка" : "Академія"}
+          <span className="text-[11px] font-semibold text-slate-400 hidden sm:inline uppercase tracking-wider">
+            {team.category === "youth" ? "Молодіжний склад" : "Академія клубу"}
           </span>
         </div>
 
         {sortedPlayers.length === 0 ? (
-          <div className="text-xs text-slate-500 py-3 text-center">
+          <div className="text-xs text-slate-500 py-6 text-center">
             Немає гравців за вибраним фільтром статусу
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2.5">
+          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
             {sortedPlayers.map((player) => {
               const status = playerStatus(player);
               const zone = growthZone(player);
@@ -161,13 +161,13 @@ ${injuredList ? `📋 *Гравці в лазареті / модифікован
                 <div key={player.id} className="relative group">
                   <Link href={`/players/${player.id}`}>
                     <div
-                      className={`relative rounded-xl p-2.5 text-center transition-all cursor-pointer border ${
+                      className={`relative rounded-2xl p-3 text-center transition-all duration-200 cursor-pointer border backdrop-blur-sm ${
                         status === "ok"
-                          ? "bg-status-ok/[0.06] border-status-ok/20 hover:border-status-ok/50 hover:bg-status-ok/[0.12]"
+                          ? "bg-emerald-500/[0.05] border-emerald-500/20 hover:border-emerald-500/60 hover:bg-emerald-500/[0.12] hover:shadow-[0_0_15px_rgba(16,185,129,0.2)]"
                           : status === "warn"
-                          ? "bg-status-warn/[0.08] border-status-warn/30 hover:border-status-warn/60 hover:bg-status-warn/[0.15] ring-1 ring-status-warn/20"
-                          : "bg-status-danger/[0.08] border-status-danger/30 hover:border-status-danger/60 hover:bg-status-danger/[0.15] ring-1 ring-status-danger/20"
-                      }`}
+                          ? "bg-amber-500/[0.07] border-amber-500/30 hover:border-amber-500/60 hover:bg-amber-500/[0.15] ring-1 ring-amber-500/20 hover:shadow-[0_0_15px_rgba(245,158,11,0.2)]"
+                          : "bg-rose-500/[0.07] border-rose-500/30 hover:border-rose-500/60 hover:bg-rose-500/[0.15] ring-1 ring-rose-500/20 hover:shadow-[0_0_15px_rgba(244,63,94,0.2)]"
+                      } hover:-translate-y-0.5`}
                     >
                       {zone && (
                         <span
@@ -176,24 +176,24 @@ ${injuredList ? `📋 *Гравці в лазареті / модифікован
                               ? "Зона росту: червона (PHV пік росту)"
                               : "Зона росту: жовта (PHV увага)"
                           }
-                          className={`absolute top-1.5 right-1.5 w-2.5 h-2.5 rounded-full ring-2 ring-slate-900 ${
-                            zone === "red" ? "bg-status-danger animate-pulse" : "bg-status-warn"
+                          className={`absolute top-2 right-2 w-2.5 h-2.5 rounded-full ring-2 ring-slate-900 ${
+                            zone === "red" ? "bg-rose-500 animate-pulse shadow-[0_0_8px_rgba(244,63,94,0.8)]" : "bg-amber-400"
                           }`}
                         />
                       )}
                       <div
-                        className={`w-3.5 h-3.5 rounded-full mx-auto mb-1.5 shadow-sm ${
+                        className={`w-3.5 h-3.5 rounded-full mx-auto mb-2 shadow-sm ${
                           status === "ok"
-                            ? "bg-status-ok shadow-status-ok/40"
+                            ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]"
                             : status === "warn"
-                            ? "bg-status-warn shadow-status-warn/40"
-                            : "bg-status-danger shadow-status-danger/40"
+                            ? "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.8)]"
+                            : "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.8)] animate-pulse"
                         }`}
                       />
-                      <div className="text-[12px] font-bold text-white truncate">
+                      <div className="text-xs font-bold text-white group-hover:text-sky-300 transition-colors truncate">
                         {player.last_name}
                       </div>
-                      <div className="text-[10px] text-slate-400 font-mono">
+                      <div className="text-[10px] text-slate-400 font-mono mt-0.5">
                         {POSITION_LABELS[player.position] ?? player.position}
                       </div>
                     </div>
@@ -289,16 +289,19 @@ ${injuredList ? `📋 *Гравці в лазареті / модифікован
   }
 
   return (
-    <div className="min-h-screen bg-background text-slate-200 p-5 md:p-8">
+    <div className="min-h-screen bg-transparent text-slate-100 p-4 sm:p-6 md:p-8">
       <div className="max-w-6xl mx-auto space-y-6">
         {/* Заголовок та кнопка PDF */}
-        <header className="pb-4 border-b border-blue-900/15 flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+        <header className="pb-4 border-b border-sky-500/15 flex flex-col sm:flex-row justify-between sm:items-center gap-4">
           <div>
-            <h1 className="text-xl font-bold text-white tracking-tight">
-              Доступність гравців
-            </h1>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Ранковий рапорт готовності складу ·{" "}
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.8)] animate-pulse" />
+              <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+                Доступність гравців
+              </h1>
+            </div>
+            <p className="text-xs text-slate-400 mt-1">
+              Ранковий рапорт готовності та статус ротації складу ·{" "}
               {new Date().toLocaleDateString("uk-UA", {
                 day: "numeric",
                 month: "long",
@@ -306,20 +309,20 @@ ${injuredList ? `📋 *Гравці в лазареті / модифікован
               })}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Link
               href="/wellness"
-              className="px-3.5 py-2 rounded-lg bg-surface border border-brand-blue/40 text-brand-blue hover:bg-brand-blue hover:text-white text-xs font-semibold transition-colors flex items-center gap-1.5"
+              className="px-3.5 py-2 rounded-xl bg-slate-900/80 border border-sky-500/30 text-sky-400 hover:bg-sky-500/20 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5"
             >
               <span>⚡</span>
               <span>Велнес</span>
             </Link>
             <Link
               href="/workload"
-              className="px-3.5 py-2 rounded-lg bg-surface border border-purple-500/40 text-purple-300 hover:bg-purple-600 hover:text-white text-xs font-semibold transition-colors flex items-center gap-1.5"
+              className="px-3.5 py-2 rounded-xl bg-slate-900/80 border border-purple-500/30 text-purple-400 hover:bg-purple-500/20 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5"
             >
               <span>⏱️</span>
-              <span>Навантаження (ACWR)</span>
+              <span>ACWR</span>
             </Link>
             <PrintButton label="📥 Друк (PDF)" />
             <TelegramDigestModal defaultMessage={telegramDigestText} />
@@ -332,100 +335,100 @@ ${injuredList ? `📋 *Гравці в лазареті / модифікован
             type="button"
             onClick={() => setStatusFilter(statusFilter === "ok" ? "all" : "ok")}
             className={`text-left transition-all ${
-              statusFilter === "ok" ? "ring-2 ring-status-ok rounded-xl" : ""
+              statusFilter === "ok" ? "ring-2 ring-emerald-500 rounded-2xl" : ""
             }`}
           >
-            <Card accent="ok">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-4 h-4 rounded-full bg-status-ok shadow-sm shadow-status-ok/50" />
-                  <div>
-                    <div className="text-2xl font-extrabold font-mono text-status-ok">
-                      {totalOk}
-                    </div>
-                    <div className="text-[11px] text-slate-400 uppercase font-medium">
-                      Готових до гри
-                    </div>
+            <div className="p-4 rounded-2xl bg-slate-900/60 backdrop-blur-md border border-emerald-500/20 shadow-[0_4px_20px_rgba(0,0,0,0.3)] hover:border-emerald-500/40 transition-all flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center text-emerald-400 text-lg font-bold shadow-[0_0_12px_rgba(16,185,129,0.2)]">
+                  🟢
+                </div>
+                <div>
+                  <div className="text-2xl font-black font-mono text-white">
+                    {totalOk}
+                  </div>
+                  <div className="text-[11px] text-emerald-400 uppercase font-bold tracking-wider">
+                    Готові до гри
                   </div>
                 </div>
-                {statusFilter === "ok" && (
-                  <span className="text-[10px] text-status-ok font-semibold bg-status-ok/10 px-2 py-0.5 rounded">
-                    Активно
-                  </span>
-                )}
               </div>
-            </Card>
+              {statusFilter === "ok" && (
+                <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-0.5 rounded-full">
+                  Фільтр
+                </span>
+              )}
+            </div>
           </button>
 
           <button
             type="button"
             onClick={() => setStatusFilter(statusFilter === "warn" ? "all" : "warn")}
             className={`text-left transition-all ${
-              statusFilter === "warn" ? "ring-2 ring-status-warn rounded-xl" : ""
+              statusFilter === "warn" ? "ring-2 ring-amber-500 rounded-2xl" : ""
             }`}
           >
-            <Card accent="warn">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-4 h-4 rounded-full bg-status-warn shadow-sm shadow-status-warn/50" />
-                  <div>
-                    <div className="text-2xl font-extrabold font-mono text-status-warn">
-                      {totalWarn}
-                    </div>
-                    <div className="text-[11px] text-slate-400 uppercase font-medium">
-                      Обмежених (реабілітація)
-                    </div>
+            <div className="p-4 rounded-2xl bg-slate-900/60 backdrop-blur-md border border-amber-500/20 shadow-[0_4px_20px_rgba(0,0,0,0.3)] hover:border-amber-500/40 transition-all flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-center text-amber-400 text-lg font-bold shadow-[0_0_12px_rgba(245,158,11,0.2)]">
+                  🟡
+                </div>
+                <div>
+                  <div className="text-2xl font-black font-mono text-white">
+                    {totalWarn}
+                  </div>
+                  <div className="text-[11px] text-amber-400 uppercase font-bold tracking-wider">
+                    Обмежені (RTP)
                   </div>
                 </div>
-                {statusFilter === "warn" && (
-                  <span className="text-[10px] text-status-warn font-semibold bg-status-warn/10 px-2 py-0.5 rounded">
-                    Активно
-                  </span>
-                )}
               </div>
-            </Card>
+              {statusFilter === "warn" && (
+                <span className="text-[10px] text-amber-400 font-bold bg-amber-500/10 border border-amber-500/30 px-2.5 py-0.5 rounded-full">
+                  Фільтр
+                </span>
+              )}
+            </div>
           </button>
 
           <button
             type="button"
             onClick={() => setStatusFilter(statusFilter === "danger" ? "all" : "danger")}
             className={`text-left transition-all ${
-              statusFilter === "danger" ? "ring-2 ring-status-danger rounded-xl" : ""
+              statusFilter === "danger" ? "ring-2 ring-rose-500 rounded-2xl" : ""
             }`}
           >
-            <Card accent="danger">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-4 h-4 rounded-full bg-status-danger shadow-sm shadow-status-danger/50" />
-                  <div>
-                    <div className="text-2xl font-extrabold font-mono text-status-danger">
-                      {totalDanger}
-                    </div>
-                    <div className="text-[11px] text-slate-400 uppercase font-medium">
-                      Травмованих (недоступні)
-                    </div>
+            <div className="p-4 rounded-2xl bg-slate-900/60 backdrop-blur-md border border-rose-500/20 shadow-[0_4px_20px_rgba(0,0,0,0.3)] hover:border-rose-500/40 transition-all flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-rose-500/10 border border-rose-500/25 flex items-center justify-center text-rose-400 text-lg font-bold shadow-[0_0_12px_rgba(244,63,94,0.2)]">
+                  🔴
+                </div>
+                <div>
+                  <div className="text-2xl font-black font-mono text-white">
+                    {totalDanger}
+                  </div>
+                  <div className="text-[11px] text-rose-400 uppercase font-bold tracking-wider">
+                    Недоступні (травма)
                   </div>
                 </div>
-                {statusFilter === "danger" && (
-                  <span className="text-[10px] text-status-danger font-semibold bg-status-danger/10 px-2 py-0.5 rounded">
-                    Активно
-                  </span>
-                )}
               </div>
-            </Card>
+              {statusFilter === "danger" && (
+                <span className="text-[10px] text-rose-400 font-bold bg-rose-500/10 border border-rose-500/30 px-2.5 py-0.5 rounded-full">
+                  Фільтр
+                </span>
+              )}
+            </div>
           </button>
         </div>
 
         {/* Швидкі фільтри по командах */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 print:hidden">
-          <span className="text-xs text-slate-500 mr-1.5 flex-shrink-0">Команда:</span>
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 print:hidden scrollbar-thin">
+          <span className="text-xs text-slate-400 mr-1 flex-shrink-0 font-medium">Команда:</span>
           <button
             type="button"
             onClick={() => setSelectedTeam("all")}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex-shrink-0 ${
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex-shrink-0 ${
               selectedTeam === "all"
-                ? "bg-brand-blue text-white"
-                : "bg-surface border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700"
+                ? "bg-gradient-to-r from-sky-500 to-blue-600 text-white shadow-[0_0_12px_rgba(14,165,233,0.3)]"
+                : "bg-slate-900/80 border border-sky-500/15 text-slate-300 hover:text-white hover:border-sky-500/30"
             }`}
           >
             Всі команди ({allPlayers.length})
@@ -438,10 +441,10 @@ ${injuredList ? `📋 *Гравці в лазареті / модифікован
                 key={t.id}
                 type="button"
                 onClick={() => setSelectedTeam(isSelected ? "all" : t.name)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex-shrink-0 ${
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex-shrink-0 ${
                   isSelected
-                    ? "bg-brand-blue text-white"
-                    : "bg-surface border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700"
+                    ? "bg-gradient-to-r from-sky-500 to-blue-600 text-white shadow-[0_0_12px_rgba(14,165,233,0.3)]"
+                    : "bg-slate-900/80 border border-sky-500/15 text-slate-300 hover:text-white hover:border-sky-500/30"
                 }`}
               >
                 {t.name} ({count})
@@ -456,7 +459,7 @@ ${injuredList ? `📋 *Гравці в лазареті / модифікован
                 setSelectedTeam("all");
                 setStatusFilter("all");
               }}
-              className="text-xs text-slate-500 hover:text-slate-300 ml-2 underline flex-shrink-0"
+              className="text-xs text-sky-400 hover:text-sky-300 ml-2 underline flex-shrink-0 font-medium"
             >
               Скинути всі фільтри
             </button>
@@ -464,18 +467,18 @@ ${injuredList ? `📋 *Гравці в лазареті / модифікован
         </div>
 
         {/* Легенда */}
-        <div className="flex gap-4 text-xs text-slate-400 flex-wrap bg-surface/40 p-3 rounded-lg border border-slate-800/80">
-          <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-status-ok" /> Готовий до тренування
+        <div className="flex gap-4 text-xs text-slate-400 flex-wrap bg-slate-900/60 backdrop-blur-md p-3.5 rounded-2xl border border-sky-500/15 shadow-[0_4px_20px_rgba(0,0,0,0.3)]">
+          <span className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]" /> Готовий до тренування
           </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-status-warn" /> Обмежений (індивідуальний план)
+          <span className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.8)]" /> Обмежений (RTP / індивідуально)
           </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-status-danger" /> Травмований (медпункт)
+          <span className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.8)]" /> Травмований (лазарет)
           </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full ring-1 ring-slate-600 bg-status-warn" />{" "}
+          <span className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full ring-2 ring-slate-900 bg-amber-400" />{" "}
             Кутова мітка — пік росту PHV (корекція стрибків/навантажень)
           </span>
         </div>

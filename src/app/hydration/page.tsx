@@ -45,17 +45,22 @@ export default async function HydrationPage() {
     .filter(Boolean) as HydrationSession[];
 
   return (
-    <div className="min-h-screen bg-background text-slate-200 p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
-      <div className="border-b border-blue-900/20 pb-4">
-        <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
-          <span>💧</span> Монітор гідратації та швидкості потовиділення (Sweat Rate)
-        </h1>
-        <p className="text-xs text-slate-400 mt-1">
-          Контроль зневоднення під час літніх/високоінтенсивних тренувань для запобігання м'язових судом та травм
-        </p>
-      </div>
+    <div className="min-h-screen bg-transparent text-slate-100 p-4 sm:p-6 md:p-8">
+      <div className="max-w-6xl mx-auto space-y-6">
+        <header className="border-b border-sky-500/15 pb-4">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.8)]" />
+            <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
+              <span>💧</span> Монітор гідратації та швидкості потовиділення (Sweat Rate)
+            </h1>
+          </div>
+          <p className="text-xs text-slate-400 mt-1">
+            Контроль зневоднення під час тренувань для запобігання м'язовим судомам та зниження ризику травм
+          </p>
+        </header>
 
-      <HydrationClient players={players} recentSessions={sessions} />
+        <HydrationClient players={players} recentSessions={sessions} />
+      </div>
     </div>
   );
 }
