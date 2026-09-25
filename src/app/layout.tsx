@@ -1,7 +1,8 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import AppNav from "@/components/layout/AppNav";
+import PwaRegister from "@/components/layout/PwaRegister";
 import { getCurrentUser } from "@/lib/auth";
 
 const geistSans = Geist({
@@ -17,6 +18,23 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Медичний штаб · ФК «Чорноморець»",
   description: "Медичний дашборд для спортивного лікаря-травматолога",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "MedAcademy",
+  },
+  icons: {
+    icon: "/icon-192.png",
+    apple: "/apple-touch-icon.png",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#070A13",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
 };
 
 export default async function RootLayout({
@@ -36,6 +54,7 @@ export default async function RootLayout({
         <main className={`${user ? "md:ml-16 pb-16 md:pb-0" : ""} flex-1`}>
           {children}
         </main>
+        <PwaRegister />
       </body>
     </html>
   );

@@ -16,6 +16,7 @@ import type { NutritionProfile } from "@/types/nutrition";
 import type { PlayerPhoto } from "@/types/photo";
 import type { WearableBiometricsEntry } from "@/types/wearables";
 import DeleteButton from "@/components/ui/DeleteButton";
+import PrintButton from "@/components/ui/PrintButton";
 import { deletePlayerAction } from "@/actions/delete-player-action";
 import { POSITION_LABELS, POSITION_FULL, DOMINANT_UA, LOCATION_UA, SEVERITY_UA, INJURY_TYPE_UA, STATUS_UA } from "@/lib/constants";
 
@@ -223,6 +224,7 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
               >
                 ✏️ Редагувати
               </Link>
+              <PrintButton label="PDF Паспорт" />
             </div>
             <DeleteButton onDelete={handleDelete} itemName="гравця" />
           </div>
