@@ -59,7 +59,7 @@ export async function verifyPlayerPinAction(playerId: string, enteredPin: string
   // 3. Отримуємо активні травми футболіста
   const { data: injuries } = await supabase
     .from("injuries")
-    .select("id, diagnosis, location, vas_score, status, date_of_injury, expected_return_date")
+    .select("id, description, injury_type, location, vas_score, status, date_of_injury, expected_return_date")
     .eq("player_id", playerId)
     .in("status", ["active", "rehabilitation"])
     .order("date_of_injury", { ascending: false });

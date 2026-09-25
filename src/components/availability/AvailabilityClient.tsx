@@ -30,7 +30,8 @@ type Injury = {
   injury_type: string;
   date_of_injury: string;
   expected_return_date: string | null;
-  diagnosis: string | null;
+  description?: string | null;
+  diagnosis?: string | null;
 };
 
 type Player = {

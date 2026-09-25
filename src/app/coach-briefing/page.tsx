@@ -21,7 +21,7 @@ export default async function CoachBriefingPage() {
       injuries (
         id,
         status,
-        diagnosis,
+        description,
         location,
         injury_type,
         vas_score
@@ -47,11 +47,11 @@ export default async function CoachBriefingPage() {
     if (hasActive) {
       status = "unavailable";
       const inj = activeInjuries.find((i: any) => i.status === "active");
-      injurySummary = inj?.diagnosis || "Активна травма";
+      injurySummary = inj?.description || inj?.injury_type || "Активна травма";
     } else if (hasRehab) {
       status = "restricted";
       const inj = activeInjuries.find((i: any) => i.status === "rehabilitation");
-      injurySummary = inj?.diagnosis || "Фаза реабілітації";
+      injurySummary = inj?.description || inj?.injury_type || "Фаза реабілітації";
       maxMinutes = 45;
       restrictionNotes = "Обмеження до 45 хвилин. Уникати контактних ударів по ушкодженій кінцівці.";
     } else {

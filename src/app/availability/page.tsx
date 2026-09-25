@@ -24,7 +24,7 @@ export default async function AvailabilityPage() {
           injury_type,
           date_of_injury,
           expected_return_date,
-          diagnosis
+          description
         ),
         maturation_assessments (
           risk_zone,

@@ -26,7 +26,8 @@ export default async function RtpPage() {
     .select(`
       id,
       player_id,
-      diagnosis,
+      description,
+      injury_type,
       location,
       date_of_injury,
       expected_return_date,
@@ -105,7 +106,7 @@ export default async function RtpPage() {
       teamId: player.team_id,
       teamName: player.teams?.name || "Команда",
       photoUrl: photoByPlayer[player.id] || null,
-      diagnosis: inj.diagnosis || "Діагноз не вказано",
+      diagnosis: inj.description || inj.injury_type || "Діагноз не вказано",
       location: inj.location,
       dateOfInjury: inj.date_of_injury,
       expectedReturnDate: inj.expected_return_date || null,

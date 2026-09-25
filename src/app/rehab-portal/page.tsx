@@ -16,7 +16,8 @@ export default async function RehabPortalPage() {
     .select(`
       id,
       location,
-      diagnosis,
+      description,
+      injury_type,
       players!inner (
         id,
         first_name,
@@ -43,7 +44,7 @@ export default async function RehabPortalPage() {
         name: `${pl.last_name} ${pl.first_name}`,
         team: pl.teams?.name || "Академія",
         position: pl.position,
-        diagnosis: inj.diagnosis || "Травма",
+        diagnosis: inj.description || inj.injury_type || "Травма",
         location: inj.location,
       };
     })
