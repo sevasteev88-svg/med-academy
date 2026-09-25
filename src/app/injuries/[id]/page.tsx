@@ -16,6 +16,8 @@ import MedicalTreatmentJournal from "@/components/injuries/MedicalTreatmentJourn
 import type { MedicalTreatmentEntry } from "@/types/pharmacy";
 import Scat6ConcussionAssessment from "@/components/injuries/Scat6ConcussionAssessment";
 import type { ConcussionAssessment } from "@/types/concussion";
+import LsiSymmetryAssessmentCard from "@/components/injuries/LsiSymmetryAssessmentCard";
+import type { LsiAssessmentRecord } from "@/types/lsi";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -56,7 +58,7 @@ export default async function InjuryDetailPage({ params }: Props) {
   const { id } = await params;
   const supabase = await createClient();
 
-  const [injuryRes, examsRes, logsRes, treatmentsRes, concussionsRes] = await Promise.all([
+  const [injuryRes, examsRes, logsRes, treatmentsRes, concussionsRes, lsiRes] = await Promise.all([
     supabase
       .from("injuries")
       .select(`*, players(id, first_name, last_name, date_of_birth, position, teams(name))`)
@@ -84,6 +86,11 @@ export default async function InjuryDetailPage({ params }: Props) {
       .select("*")
       .eq("injury_id", id)
       .like("note", "[CONCUSSION]%")
+      .order("date", { ascending: false }),
+    supabase
+      .from("injury_logs")
+      .select("*")
+      .like("note", "[LSI_ASSESSMENT]%")
       .order("date", { ascending: false }),
   ]);
 
@@ -132,6 +139,21 @@ export default async function InjuryDetailPage({ params }: Props) {
       }
     })
     .filter(Boolean) as ConcussionAssessment[];
+
+  const lsiAssessments: LsiAssessmentRecord[] = (lsiRes.data || [])
+    .map((l) => {
+      try {
+        const rawJson = l.note.replace("[LSI_ASSESSMENT] ", "");
+        const parsed = JSON.parse(rawJson);
+        if (parsed.injury_id === id || (!parsed.injury_id && parsed.player_id === injury.player_id)) {
+          return parsed as LsiAssessmentRecord;
+        }
+        return null;
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean) as LsiAssessmentRecord[];
 
   const isHeadInjury = injury.location === "head" || injury.injury_type === "concussion";
 
@@ -296,6 +318,16 @@ export default async function InjuryDetailPage({ params }: Props) {
             playerId={injury.player_id}
             playerName={playerName}
             initialTreatments={medicalTreatments}
+          />
+        </div>
+
+        {/* Тестування симетрії кінцівок LSI та динамометрія */}
+        <div className="mb-4">
+          <LsiSymmetryAssessmentCard
+            playerId={injury.player_id}
+            injuryId={injury.id}
+            playerName={playerName}
+            initialRecords={lsiAssessments}
           />
         </div>
 

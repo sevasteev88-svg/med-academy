@@ -6,14 +6,49 @@ export type MedicalTreatmentEntry = {
   id: string;
   injury_id?: string | null;
   player_id: string;
+  player_name?: string;
+  team_name?: string;
   date: string;
   category: TreatmentCategory;
-  title: string; // e.g. "PRP-терапія (Platelet-Rich Plasma)", "Діклофенак 75мг", "Ударно-хвильова UWT", "Тейпування гомілкостопа"
-  dosage_or_params?: string | null; // e.g. "3 мл аутокрові", "1 таб. 2 р/день", "2.0 bar, 2000 ударів"
+  title: string;
+  dosage_or_params?: string | null;
   doctor_name: string;
   wada_status: WadaStatus;
   notes?: string | null;
   created_at: string;
+  pharmacy_item_id?: string | null;
+  units_deducted?: number | null;
+};
+
+export type PharmacyCategory =
+  | "injections"
+  | "nsaid_painkillers"
+  | "tapes_bandages"
+  | "vitamins_supplements"
+  | "emergency_antiseptics"
+  | "creams_gels";
+
+export interface PharmacyItem {
+  id: string;
+  name: string;
+  active_substance?: string;
+  category: PharmacyCategory;
+  stock_count: number;
+  unit: string; // "ампул", "табл.", "рулонів", "тюбиків", "флаконів"
+  min_alert_threshold: number;
+  expiry_date: string; // YYYY-MM-DD
+  wada_status: WadaStatus;
+  storage_location?: string; // "Медкабінет база", "Виїзна валіза 1"
+  notes?: string;
+}
+
+export const PHARMACY_CATEGORY_LABELS: Record<PharmacyCategory, { label: string; icon: string }> = {
+  injections: { label: "Ін'єкційні розчини / Блокади", icon: "💉" },
+  nsaid_painkillers: { label: "НПЗЗ та Знеболювальні", icon: "💊" },
+  tapes_bandages: { label: "Тейпи, Бандажі, Фіксація", icon: "🩹" },
+  vitamins_supplements: { label: "Вітаміни, Хондропротектори", icon: "🧪" },
+  emergency_antiseptics: { label: "Антисептики та Невідкладна допомога", icon: "🚑" },
+  creams_gels: { label: "Мазі, Гелі, Розігрів/Кріо", icon: "🧴" },
 };
 
 export const TREATMENT_CATEGORY_META: Record<
@@ -44,22 +79,26 @@ export const TREATMENT_CATEGORY_META: Record<
 
 export const WADA_META: Record<
   WadaStatus,
-  { label: string; badgeClass: string }
+  { label: string; badgeClass: string; icon: string }
 > = {
   allowed: {
-    label: "✓ WADA: Дозволено без обмежень",
-    badgeClass: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
+    label: "WADA: Дозволено без обмежень",
+    badgeClass: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
+    icon: "✓",
   },
   prohibited_in_competition: {
-    label: "⚠️ WADA: Заборонено в змагальний період (S-list)",
-    badgeClass: "bg-amber-500/15 text-amber-400 border-amber-500/30",
+    label: "WADA: Заборонено в змагальний період (S-list)",
+    badgeClass: "bg-amber-500/20 text-amber-300 border-amber-500/30",
+    icon: "⚠️",
   },
   prohibited_always: {
-    label: "🛑 WADA: Заборонено завжди (Повний бан)",
-    badgeClass: "bg-red-500/15 text-red-400 border-red-500/30",
+    label: "WADA: Заборонено завжди (Повний бан)",
+    badgeClass: "bg-rose-500/20 text-rose-300 border-rose-500/30",
+    icon: "🛑",
   },
   requires_tue: {
-    label: "📋 Потребує TUE (Терапевтичний виняток)",
-    badgeClass: "bg-sky-500/15 text-sky-400 border-sky-500/30",
+    label: "Потребує TUE (Терапевтичний виняток)",
+    badgeClass: "bg-sky-500/20 text-sky-300 border-sky-500/30",
+    icon: "📋",
   },
 };

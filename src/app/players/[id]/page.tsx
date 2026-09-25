@@ -12,11 +12,13 @@ import PlayerPhotoUploader from "@/components/players/PlayerPhotoUploader";
 import WearablesBiometricsCard from "@/components/players/WearablesBiometricsCard";
 import PlayerSportsIntelligenceCard from "@/components/players/PlayerSportsIntelligenceCard";
 import PlayerRehabCheckinHistory from "@/components/players/PlayerRehabCheckinHistory";
+import LsiSymmetryAssessmentCard from "@/components/injuries/LsiSymmetryAssessmentCard";
 import type { PreSeasonScreening } from "@/types/screening";
 import type { NutritionProfile } from "@/types/nutrition";
 import type { PlayerPhoto } from "@/types/photo";
 import type { WearableBiometricsEntry } from "@/types/wearables";
 import type { RehabCheckinData } from "@/types/rehab-portal";
+import type { LsiAssessmentRecord } from "@/types/lsi";
 import DeleteButton from "@/components/ui/DeleteButton";
 import PrintButton from "@/components/ui/PrintButton";
 import { deletePlayerAction } from "@/actions/delete-player-action";
@@ -36,7 +38,7 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
   if (from) injuryQuery = injuryQuery.gte("date_of_injury", from);
   if (to) injuryQuery = injuryQuery.lte("date_of_injury", to);
 
-  const [playerRes, injuriesRes, anthroRes, matRes, screeningLogsRes, nutritionLogsRes, photoLogsRes, wearableLogsRes, rehabLogsRes, pinLogsRes] = await Promise.all([
+  const [playerRes, injuriesRes, anthroRes, matRes, screeningLogsRes, nutritionLogsRes, photoLogsRes, wearableLogsRes, rehabLogsRes, pinLogsRes, lsiLogsRes] = await Promise.all([
     supabase.from("players").select("*, teams ( name, category )").eq("id", id).single(),
     injuryQuery,
     supabase.from("anthropometry_logs").select("*").eq("player_id", id).order("date", { ascending: false }),
@@ -79,6 +81,11 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
       .like("note", "[PLAYER_PIN]%")
       .order("date", { ascending: false })
       .limit(1),
+    supabase
+      .from("injury_logs")
+      .select("*")
+      .like("note", "[LSI_ASSESSMENT]%")
+      .order("date", { ascending: false }),
   ]);
 
   const { data: player, error } = playerRes;
@@ -160,6 +167,18 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
       customPin = parsed.pin;
     } catch {}
   }
+
+  const lsiRecords = (lsiLogsRes.data || [])
+    .map((l) => {
+      try {
+        const rawJson = l.note.replace("[LSI_ASSESSMENT] ", "");
+        const parsed = JSON.parse(rawJson);
+        return parsed.player_id === id ? (parsed as LsiAssessmentRecord) : null;
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean) as LsiAssessmentRecord[];
 
   const totalInjuries = injuryList.length;
   const totalDaysMissed = injuryList.reduce((s,i) => s + calcDaysMissed(i), 0);
@@ -318,6 +337,12 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
           dateOfBirth={player.date_of_birth}
           currentPin={customPin}
           checkins={rehabCheckins}
+        />
+
+        <LsiSymmetryAssessmentCard
+          playerId={id}
+          playerName={`${player.last_name} ${player.first_name}`}
+          initialRecords={lsiRecords}
         />
 
         {/* Період аналізу травм */}

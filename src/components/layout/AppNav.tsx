@@ -21,6 +21,7 @@ const DOCTOR_NAV: NavItem[] = [
   { href: "/workload", label: "Навантаження", icon: "⏱️" },
   { href: "/hydration", label: "Гідратація", icon: "💧" },
   { href: "/injuries", label: "Травми", icon: "🩹" },
+  { href: "/pharmacy", label: "Аптека та склад", icon: "💊" },
   { href: "/exams/upcoming", label: "Огляди", icon: "🗓️" },
   { href: "/statistics", label: "Статистика", icon: "📊" },
   { href: "/reports/weekly", label: "Звіт", icon: "📋" },
