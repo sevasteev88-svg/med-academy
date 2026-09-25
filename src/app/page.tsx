@@ -165,31 +165,50 @@ export default async function Home() {
     .order("vas_score", { ascending: false, nullsFirst: false })
     .limit(5);
 
-  // ── Реабілітація: фази з прогресом ──
-  const { data: rehabInjuries } = await supabase
-    .from("injuries")
-    .select(`
-      id, location, injury_type,
-      players ( first_name, last_name ),
-      rehab_phases ( id, status, sort_order )
-    `)
-    .eq("status", "rehabilitation")
-    .limit(5);
+  // ── Реабілітація: фази з прогресом (RTP Clearance + RTP Phases) ──
+  const [{ data: rehabInjuries }, { data: rtpClearanceLogs }] = await Promise.all([
+    supabase
+      .from("injuries")
+      .select(`
+        id, location, injury_type,
+        players ( first_name, last_name )
+      `)
+      .eq("status", "rehabilitation")
+      .limit(5),
+    supabase
+      .from("injury_logs")
+      .select("injury_id, note, created_at")
+      .like("note", "[RTP_CLEARANCE]%")
+      .order("created_at", { ascending: false }),
+  ]);
 
-  // Рахуємо прогрес реабілітації по фазах
+  // Словник останнього прогресу допуску по травмах
+  const clearanceByInjury: Record<string, { pct: number; passed: number; total: number }> = {};
+  for (const log of rtpClearanceLogs ?? []) {
+    if (log.injury_id && !clearanceByInjury[log.injury_id]) {
+      try {
+        const jsonStr = log.note.replace("[RTP_CLEARANCE] ", "");
+        const parsed = JSON.parse(jsonStr);
+        if (parsed.clearancePercentage != null) {
+          clearanceByInjury[log.injury_id] = {
+            pct: parsed.clearancePercentage,
+            passed: parsed.passedCriteria ?? 0,
+            total: parsed.totalCriteria ?? 9,
+          };
+        }
+      } catch {}
+    }
+  }
+
+  // Рахуємо прогрес реабілітації
   const rehabRows = (rehabInjuries ?? []).map((inj: any) => {
-    const phases = inj.rehab_phases ?? [];
-    const total = phases.length;
-    const done = phases.filter((p: any) => p.status === "completed").length;
-    const inProgress = phases.filter((p: any) => p.status === "in_progress").length;
-    const pct = total > 0 ? Math.round(((done + inProgress * 0.5) / total) * 100) : 0;
-    const currentPhase = done + (inProgress > 0 ? 1 : 0);
+    const clr = clearanceByInjury[inj.id];
+    const pct = clr ? clr.pct : 0;
     return {
       id: inj.id,
       name: shortName(inj.players),
       injury: LOCATION_UA[inj.location] ?? inj.location,
-      weekCurrent: currentPhase,
-      weekTotal: total,
+      subtitle: clr ? `${clr.passed}/${clr.total} критеріїв` : "Етап 1: Мобілізація",
       progressPct: pct,
     };
   });
@@ -405,7 +424,7 @@ export default async function Home() {
                       <div className="min-w-0">
                         <div className="text-xs font-bold text-white truncate">{r.name}</div>
                         <div className="text-[10px] text-slate-400">
-                          {r.injury}{r.weekTotal > 0 && ` · Фаза ${r.weekCurrent}/${r.weekTotal}`}
+                          {r.injury} · <span className="text-sky-400 font-mono">{r.subtitle}</span>
                         </div>
                       </div>
 
