@@ -44,19 +44,19 @@ export default function CoachBriefingClient({ teams, players }: CoachBriefingPro
   const availPct = totalCount > 0 ? Math.round((availableList.length / totalCount) * 100) : 0;
 
   return (
-    <div className="min-h-screen bg-background text-slate-200 p-4 md:p-8">
+    <div className="min-h-screen bg-transparent text-slate-100 p-4 sm:p-6 md:p-8">
       <div className="max-w-6xl mx-auto space-y-6">
         {/* Header with Print / Briefing trigger */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between pb-4 border-b border-blue-900/20 gap-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between pb-4 border-b border-sky-500/15 gap-4">
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-2xl">📋</span>
-              <h1 className="text-xl md:text-2xl font-black text-white tracking-tight">
-                Медико-Тактичний Брифінг Тренера (Matchday Briefing)
+              <span className="w-2.5 h-2.5 rounded-full bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.8)]" />
+              <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+                Медико-Тактичний Брифінг Тренера (Matchday)
               </h1>
             </div>
             <p className="text-xs text-slate-400 mt-1">
-              Експрес-зведення для Головного тренера та тренера з фізпідготовки перед матчем / тренуванням
+              Експрес-зведення для Головного тренера та тренера з фізпідготовки перед тренуванням або грою
             </p>
           </div>
 
@@ -64,21 +64,21 @@ export default function CoachBriefingClient({ teams, players }: CoachBriefingPro
             <button
               type="button"
               onClick={() => window.print()}
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-lg border border-slate-700 transition flex items-center gap-2"
+              className="px-4 py-2.5 bg-slate-900/80 hover:bg-slate-800 text-sky-400 border border-sky-500/25 text-xs font-bold rounded-xl shadow-[0_0_12px_rgba(14,165,233,0.15)] transition-all flex items-center gap-2"
             >
-              <span>🖨️</span> Роздрукувати бриф
+              <span>🖨️</span> Роздрукувати рапорт
             </button>
           </div>
         </div>
 
         {/* Filters */}
-        <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900/60 p-3 rounded-xl border border-blue-950/40">
+        <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900/60 backdrop-blur-md p-3.5 rounded-2xl border border-sky-500/15 shadow-[0_4px_20px_rgba(0,0,0,0.3)]">
           <div className="flex items-center gap-2">
             <span className="text-xs text-slate-400 font-semibold">Команда:</span>
             <select
               value={selectedTeam}
               onChange={(e) => setSelectedTeam(e.target.value)}
-              className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-primary"
+              className="bg-slate-800/80 border border-slate-700/60 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-sky-500"
             >
               <option value="all">Усі склади (Академія + U19)</option>
               {teams.map((t) => (
@@ -89,13 +89,13 @@ export default function CoachBriefingClient({ teams, players }: CoachBriefingPro
             </select>
           </div>
 
-          <div className="flex items-center gap-1 bg-slate-800/80 p-1 rounded-lg border border-slate-700/60">
+          <div className="flex items-center gap-1.5 bg-slate-800/80 p-1.5 rounded-xl border border-slate-700/60">
             <button
               type="button"
               onClick={() => setTacticalFilter("all")}
               className={
-                "px-3 py-1 text-xs font-semibold rounded-md transition " +
-                (tacticalFilter === "all" ? "bg-primary text-white" : "text-slate-400 hover:text-white")
+                "px-3 py-1.5 text-xs font-bold rounded-lg transition-all " +
+                (tacticalFilter === "all" ? "bg-gradient-to-r from-sky-500 to-blue-600 text-white shadow-[0_0_10px_rgba(14,165,233,0.4)]" : "text-slate-400 hover:text-white")
               }
             >
               Всі ({totalCount})
@@ -104,8 +104,8 @@ export default function CoachBriefingClient({ teams, players }: CoachBriefingPro
               type="button"
               onClick={() => setTacticalFilter("available")}
               className={
-                "px-3 py-1 text-xs font-semibold rounded-md transition " +
-                (tacticalFilter === "available" ? "bg-emerald-600 text-white" : "text-slate-400 hover:text-white")
+                "px-3 py-1.5 text-xs font-bold rounded-lg transition-all " +
+                (tacticalFilter === "available" ? "bg-emerald-600 text-white shadow-[0_0_10px_rgba(16,185,129,0.4)]" : "text-slate-400 hover:text-white")
               }
             >
               🟢 Готові ({availableList.length})
@@ -114,8 +114,8 @@ export default function CoachBriefingClient({ teams, players }: CoachBriefingPro
               type="button"
               onClick={() => setTacticalFilter("restricted")}
               className={
-                "px-3 py-1 text-xs font-semibold rounded-md transition " +
-                (tacticalFilter === "restricted" ? "bg-amber-600 text-white" : "text-slate-400 hover:text-white")
+                "px-3 py-1.5 text-xs font-bold rounded-lg transition-all " +
+                (tacticalFilter === "restricted" ? "bg-amber-600 text-white shadow-[0_0_10px_rgba(245,158,11,0.4)]" : "text-slate-400 hover:text-white")
               }
             >
               🟡 Ліміт ({restrictedList.length})
@@ -124,64 +124,64 @@ export default function CoachBriefingClient({ teams, players }: CoachBriefingPro
               type="button"
               onClick={() => setTacticalFilter("unavailable")}
               className={
-                "px-3 py-1 text-xs font-semibold rounded-md transition " +
-                (tacticalFilter === "unavailable" ? "bg-red-600 text-white" : "text-slate-400 hover:text-white")
+                "px-3 py-1.5 text-xs font-bold rounded-lg transition-all " +
+                (tacticalFilter === "unavailable" ? "bg-rose-600 text-white shadow-[0_0_10px_rgba(244,63,94,0.4)]" : "text-slate-400 hover:text-white")
               }
             >
-              🔴 Недоступні ({unavailableList.length})
+              🔴 Лазарет ({unavailableList.length})
             </button>
           </div>
         </div>
 
         {/* Readiness Summary Metrics */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Card className="bg-slate-900/60 border-blue-900/20">
-            <div className="text-[10px] uppercase font-mono tracking-wider text-slate-500 mb-1">
-              Бойова готовність складу
+          <div className="p-4 rounded-2xl bg-slate-900/60 backdrop-blur-md border border-emerald-500/20 shadow-[0_4px_20px_rgba(0,0,0,0.3)]">
+            <div className="text-[10px] uppercase font-mono tracking-wider text-emerald-400 font-bold mb-1">
+              Бойова готовність
             </div>
             <div className="text-3xl font-black font-mono text-emerald-400">{availPct}%</div>
             <div className="text-[10px] text-slate-400 mt-1">
               {availableList.length} з {totalCount} гравців на 100% готові
             </div>
-          </Card>
+          </div>
 
-          <Card className="bg-slate-900/60 border-blue-900/20">
-            <div className="text-[10px] uppercase font-mono tracking-wider text-slate-500 mb-1">
+          <div className="p-4 rounded-2xl bg-slate-900/60 backdrop-blur-md border border-amber-500/20 shadow-[0_4px_20px_rgba(0,0,0,0.3)]">
+            <div className="text-[10px] uppercase font-mono tracking-wider text-amber-400 font-bold mb-1">
               Модифікований допуск
             </div>
             <div className="text-3xl font-black font-mono text-amber-400">{restrictedList.length}</div>
             <div className="text-[10px] text-slate-400 mt-1">Хвилинний ліміт / щадний режим</div>
-          </Card>
+          </div>
 
-          <Card className="bg-slate-900/60 border-blue-900/20">
-            <div className="text-[10px] uppercase font-mono tracking-wider text-slate-500 mb-1">
-              Лазарет (Поза заявкою)
+          <div className="p-4 rounded-2xl bg-slate-900/60 backdrop-blur-md border border-rose-500/20 shadow-[0_4px_20px_rgba(0,0,0,0.3)]">
+            <div className="text-[10px] uppercase font-mono tracking-wider text-rose-400 font-bold mb-1">
+              Лазарет клубу
             </div>
-            <div className="text-3xl font-black font-mono text-red-400">{unavailableList.length}</div>
-            <div className="text-[10px] text-slate-400 mt-1">Гостра фаза / повна іммобілізація</div>
-          </Card>
+            <div className="text-3xl font-black font-mono text-rose-400">{unavailableList.length}</div>
+            <div className="text-[10px] text-slate-400 mt-1">Гостра фаза / іммобілізація</div>
+          </div>
 
-          <Card className="bg-slate-900/60 border-blue-900/20">
-            <div className="text-[10px] uppercase font-mono tracking-wider text-slate-500 mb-1">
+          <div className="p-4 rounded-2xl bg-slate-900/60 backdrop-blur-md border border-sky-500/20 shadow-[0_4px_20px_rgba(0,0,0,0.3)]">
+            <div className="text-[10px] uppercase font-mono tracking-wider text-sky-400 font-bold mb-1">
               Акцент фізпідготовки
             </div>
             <div className="text-sm font-bold text-white mt-1">Динамічна розминка</div>
-            <div className="text-[10px] text-sky-400 mt-1">Акцент на привідні та литкові м-зи</div>
-          </Card>
+            <div className="text-[10px] text-sky-300 mt-1">Акцент на привідні та литкові м-зи</div>
+          </div>
         </div>
 
         {/* 3 Main Action Columns */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* 1. GREEN: 100% MATCH READY */}
           <div className="space-y-3">
-            <div className="flex items-center justify-between pb-2 border-b border-emerald-500/40">
+            <div className="flex items-center justify-between pb-2 border-b border-emerald-500/30">
               <div className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)] animate-pulse" />
                 <h3 className="text-sm font-bold text-emerald-400 uppercase tracking-wider">
                   Повна готовність (90+ хв)
                 </h3>
               </div>
-              <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800">
+              <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full border border-emerald-500/25">
                 {availableList.length}
               </span>
             </div>
@@ -193,12 +193,12 @@ export default function CoachBriefingClient({ teams, players }: CoachBriefingPro
                 availableList.map((p) => (
                   <div
                     key={p.id}
-                    className="p-3 rounded-xl bg-slate-900/60 border border-emerald-900/30 hover:border-emerald-500/40 transition flex items-center justify-between"
+                    className="p-3.5 rounded-2xl bg-slate-900/60 backdrop-blur-md border border-emerald-500/20 hover:border-emerald-500/50 shadow-[0_4px_20px_rgba(0,0,0,0.3)] transition-all flex items-center justify-between"
                   >
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-bold text-white truncate">{p.name}</span>
-                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 font-mono">
+                        <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 font-mono">
                           {POSITION_LABELS[p.position] ?? p.position}
                         </span>
                       </div>
@@ -206,7 +206,7 @@ export default function CoachBriefingClient({ teams, players }: CoachBriefingPro
                     </div>
 
                     <div className="text-right shrink-0">
-                      <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30">
+                      <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/30">
                         100% Clear
                       </span>
                     </div>
@@ -218,14 +218,14 @@ export default function CoachBriefingClient({ teams, players }: CoachBriefingPro
 
           {/* 2. AMBER: RESTRICTED / LOAD MANAGEMENT */}
           <div className="space-y-3">
-            <div className="flex items-center justify-between pb-2 border-b border-amber-500/40">
+            <div className="flex items-center justify-between pb-2 border-b border-amber-500/30">
               <div className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded-full bg-amber-500"></span>
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.8)]" />
                 <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider">
                   Обмеження / Тайм-ліміт
                 </h3>
               </div>
-              <span className="text-xs font-mono font-bold text-amber-400 bg-amber-950/60 px-2 py-0.5 rounded border border-amber-800">
+              <span className="text-xs font-mono font-bold text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-full border border-amber-500/25">
                 {restrictedList.length}
               </span>
             </div>
@@ -237,13 +237,13 @@ export default function CoachBriefingClient({ teams, players }: CoachBriefingPro
                 restrictedList.map((p) => (
                   <div
                     key={p.id}
-                    className="p-3 rounded-xl bg-slate-900/60 border border-amber-900/40 hover:border-amber-500/40 transition space-y-2"
+                    className="p-3.5 rounded-2xl bg-slate-900/60 backdrop-blur-md border border-amber-500/20 hover:border-amber-500/50 shadow-[0_4px_20px_rgba(0,0,0,0.3)] transition-all space-y-2"
                   >
                     <div className="flex items-center justify-between">
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-bold text-white truncate">{p.name}</span>
-                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 font-mono">
+                          <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 font-mono">
                             {POSITION_LABELS[p.position] ?? p.position}
                           </span>
                         </div>
@@ -269,14 +269,14 @@ export default function CoachBriefingClient({ teams, players }: CoachBriefingPro
 
           {/* 3. RED: UNAVAILABLE / MEDICAL WARD */}
           <div className="space-y-3">
-            <div className="flex items-center justify-between pb-2 border-b border-red-500/40">
+            <div className="flex items-center justify-between pb-2 border-b border-rose-500/30">
               <div className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded-full bg-red-500"></span>
-                <h3 className="text-sm font-bold text-red-400 uppercase tracking-wider">
+                <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.8)]" />
+                <h3 className="text-sm font-bold text-rose-400 uppercase tracking-wider">
                   Недоступні (Лазарет)
                 </h3>
               </div>
-              <span className="text-xs font-mono font-bold text-red-400 bg-red-950/60 px-2 py-0.5 rounded border border-red-800">
+              <span className="text-xs font-mono font-bold text-rose-400 bg-rose-500/10 px-2.5 py-0.5 rounded-full border border-rose-500/25">
                 {unavailableList.length}
               </span>
             </div>
@@ -288,13 +288,13 @@ export default function CoachBriefingClient({ teams, players }: CoachBriefingPro
                 unavailableList.map((p) => (
                   <div
                     key={p.id}
-                    className="p-3 rounded-xl bg-slate-900/60 border border-red-900/40 hover:border-red-500/40 transition space-y-1.5 opacity-90"
+                    className="p-3.5 rounded-2xl bg-slate-900/60 backdrop-blur-md border border-rose-500/20 hover:border-rose-500/50 shadow-[0_4px_20px_rgba(0,0,0,0.3)] transition-all space-y-1.5"
                   >
                     <div className="flex items-center justify-between">
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-bold text-white truncate">{p.name}</span>
-                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 font-mono">
+                          <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 font-mono">
                             {POSITION_LABELS[p.position] ?? p.position}
                           </span>
                         </div>
@@ -302,14 +302,14 @@ export default function CoachBriefingClient({ teams, players }: CoachBriefingPro
                       </div>
 
                       <div className="text-right shrink-0">
-                        <span className="text-[10px] font-bold text-red-400 bg-red-500/10 px-2 py-0.5 rounded border border-red-500/30">
+                        <span className="text-[10px] font-bold text-rose-400 bg-rose-500/10 px-2.5 py-1 rounded-lg border border-rose-500/30">
                           Out
                         </span>
                       </div>
                     </div>
 
-                    <div className="text-[11px] text-slate-300">
-                      <span className="text-slate-400">Діагноз / Причина: </span>
+                    <div className="text-xs text-slate-300 bg-slate-950/40 p-2 rounded-xl border border-slate-800/60">
+                      <span className="text-rose-400 font-semibold">Діагноз / Причина: </span>
                       {p.injury_summary || "Травма на стадії відновлення"}
                     </div>
                   </div>
@@ -320,14 +320,14 @@ export default function CoachBriefingClient({ teams, players }: CoachBriefingPro
         </div>
 
         {/* Coach Tactical Advisory Box */}
-        <Card className="bg-slate-900/80 border-blue-900/30 p-4 rounded-xl">
-          <div className="flex items-start gap-3">
+        <div className="p-5 rounded-2xl bg-slate-900/60 backdrop-blur-md border border-sky-500/20 shadow-[0_4px_25px_rgba(0,0,0,0.35)]">
+          <div className="flex items-start gap-3.5">
             <span className="text-2xl">🧠</span>
-            <div className="space-y-1">
-              <h4 className="text-xs font-bold text-white uppercase tracking-wider">
-                Рекомендації Медичного Департаменту ФК Чорноморець до гри:
+            <div className="space-y-1.5">
+              <h4 className="text-xs font-black text-white uppercase tracking-wider">
+                Рекомендації Медичного Департаменту ФК «Чорноморець» до гри:
               </h4>
-              <ul className="text-xs text-slate-300 space-y-1 list-disc list-inside">
+              <ul className="text-xs text-slate-300 space-y-1.5 list-disc list-inside">
                 <li>
                   Гравцям з групи «Обмеження» обов&apos;язково провести додаткову тейпувальну підготовку за 45 хв до виходу на газон.
                 </li>
@@ -340,7 +340,7 @@ export default function CoachBriefingClient({ teams, players }: CoachBriefingPro
               </ul>
             </div>
           </div>
-        </Card>
+        </div>
       </div>
     </div>
   );

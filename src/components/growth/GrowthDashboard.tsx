@@ -206,36 +206,40 @@ export default async function GrowthDashboard({
   const availableTeams = allTeams ?? [];
 
   return (
-    <div className="min-h-screen bg-background text-gray-100 p-6">
+    <div className="min-h-screen bg-transparent text-slate-100 p-4 sm:p-6 md:p-8">
       <div className="max-w-6xl mx-auto space-y-6">
         {/* Заголовок */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-800 pb-4">
+        <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-sky-500/15 pb-4">
           <div>
-            <h1 className="text-2xl font-bold text-white">
-              Моніторинг росту та матурації
-            </h1>
-            <p className="text-sm text-gray-500 mt-1">
-              Мультиметодний підхід: Mirwald (2002) + Moore (2015) · Зважений консенсус
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.8)]" />
+              <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+                Моніторинг росту та матурації (PHV)
+              </h1>
+            </div>
+            <p className="text-xs text-slate-400 mt-1">
+              Мультиметодний підхід: Mirwald (2002) + Moore (2015) · Зважений консенсус піку росту
             </p>
           </div>
           <Link
             href="/growth/new"
-            className="self-start sm:self-auto px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-colors"
+            className="self-start sm:self-auto px-4 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white shadow-[0_0_15px_rgba(14,165,233,0.3)] text-xs font-bold transition-all flex items-center gap-1.5"
           >
-            + Новий замір
+            <span>+</span>
+            <span>Новий замір антропометрії</span>
           </Link>
-        </div>
+        </header>
 
         {/* Фільтр команд */}
         {availableTeams.length > 0 && (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-gray-400 mr-1">Команда:</span>
+            <span className="text-xs text-slate-400 mr-1 font-semibold">Команда:</span>
             <Link
               href="/growth"
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
                 !selectedTeam
-                  ? "bg-blue-600 border-blue-500 text-white font-bold"
-                  : "bg-surface border-gray-800 text-gray-400 hover:border-gray-600 hover:text-white"
+                  ? "bg-gradient-to-r from-sky-500 to-blue-600 text-white shadow-[0_0_12px_rgba(14,165,233,0.3)]"
+                  : "bg-slate-900/80 border border-sky-500/15 text-slate-400 hover:border-sky-500/30 hover:text-white"
               }`}
             >
               Всі ({rawPlayers.length})
@@ -247,10 +251,10 @@ export default async function GrowthDashboard({
                 <Link
                   key={t.id}
                   href={`/growth?team=${encodeURIComponent(t.name)}`}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
                     isSelected
-                      ? "bg-blue-600 border-blue-500 text-white font-bold"
-                      : "bg-surface border-gray-800 text-gray-400 hover:border-gray-600 hover:text-white"
+                      ? "bg-gradient-to-r from-sky-500 to-blue-600 text-white shadow-[0_0_12px_rgba(14,165,233,0.3)]"
+                      : "bg-slate-900/80 border border-sky-500/15 text-slate-400 hover:border-sky-500/30 hover:text-white"
                   }`}
                 >
                   {t.name} {count > 0 && <span className="opacity-70">({count})</span>}
@@ -261,27 +265,27 @@ export default async function GrowthDashboard({
         )}
 
         {/* Статистика */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          <Card>
-            <div className="text-3xl font-bold text-white">{stats.assessed}</div>
-            <div className="text-sm text-gray-500">Обстежено</div>
-          </Card>
-          <Card>
-            <div className="text-3xl font-bold text-status-danger">{stats.red}</div>
-            <div className="text-sm text-gray-500">Червона</div>
-          </Card>
-          <Card>
-            <div className="text-3xl font-bold text-status-warn">{stats.yellow}</div>
-            <div className="text-sm text-gray-500">Жовта</div>
-          </Card>
-          <Card>
-            <div className="text-3xl font-bold text-status-ok">{stats.green}</div>
-            <div className="text-sm text-gray-500">Зелена</div>
-          </Card>
-          <Card>
-            <div className="text-3xl font-bold text-status-warn">{stats.inPhv}</div>
-            <div className="text-sm text-gray-500">У фазі PHV</div>
-          </Card>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <div className="p-4 rounded-2xl bg-slate-900/60 backdrop-blur-md border border-sky-500/15 shadow-[0_4px_20px_rgba(0,0,0,0.3)]">
+            <div className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-1">Обстежено</div>
+            <div className="text-3xl font-black font-mono text-white">{stats.assessed}</div>
+          </div>
+          <div className="p-4 rounded-2xl bg-slate-900/60 backdrop-blur-md border border-rose-500/20 shadow-[0_4px_20px_rgba(0,0,0,0.3)]">
+            <div className="text-[10px] uppercase tracking-wider text-rose-400 font-bold mb-1">Червона зона</div>
+            <div className="text-3xl font-black font-mono text-rose-400">{stats.red}</div>
+          </div>
+          <div className="p-4 rounded-2xl bg-slate-900/60 backdrop-blur-md border border-amber-500/20 shadow-[0_4px_20px_rgba(0,0,0,0.3)]">
+            <div className="text-[10px] uppercase tracking-wider text-amber-400 font-bold mb-1">Жовта зона</div>
+            <div className="text-3xl font-black font-mono text-amber-400">{stats.yellow}</div>
+          </div>
+          <div className="p-4 rounded-2xl bg-slate-900/60 backdrop-blur-md border border-emerald-500/20 shadow-[0_4px_20px_rgba(0,0,0,0.3)]">
+            <div className="text-[10px] uppercase tracking-wider text-emerald-400 font-bold mb-1">Зелена зона</div>
+            <div className="text-3xl font-black font-mono text-emerald-400">{stats.green}</div>
+          </div>
+          <div className="p-4 rounded-2xl bg-slate-900/60 backdrop-blur-md border border-amber-500/20 shadow-[0_4px_20px_rgba(0,0,0,0.3)] col-span-2 md:col-span-1">
+            <div className="text-[10px] uppercase tracking-wider text-amber-400 font-bold mb-1">У фазі PHV</div>
+            <div className="text-3xl font-black font-mono text-amber-400">{stats.inPhv}</div>
+          </div>
         </div>
 
         {/* PHV-зона */}

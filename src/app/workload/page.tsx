@@ -109,44 +109,48 @@ export default async function WorkloadPage({
   });
 
   return (
-    <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-blue-900/20 pb-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="text-2xl">⚡</span>
-            <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
-              Моніторинг навантажень (Session-RPE & ACWR)
-            </h1>
+    <div className="min-h-screen bg-transparent text-slate-100 p-4 sm:p-6 md:p-8">
+      <div className="max-w-6xl mx-auto space-y-6">
+        <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-sky-500/15 pb-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-purple-400 shadow-[0_0_8px_rgba(192,132,252,0.8)]" />
+              <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
+                <span>⏱️</span> Моніторинг навантажень (Session-RPE & ACWR)
+              </h1>
+            </div>
+            <p className="text-xs text-slate-400 mt-1">
+              Контроль гострого до хронічного навантаження (Gabbett ACWR) для запобігання перетренованості та неконтактних травм
+            </p>
           </div>
-          <p className="text-xs text-slate-400 mt-1">
-            Контроль гострого до хронічного навантаження (Gabbett ACWR) для запобігання перетренованості та неконтактних травм
-          </p>
-        </div>
 
-        <div className="flex items-center gap-2">
-          <a
-            href="/wellness"
-            className="px-3 py-1.5 rounded-lg bg-surface-raised hover:bg-slate-800 text-xs font-semibold text-slate-300 border border-blue-900/30 transition-colors"
-          >
-            ⚡ Велнес готовність
-          </a>
-          <a
-            href="/availability"
-            className="px-3 py-1.5 rounded-lg bg-surface-raised hover:bg-slate-800 text-xs font-semibold text-slate-300 border border-blue-900/30 transition-colors"
-          >
-            🟢 Доступність гравців
-          </a>
-        </div>
+          <div className="flex items-center gap-2.5">
+            <a
+              href="/wellness"
+              className="px-3.5 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-xs font-bold text-sky-400 border border-sky-500/25 transition-all flex items-center gap-1.5 shadow-[0_0_12px_rgba(14,165,233,0.15)]"
+            >
+              <span>⚡</span>
+              <span>Велнес</span>
+            </a>
+            <a
+              href="/availability"
+              className="px-3.5 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-xs font-bold text-emerald-400 border border-emerald-500/25 transition-all flex items-center gap-1.5 shadow-[0_0_12px_rgba(16,185,129,0.15)]"
+            >
+              <span>🟢</span>
+              <span>Доступність</span>
+            </a>
+          </div>
+        </header>
+
+        <Suspense fallback={<div className="text-center py-12 text-slate-500 text-sm">Завантаження даних навантаження...</div>}>
+          <WorkloadClient
+            players={players || []}
+            summaries={summaries}
+            recentEntries={enrichedEntries}
+            defaultPlayerId={playerId}
+          />
+        </Suspense>
       </div>
-
-      <Suspense fallback={<div className="text-center py-12 text-slate-500 text-sm">Завантаження даних навантаження...</div>}>
-        <WorkloadClient
-          players={players || []}
-          summaries={summaries}
-          recentEntries={enrichedEntries}
-          defaultPlayerId={playerId}
-        />
-      </Suspense>
     </div>
   );
 }
