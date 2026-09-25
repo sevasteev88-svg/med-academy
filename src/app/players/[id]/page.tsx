@@ -8,8 +8,10 @@ import AnthropometrySection from "@/components/players/AnthropometrySection";
 import PreSeasonScreeningCard from "@/components/players/PreSeasonScreeningCard";
 import ReinjuryRiskWidget from "@/components/players/ReinjuryRiskWidget";
 import DentalNutritionCard from "@/components/players/DentalNutritionCard";
+import PlayerPhotoUploader from "@/components/players/PlayerPhotoUploader";
 import type { PreSeasonScreening } from "@/types/screening";
 import type { NutritionProfile } from "@/types/nutrition";
+import type { PlayerPhoto } from "@/types/photo";
 import DeleteButton from "@/components/ui/DeleteButton";
 import { deletePlayerAction } from "@/actions/delete-player-action";
 import { POSITION_LABELS, POSITION_FULL, DOMINANT_UA, LOCATION_UA, SEVERITY_UA, INJURY_TYPE_UA, STATUS_UA } from "@/lib/constants";
@@ -28,7 +30,7 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
   if (from) injuryQuery = injuryQuery.gte("date_of_injury", from);
   if (to) injuryQuery = injuryQuery.lte("date_of_injury", to);
 
-  const [playerRes, injuriesRes, anthroRes, matRes, screeningLogsRes, nutritionLogsRes] = await Promise.all([
+  const [playerRes, injuriesRes, anthroRes, matRes, screeningLogsRes, nutritionLogsRes, photoLogsRes] = await Promise.all([
     supabase.from("players").select("*, teams ( name, category )").eq("id", id).single(),
     injuryQuery,
     supabase.from("anthropometry_logs").select("*").eq("player_id", id).order("date", { ascending: false }),
@@ -47,6 +49,11 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
       .from("injury_logs")
       .select("*")
       .like("note", "[NUTRITION]%")
+      .order("date", { ascending: false }),
+    supabase
+      .from("injury_logs")
+      .select("*")
+      .like("note", "[PLAYER_PHOTO]%")
       .order("date", { ascending: false }),
   ]);
 
@@ -83,6 +90,20 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
 
   const latestNutrition: NutritionProfile | null = nutritionLogs[0] || null;
 
+  const photoLogs = (photoLogsRes.data || [])
+    .map((l) => {
+      try {
+        const rawJson = l.note.replace("[PLAYER_PHOTO] ", "");
+        const parsed = JSON.parse(rawJson);
+        return parsed.player_id === id ? (parsed as PlayerPhoto) : null;
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean) as PlayerPhoto[];
+
+  const currentPhotoUrl = photoLogs[0]?.photo_url || null;
+
   const totalInjuries = injuryList.length;
   const totalDaysMissed = injuryList.reduce((s,i) => s + calcDaysMissed(i), 0);
   const activeCount = injuryList.filter(i => i.status === "active").length;
@@ -113,15 +134,13 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
         <Card className="p-5 md:p-6 bg-slate-900/60 backdrop-blur-xl border border-sky-500/20 shadow-2xl relative overflow-hidden">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
             <div className="flex items-center gap-4">
-              {/* Великий аватар з клубним кільцем підсвічування */}
-              <div className="relative group shrink-0">
-                <div className="w-16 h-16 md:w-20 md:h-20 rounded-2xl bg-gradient-to-br from-slate-800 via-slate-900 to-sky-950 border-2 border-sky-500/30 flex items-center justify-center font-black font-mono text-xl md:text-2xl text-sky-300 shadow-xl shadow-sky-500/10">
-                  {initials}
-                </div>
-                <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-slate-950 border-2 border-slate-900 flex items-center justify-center text-[10px]">
-                  ⚽
-                </div>
-              </div>
+              {/* Аватар з можливістю завантаження фото */}
+              <PlayerPhotoUploader
+                playerId={id}
+                playerName={`${player.last_name} ${player.first_name}`}
+                initialPhotoUrl={currentPhotoUrl}
+                initials={initials}
+              />
 
               <div>
                 <div className="flex items-center gap-2.5 flex-wrap">

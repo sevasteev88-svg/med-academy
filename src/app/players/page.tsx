@@ -1,5 +1,6 @@
 import { createClient } from "@/utils/supabase/server";
 import Link from "next/link";
+import Image from "next/image";
 import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
 import PlayerSearch from "@/components/players/PlayerSearch";
@@ -18,16 +19,39 @@ export default async function PlayersPage({
   const { q } = await searchParams;
   const supabase = await createClient();
 
-  const { data: teams } = await supabase
-    .from("teams")
-    .select(`
-      id, name, category, sort_order,
-      players (
-        id, first_name, last_name, date_of_birth, position,
-        injuries ( id, status, vas_score )
-      )
-    `)
-    .order("sort_order", { ascending: true });
+  const [teamsRes, photosRes] = await Promise.all([
+    supabase
+      .from("teams")
+      .select(`
+        id, name, category, sort_order,
+        players (
+          id, first_name, last_name, date_of_birth, position,
+          injuries ( id, status, vas_score )
+        )
+      `)
+      .order("sort_order", { ascending: true }),
+    supabase
+      .from("injury_logs")
+      .select("*")
+      .like("note", "[PLAYER_PHOTO]%")
+      .order("date", { ascending: false }),
+  ]);
+
+  const teams = teamsRes.data;
+
+  // Карта фото гравців
+  const photoMap: Record<string, string> = {};
+  (photosRes.data || []).forEach((l) => {
+    try {
+      const rawJson = l.note.replace("[PLAYER_PHOTO] ", "");
+      const parsed = JSON.parse(rawJson);
+      if (parsed.player_id && !photoMap[parsed.player_id]) {
+        photoMap[parsed.player_id] = parsed.photo_url;
+      }
+    } catch {
+      // ignore
+    }
+  });
 
   // Фільтр пошуку
   const searchQuery = q?.toLowerCase() ?? "";
@@ -83,14 +107,25 @@ export default async function PlayersPage({
                 .map((player: any) => {
                   const status = playerStatus(player);
                   const initials = `${player.last_name?.[0] ?? ""}${player.first_name?.[0] ?? ""}`;
+                  const photo = photoMap[player.id];
                   return (
                     <Link key={player.id} href={`/players/${player.id}`} className="group block">
                       <Card interactive accent={status === "ok" ? null : status} className="p-3.5">
                         <div className="flex items-center justify-between gap-3">
                           <div className="flex items-center gap-3 min-w-0">
-                            {/* Аватар з ініціалами */}
-                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-800 to-slate-900 border border-sky-500/20 group-hover:border-sky-400/50 flex items-center justify-center font-bold font-mono text-xs text-sky-300 shrink-0 shadow-inner">
-                              {initials}
+                            {/* Аватар з фото або ініціалами */}
+                            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-slate-800 to-slate-900 border border-sky-500/20 group-hover:border-sky-400/50 flex items-center justify-center font-bold font-mono text-xs text-sky-300 shrink-0 shadow-inner overflow-hidden relative">
+                              {photo ? (
+                                <Image
+                                  src={photo}
+                                  alt={player.last_name}
+                                  fill
+                                  sizes="44px"
+                                  className="object-cover"
+                                />
+                              ) : (
+                                <span>{initials}</span>
+                              )}
                             </div>
                             <div className="min-w-0">
                               <div className="font-bold text-white text-sm truncate group-hover:text-sky-300 transition-colors">
