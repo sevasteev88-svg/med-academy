@@ -6,12 +6,15 @@ import { usePathname } from "next/navigation";
 import { useTransition } from "react";
 import { logoutAction } from "@/actions/auth-actions";
 
+import RiskAlertsCenter, { type RiskAlertItem } from "@/components/alerts/RiskAlertsCenter";
+
 type NavItem = { href: string; label: string; icon: string };
 
 const DOCTOR_NAV: NavItem[] = [
   { href: "/", label: "Дашборд", icon: "🏠" },
   { href: "/players", label: "Реєстр", icon: "👥" },
   { href: "/availability", label: "Доступність", icon: "🟢" },
+  { href: "/rtp", label: "Return-to-Play", icon: "🏃" },
   { href: "/coach-briefing", label: "Брифінг тренера", icon: "🛡️" },
   { href: "/wellness", label: "Велнес", icon: "⚡" },
   { href: "/workload", label: "Навантаження", icon: "⏱️" },
@@ -29,13 +32,22 @@ const COACH_NAV: NavItem[] = [
   { href: "/", label: "Дашборд", icon: "🏠" },
   { href: "/coach-briefing", label: "Брифінг тренера", icon: "🛡️" },
   { href: "/availability", label: "Доступність", icon: "🟢" },
+  { href: "/rtp", label: "Return-to-Play", icon: "🏃" },
   { href: "/wellness", label: "Велнес", icon: "⚡" },
   { href: "/workload", label: "Навантаження", icon: "⏱️" },
   { href: "/hydration", label: "Гідратація", icon: "💧" },
   { href: "/reports/matchday", label: "Заявка на матч", icon: "📜" },
 ];
 
-export default function AppNav({ role, userName }: { role: string; userName: string }) {
+export default function AppNav({
+  role,
+  userName,
+  alerts = [],
+}: {
+  role: string;
+  userName: string;
+  alerts?: RiskAlertItem[];
+}) {
   const pathname = usePathname();
   const [isPending, startTransition] = useTransition();
 
@@ -60,6 +72,11 @@ export default function AppNav({ role, userName }: { role: string; userName: str
             <Image src="/logo-chr.png" alt="ФК Чорноморець" width={36} height={36} className="rounded-full" />
           </div>
         </Link>
+
+        {/* Дзвінок сповіщень та ризиків */}
+        <div className="mb-2 shrink-0">
+          <RiskAlertsCenter alerts={alerts} />
+        </div>
 
         {/* Прокручуваний список пунктів меню */}
         <div className="flex-1 w-full overflow-y-auto overflow-x-hidden flex flex-col items-center gap-1.5 py-1 px-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
@@ -122,6 +139,11 @@ export default function AppNav({ role, userName }: { role: string; userName: str
           <span className="text-[9px] font-medium">Вийти</span>
         </button>
       </nav>
+
+      {/* Мобільна кнопка сповіщень (плаваюча справа вгорі) */}
+      <div className="md:hidden fixed top-3 right-3 z-40">
+        <RiskAlertsCenter alerts={alerts} />
+      </div>
     </>
   );
 }

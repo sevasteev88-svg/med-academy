@@ -9,6 +9,8 @@ import {
   Brain, Stethoscope, Plus, ChevronRight,
 } from "lucide-react";
 import { LOCATION_UA, INJURY_TYPE_UA } from "@/lib/constants";
+import RiskAlertsCenter from "@/components/alerts/RiskAlertsCenter";
+import { getRiskAlerts } from "@/lib/get-risk-alerts";
 
 // ─── Типи ────────────────────────────────────────────────────────────────────
 type StatCard = {
@@ -124,10 +126,12 @@ export default async function Home() {
     { count: activeInjuries },
     { count: onRehab },
     { count: examsThisWeek },
+    alerts,
   ] = await Promise.all([
     supabase.from("injuries").select("*", { count: "exact", head: true }).eq("status", "active"),
     supabase.from("injuries").select("*", { count: "exact", head: true }).eq("status", "rehabilitation"),
     supabase.from("injury_examinations").select("*", { count: "exact", head: true }).gte("date", weekAgoStr),
+    getRiskAlerts(),
   ]);
 
   // ── Всі гравці (для підрахунку готових) ──
@@ -144,7 +148,7 @@ export default async function Home() {
 
   const STAT_CARDS: StatCard[] = [
     { icon: <Bandage     size={14} />, value: activeInjuries ?? 0,  label: "Активні травми",  accent: "red",   href: "/injuries" },
-    { icon: <Activity    size={14} />, value: onRehab        ?? 0,  label: "На реабілітації", accent: "amber", href: "/injuries" },
+    { icon: <Activity    size={14} />, value: onRehab        ?? 0,  label: "На реабілітації", accent: "amber", href: "/rtp" },
     { icon: <CheckCircle size={14} />, value: readyCount,           label: "Готові до матчу", accent: "green", href: "/availability" },
     { icon: <Calendar    size={14} />, value: examsThisWeek  ?? 0,  label: "Огляди на тижні", accent: "blue",  href: "/injuries" },
   ];
@@ -255,6 +259,11 @@ export default async function Home() {
               );
             })}
           </div>
+        </section>
+
+        {/* Центр Оперативних Ризиків та Сповіщень */}
+        <section>
+          <RiskAlertsCenter alerts={alerts} standaloneWidget={true} />
         </section>
 
         {/* Two Column Grid: Triage & Squad Readiness */}
