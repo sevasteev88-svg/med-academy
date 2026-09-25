@@ -8,16 +8,16 @@ type BadgeProps = {
 };
 
 const variantStyles: Record<BadgeVariant, string> = {
-  ok: "bg-status-ok/10 text-status-ok border-status-ok/20",
-  warn: "bg-status-warn/10 text-status-warn border-status-warn/20",
-  danger: "bg-status-danger/10 text-status-danger border-status-danger/20",
-  neutral: "bg-slate-800 text-slate-400 border-slate-700",
+  ok: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30 shadow-sm shadow-emerald-500/10",
+  warn: "bg-amber-500/15 text-amber-400 border-amber-500/30 shadow-sm shadow-amber-500/10",
+  danger: "bg-red-500/15 text-red-400 border-red-500/30 shadow-sm shadow-red-500/10",
+  neutral: "bg-slate-800/80 text-slate-300 border-slate-700/60",
 };
 
 export default function Badge({ children, variant = "neutral" }: BadgeProps) {
   return (
     <span
-      className={`inline-flex items-center px-2.5 py-1 text-[11px] font-bold rounded-md border ${variantStyles[variant]}`}
+      className={`inline-flex items-center px-2.5 py-1 text-[11px] font-semibold tracking-wide rounded-lg border backdrop-blur-sm ${variantStyles[variant]}`}
     >
       {children}
     </span>

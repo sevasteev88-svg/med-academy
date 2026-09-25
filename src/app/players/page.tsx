@@ -58,33 +58,51 @@ export default async function PlayersPage({
   function renderTeamGroup(label: string, teamList: any[]) {
     if (teamList.length === 0) return null;
     return (
-      <section>
-        <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">
-          {label}
-        </h2>
+      <section className="space-y-4">
+        <div className="flex items-center gap-2">
+          <span className="text-xs uppercase font-mono font-bold text-sky-400 tracking-wider">
+            {label}
+          </span>
+          <div className="flex-1 h-px bg-sky-500/15" />
+        </div>
+
         {teamList.map((team: any) => (
-          <div key={team.id} className="mb-6">
-            <h3 className="text-base font-bold text-white mb-3 flex items-center gap-2">
-              {team.name}
-              <span className="text-xs font-normal text-slate-500">
-                ({(team.players ?? []).length} гравців)
+          <div key={team.id} className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <span>⚽</span> {team.name}
+              </h3>
+              <span className="text-xs font-mono text-slate-400 bg-slate-900/60 px-2.5 py-0.5 rounded-full border border-slate-800">
+                {(team.players ?? []).length} гравців
               </span>
-            </h3>
+            </div>
+
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {(team.players ?? [])
                 .sort((a: any, b: any) => a.last_name.localeCompare(b.last_name, "uk"))
                 .map((player: any) => {
                   const status = playerStatus(player);
+                  const initials = `${player.last_name?.[0] ?? ""}${player.first_name?.[0] ?? ""}`;
                   return (
-                    <Link key={player.id} href={`/players/${player.id}`}>
-                      <Card interactive accent={status === "ok" ? null : status}>
-                        <div className="flex justify-between items-center">
-                          <div>
-                            <div className="font-bold text-white">
-                              {player.last_name} {player.first_name.charAt(0)}.
+                    <Link key={player.id} href={`/players/${player.id}`} className="group block">
+                      <Card interactive accent={status === "ok" ? null : status} className="p-3.5">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-3 min-w-0">
+                            {/* Аватар з ініціалами */}
+                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-800 to-slate-900 border border-sky-500/20 group-hover:border-sky-400/50 flex items-center justify-center font-bold font-mono text-xs text-sky-300 shrink-0 shadow-inner">
+                              {initials}
                             </div>
-                            <div className="text-xs text-slate-500 mt-0.5">
-                              {POSITION_LABELS[player.position] ?? player.position} · {calcAge(player.date_of_birth)} р.
+                            <div className="min-w-0">
+                              <div className="font-bold text-white text-sm truncate group-hover:text-sky-300 transition-colors">
+                                {player.last_name} {player.first_name}
+                              </div>
+                              <div className="flex items-center gap-1.5 text-xs text-slate-400 mt-0.5">
+                                <span className="font-mono text-slate-300 px-1.5 py-0.2 rounded bg-slate-800/80 text-[10px] font-semibold border border-slate-700/60">
+                                  {POSITION_LABELS[player.position] ?? player.position}
+                                </span>
+                                <span>·</span>
+                                <span>{calcAge(player.date_of_birth)} р.</span>
+                              </div>
                             </div>
                           </div>
                           <Badge variant={status}>{statusLabel(status)}</Badge>
@@ -101,25 +119,31 @@ export default async function PlayersPage({
   }
 
   return (
-    <div className="min-h-screen bg-background text-slate-200 p-5 md:p-8">
-      <div className="max-w-5xl mx-auto space-y-6">
+    <div className="min-h-screen text-slate-200 p-4 md:p-8">
+      <div className="max-w-6xl mx-auto space-y-6">
         {/* Шапка */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-5 border-b border-blue-900/15">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-sky-500/15">
           <div>
-            <h1 className="text-lg font-bold text-white tracking-tight">Реєстр гравців</h1>
-            {searchQuery && (
-              <p className="text-xs text-slate-500 mt-1">
-                Знайдено: {totalFiltered} гравців
-              </p>
-            )}
+            <div className="flex items-center gap-2">
+              <span className="text-xl">👥</span>
+              <h1 className="text-2xl font-black text-white tracking-tight">Реєстр футболістів</h1>
+            </div>
+            <p className="text-xs text-slate-400 mt-1">
+              База гравців Академії та молодіжного складу ФК «Чорноморець»
+              {searchQuery && (
+                <span className="text-sky-400 ml-1">· Знайдено: {totalFiltered}</span>
+              )}
+            </p>
           </div>
-          <div className="flex items-center gap-3">
-            <PlayerSearch />
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            <div className="flex-1 sm:flex-initial">
+              <PlayerSearch />
+            </div>
             <Link
               href="/players/new"
-              className="bg-brand-blue hover:bg-brand-blue-light text-white font-bold py-2.5 px-5 rounded-lg text-sm transition-colors shadow-glow-sm hover:shadow-glow whitespace-nowrap"
+              className="bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition-all shadow-lg shadow-sky-600/20 active:scale-95 whitespace-nowrap flex items-center gap-1.5"
             >
-              + Додати
+              <span>+</span> Додати гравця
             </Link>
           </div>
         </div>
@@ -128,11 +152,12 @@ export default async function PlayersPage({
         {renderTeamGroup(TEAM_CATEGORY_UA.academy, academy)}
 
         {totalFiltered === 0 && (
-          <Card>
-            <p className="text-slate-500 text-center py-8">
+          <Card className="text-center py-12">
+            <span className="text-3xl block mb-2">🔍</span>
+            <p className="text-sm font-semibold text-slate-300">
               {searchQuery
                 ? `Гравців з прізвищем «${q}» не знайдено`
-                : "Гравців ще не додано. Натисніть «+ Додати» щоб почати."
+                : "Гравців ще не додано. Натисніть «+ Додати гравця» щоб почати."
               }
             </p>
           </Card>
