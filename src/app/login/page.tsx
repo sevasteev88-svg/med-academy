@@ -47,9 +47,19 @@ export default function LoginPage() {
           </form>
         </Card>
 
-        <p className="text-center text-xs text-slate-500">
-          Немає акаунту? <Link href="/register" className="text-brand-blue hover:text-brand-blue-light transition-colors">Зареєструватися</Link>
-        </p>
+        <div className="space-y-3">
+          <Link
+            href="/rehab-portal"
+            className="w-full py-3 px-4 rounded-xl border border-sky-500/30 bg-slate-900/80 hover:bg-slate-800 text-sky-300 font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-lg active:scale-95 text-center"
+          >
+            <span>📱</span>
+            <span>Вхід для травмованих гравців (PIN-код)</span>
+          </Link>
+
+          <p className="text-center text-xs text-slate-500">
+            Немає акаунту? <Link href="/register" className="text-brand-blue hover:text-brand-blue-light transition-colors">Зареєструватися</Link>
+          </p>
+        </div>
       </div>
     </div>
   );
