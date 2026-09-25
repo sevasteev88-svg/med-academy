@@ -58,7 +58,7 @@ export default async function InjuryDetailPage({ params }: Props) {
   const { id } = await params;
   const supabase = await createClient();
 
-  const [injuryRes, examsRes, logsRes, treatmentsRes, concussionsRes, lsiRes] = await Promise.all([
+  const [injuryRes, examsRes, logsRes, treatmentsRes, concussionsRes, lsiRes, clearanceRes] = await Promise.all([
     supabase
       .from("injuries")
       .select(`*, players(id, first_name, last_name, date_of_birth, position, teams(name))`)
@@ -92,6 +92,13 @@ export default async function InjuryDetailPage({ params }: Props) {
       .select("*")
       .like("note", "[LSI_ASSESSMENT]%")
       .order("date", { ascending: false }),
+    supabase
+      .from("injury_logs")
+      .select("*")
+      .eq("injury_id", id)
+      .like("note", "[RTP_CLEARANCE]%")
+      .order("date", { ascending: false })
+      .limit(1),
   ]);
 
   const { data: injury } = injuryRes;
@@ -156,6 +163,18 @@ export default async function InjuryDetailPage({ params }: Props) {
     .filter(Boolean) as LsiAssessmentRecord[];
 
   const isHeadInjury = injury.location === "head" || injury.injury_type === "concussion";
+
+  const clearanceLogRaw = clearanceRes.data?.[0]?.note;
+  let initialClearanceCriteria = null;
+  if (clearanceLogRaw) {
+    try {
+      const jsonStr = clearanceLogRaw.replace("[RTP_CLEARANCE] ", "");
+      const parsed = JSON.parse(jsonStr);
+      if (parsed.criteria) {
+        initialClearanceCriteria = parsed.criteria;
+      }
+    } catch {}
+  }
 
   const injDays = daysSince(injury.date_of_injury);
   const isClosed = injury.status === "closed";
@@ -299,6 +318,7 @@ export default async function InjuryDetailPage({ params }: Props) {
             injuryId={injury.id}
             injuryStatus={injury.status}
             playerName={playerName}
+            initialCriteria={initialClearanceCriteria}
           />
         </div>
 

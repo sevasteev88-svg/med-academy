@@ -52,11 +52,22 @@ export async function submitRtpClearanceAction(
   const isFullyCleared = passedCriteria === totalCriteria;
 
   // Зберігаємо протокол допуску в injury_logs
+  const clearancePayload = {
+    injury_id: injuryId,
+    passedCriteria,
+    totalCriteria,
+    clearancePercentage,
+    isFullyCleared,
+    criteria,
+    doctorName: auth.user.fullName || auth.user.email,
+    date: new Date().toISOString(),
+  };
+
   const clearanceLog = {
     injury_id: injuryId,
     date: new Date().toISOString().split("T")[0],
     category: "examination",
-    note: `[RTP_CLEARANCE] Результат допуску: ${passedCriteria}/${totalCriteria} (${clearancePercentage}%). Лікар: ${auth.user.fullName || auth.user.email}. ${criteria.doctorNote ? `Примітка: ${criteria.doctorNote}` : ""}`,
+    note: `[RTP_CLEARANCE] ${JSON.stringify(clearancePayload)}`,
   };
 
   await supabase.from("injury_logs").insert(clearanceLog as any);

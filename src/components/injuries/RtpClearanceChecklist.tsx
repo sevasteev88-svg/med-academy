@@ -10,12 +10,14 @@ type Props = {
   injuryId: string;
   injuryStatus: string;
   playerName: string;
+  initialCriteria?: RtpCriteriaState | null;
 };
 
 export default function RtpClearanceChecklist({
   injuryId,
   injuryStatus,
   playerName,
+  initialCriteria,
 }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -25,7 +27,7 @@ export default function RtpClearanceChecklist({
     msg?: string;
   } | null>(null);
 
-  const [criteria, setCriteria] = useState<RtpCriteriaState>({
+  const [criteria, setCriteria] = useState<RtpCriteriaState>(() => initialCriteria || {
     noPalpationPain: false,
     fullPainfreeRom: false,
     noEffusionOrSwelling: false,
