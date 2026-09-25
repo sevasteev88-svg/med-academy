@@ -265,28 +265,62 @@ export default function RiskAlertsCenter({
                       ✕
                     </button>
                   </div>
-                  <div className="flex items-center gap-2 mt-2">
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 font-semibold">
-                      {criticalCount} критичних
-                    </span>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold">
-                      {warningCount} увага
-                    </span>
+
+                  {/* Клікабельні фільтри */}
+                  <div className="flex items-center gap-1.5 mt-3">
+                    <button
+                      onClick={() => setFilter("all")}
+                      className={`text-[11px] px-2.5 py-1 rounded-lg font-medium transition-all ${
+                        filter === "all"
+                          ? "bg-slate-800 text-white font-bold border border-slate-700 shadow-sm"
+                          : "text-slate-400 hover:text-white hover:bg-slate-800/50"
+                      }`}
+                    >
+                      Всі ({activeAlerts.length})
+                    </button>
+                    <button
+                      onClick={() => setFilter("critical")}
+                      className={`text-[11px] px-2.5 py-1 rounded-lg font-medium transition-all border ${
+                        filter === "critical"
+                          ? "bg-rose-500/25 text-rose-200 font-bold border-rose-500/50 shadow-sm shadow-rose-950"
+                          : "text-rose-400/80 hover:text-rose-200 border-rose-500/20 hover:bg-rose-500/10"
+                      }`}
+                    >
+                      🔴 Критичні ({criticalCount})
+                    </button>
+                    <button
+                      onClick={() => setFilter("warning")}
+                      className={`text-[11px] px-2.5 py-1 rounded-lg font-medium transition-all border ${
+                        filter === "warning"
+                          ? "bg-amber-500/25 text-amber-200 font-bold border-amber-500/50 shadow-sm shadow-amber-950"
+                          : "text-amber-400/80 hover:text-amber-200 border-amber-500/20 hover:bg-amber-500/10"
+                      }`}
+                    >
+                      🟡 Увага ({warningCount})
+                    </button>
                   </div>
                 </div>
 
                 {/* Alerts List */}
                 <div className="flex-1 overflow-y-auto space-y-3 pr-1 custom-scrollbar">
-                  {activeAlerts.length === 0 ? (
+                  {filtered.length === 0 ? (
                     <div className="h-64 flex flex-col items-center justify-center text-center p-4">
                       <span className="text-3xl mb-2">🎉</span>
-                      <p className="text-xs font-bold text-white">Усі показники в нормі</p>
+                      <p className="text-xs font-bold text-white">
+                        {filter === "all"
+                          ? "Усі показники в нормі"
+                          : filter === "critical"
+                          ? "Немає критичних ризиків"
+                          : "Немає попереджень"}
+                      </p>
                       <p className="text-[11px] text-slate-400 mt-1">
-                        Немає активних критичних ризиків по складу
+                        {filter === "all"
+                          ? "Немає активних критичних ризиків по складу"
+                          : "Усі гравці у безпечному коридорі для цієї категорії"}
                       </p>
                     </div>
                   ) : (
-                    activeAlerts.map((alert) => (
+                    filtered.map((alert) => (
                       <div
                         key={alert.id}
                         className={`p-3.5 rounded-xl border text-xs space-y-2 ${
