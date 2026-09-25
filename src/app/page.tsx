@@ -159,7 +159,7 @@ export default async function Home() {
     .select(`
       id, location, injury_type, vas_score, status,
       is_classified, mlgr_code, bamic_code, munich_type, rtp_min_days, rtp_max_days, rtp_risk,
-      players ( first_name, last_name, teams ( name ), maturation_assessments ( risk_zone, created_at ) )
+      players ( first_name, last_name, position, teams ( name ), maturation_assessments ( risk_zone, created_at ) )
     `)
     .in("status", ["active", "rehabilitation"])
     .order("vas_score", { ascending: false, nullsFirst: false })
@@ -308,9 +308,11 @@ export default async function Home() {
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-bold text-white truncate">{shortName(p)}</span>
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">
-                              {p?.position ?? "—"}
-                            </span>
+                            {p?.position && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-400 font-mono border border-sky-500/20 font-semibold">
+                                {p.position}
+                              </span>
+                            )}
                           </div>
                           <div className="text-xs text-slate-400 truncate mt-0.5">
                             {p?.teams?.name ?? "—"} · {INJURY_TYPE_UA[inj.injury_type] ?? inj.injury_type} ({LOCATION_UA[inj.location] ?? inj.location})
