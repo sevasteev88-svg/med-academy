@@ -29,6 +29,9 @@ export interface CoachBriefingProps {
 export default function CoachBriefingClient({ teams, players }: CoachBriefingProps) {
   const [selectedTeam, setSelectedTeam] = useState<string>("all");
   const [tacticalFilter, setTacticalFilter] = useState<"all" | "available" | "restricted" | "unavailable">("all");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiSummary, setAiSummary] = useState<string | null>(null);
+  const [copiedAi, setCopiedAi] = useState(false);
 
   const filtered = players.filter((p) => {
     if (selectedTeam !== "all" && p.team_id !== selectedTeam) return false;
@@ -42,6 +45,48 @@ export default function CoachBriefingClient({ teams, players }: CoachBriefingPro
 
   const totalCount = filtered.length;
   const availPct = totalCount > 0 ? Math.round((availableList.length / totalCount) * 100) : 0;
+
+  const generateAiBriefing = async () => {
+    setAiLoading(true);
+    setAiSummary(null);
+    try {
+      const squadContext = {
+        totalPlayers: filtered.length,
+        availableCount: availableList.length,
+        restrictedCount: restrictedList.length,
+        unavailableCount: unavailableList.length,
+        restrictedPlayers: restrictedList.map((p) => ({
+          name: p.name,
+          position: p.position,
+          limitMinutes: p.max_minutes,
+          notes: p.restriction_notes,
+          injury: p.injury_summary,
+        })),
+        unavailablePlayers: unavailableList.map((p) => ({
+          name: p.name,
+          position: p.position,
+          diagnosis: p.injury_summary,
+        })),
+      };
+
+      const res = await fetch("/api/ai/sports-intelligence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "squad-briefing",
+          squadContext,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Помилка зв'язку з Gemini");
+      setAiSummary(data.answer);
+    } catch (err: any) {
+      setAiSummary(`⚠️ Помилка формування брифінгу: ${err.message}`);
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-transparent text-slate-100 p-4 sm:p-6 md:p-8">
@@ -61,6 +106,14 @@ export default function CoachBriefingClient({ teams, players }: CoachBriefingPro
           </div>
 
           <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={generateAiBriefing}
+              disabled={aiLoading}
+              className="px-4 py-2.5 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-[0_0_15px_rgba(56,189,248,0.3)] transition-all flex items-center gap-2 active:scale-95 disabled:opacity-50"
+            >
+              <span>🧠</span> {aiLoading ? "Аналіз Gemini..." : "ШІ-Зведення (Gemini)"}
+            </button>
             <button
               type="button"
               onClick={() => window.print()}
@@ -132,6 +185,65 @@ export default function CoachBriefingClient({ teams, players }: CoachBriefingPro
             </button>
           </div>
         </div>
+
+        {/* AI Briefing Summary Box */}
+        {(aiLoading || aiSummary) && (
+          <div className="p-5 rounded-2xl bg-gradient-to-br from-slate-900/90 to-slate-950/90 border border-sky-500/30 backdrop-blur-md shadow-xl shadow-sky-950/30 space-y-3 relative overflow-hidden">
+            <div className="flex items-center justify-between pb-3 border-b border-sky-500/15">
+              <div className="flex items-center gap-2.5">
+                <span className="w-8 h-8 rounded-lg bg-sky-500/20 border border-sky-500/40 flex items-center justify-center text-base">
+                  🧠
+                </span>
+                <div>
+                  <h3 className="text-sm font-bold text-white tracking-wide flex items-center gap-2">
+                    Оперативне ШІ-Зведення для Головного Тренера
+                    <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                      Gemini 2.5 Flash
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Спортивно-медичний розрахунок допусків, ротації та фокусів розминки
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {aiSummary && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(aiSummary);
+                      setCopiedAi(true);
+                      setTimeout(() => setCopiedAi(false), 2000);
+                    }}
+                    className="text-xs text-sky-300 hover:text-white px-2.5 py-1 rounded-lg border border-sky-500/30 bg-sky-500/10 transition-colors"
+                  >
+                    {copiedAi ? "✓ Скопійовано" : "📋 Копіювати"}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setAiSummary(null)}
+                  className="text-slate-400 hover:text-white text-xs p-1"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {aiLoading ? (
+              <div className="py-6 flex items-center justify-center gap-3">
+                <div className="w-5 h-5 border-2 border-sky-400 border-t-transparent rounded-full animate-spin" />
+                <span className="text-xs text-slate-300 font-mono">
+                  Gemini формує тактико-медичний рапорт...
+                </span>
+              </div>
+            ) : (
+              <div className="whitespace-pre-wrap text-xs text-slate-200 leading-relaxed font-sans">
+                {aiSummary}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Readiness Summary Metrics */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

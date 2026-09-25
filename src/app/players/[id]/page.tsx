@@ -10,6 +10,7 @@ import ReinjuryRiskWidget from "@/components/players/ReinjuryRiskWidget";
 import DentalNutritionCard from "@/components/players/DentalNutritionCard";
 import PlayerPhotoUploader from "@/components/players/PlayerPhotoUploader";
 import WearablesBiometricsCard from "@/components/players/WearablesBiometricsCard";
+import PlayerSportsIntelligenceCard from "@/components/players/PlayerSportsIntelligenceCard";
 import type { PreSeasonScreening } from "@/types/screening";
 import type { NutritionProfile } from "@/types/nutrition";
 import type { PlayerPhoto } from "@/types/photo";
@@ -234,6 +235,33 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
           playerId={id}
           playerName={`${player.last_name} ${player.first_name}`}
           initialEntries={wearableLogs}
+        />
+
+        <PlayerSportsIntelligenceCard
+          playerContext={{
+            id,
+            name: `${player.last_name} ${player.first_name}`,
+            age: calcAge(player.date_of_birth),
+            position: POSITION_FULL[player.position] || player.position,
+            team: player.teams?.name || "Команда",
+            maturation: maturation
+              ? {
+                  growth_phase: maturation.growth_phase,
+                  risk_zone: maturation.risk_zone,
+                  consensus_offset: maturation.consensus_offset,
+                }
+              : null,
+            wearables: wearableLogs,
+            screening: screenings,
+            nutrition: latestNutrition,
+            injuries: injuryList.map((i) => ({
+              type: i.injury_type,
+              location: i.location,
+              severity: i.severity,
+              status: i.status,
+              daysMissed: calcDaysMissed(i),
+            })),
+          }}
         />
         
         <ReinjuryRiskWidget
