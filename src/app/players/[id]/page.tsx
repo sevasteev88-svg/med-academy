@@ -9,9 +9,11 @@ import PreSeasonScreeningCard from "@/components/players/PreSeasonScreeningCard"
 import ReinjuryRiskWidget from "@/components/players/ReinjuryRiskWidget";
 import DentalNutritionCard from "@/components/players/DentalNutritionCard";
 import PlayerPhotoUploader from "@/components/players/PlayerPhotoUploader";
+import WearablesBiometricsCard from "@/components/players/WearablesBiometricsCard";
 import type { PreSeasonScreening } from "@/types/screening";
 import type { NutritionProfile } from "@/types/nutrition";
 import type { PlayerPhoto } from "@/types/photo";
+import type { WearableBiometricsEntry } from "@/types/wearables";
 import DeleteButton from "@/components/ui/DeleteButton";
 import { deletePlayerAction } from "@/actions/delete-player-action";
 import { POSITION_LABELS, POSITION_FULL, DOMINANT_UA, LOCATION_UA, SEVERITY_UA, INJURY_TYPE_UA, STATUS_UA } from "@/lib/constants";
@@ -30,7 +32,7 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
   if (from) injuryQuery = injuryQuery.gte("date_of_injury", from);
   if (to) injuryQuery = injuryQuery.lte("date_of_injury", to);
 
-  const [playerRes, injuriesRes, anthroRes, matRes, screeningLogsRes, nutritionLogsRes, photoLogsRes] = await Promise.all([
+  const [playerRes, injuriesRes, anthroRes, matRes, screeningLogsRes, nutritionLogsRes, photoLogsRes, wearableLogsRes] = await Promise.all([
     supabase.from("players").select("*, teams ( name, category )").eq("id", id).single(),
     injuryQuery,
     supabase.from("anthropometry_logs").select("*").eq("player_id", id).order("date", { ascending: false }),
@@ -54,6 +56,11 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
       .from("injury_logs")
       .select("*")
       .like("note", "[PLAYER_PHOTO]%")
+      .order("date", { ascending: false }),
+    supabase
+      .from("injury_logs")
+      .select("*")
+      .like("note", "[WEARABLE]%")
       .order("date", { ascending: false }),
   ]);
 
@@ -103,6 +110,18 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
     .filter(Boolean) as PlayerPhoto[];
 
   const currentPhotoUrl = photoLogs[0]?.photo_url || null;
+
+  const wearableLogs = (wearableLogsRes.data || [])
+    .map((l) => {
+      try {
+        const rawJson = l.note.replace("[WEARABLE] ", "");
+        const parsed = JSON.parse(rawJson);
+        return parsed.player_id === id ? (parsed as WearableBiometricsEntry) : null;
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean) as WearableBiometricsEntry[];
 
   const totalInjuries = injuryList.length;
   const totalDaysMissed = injuryList.reduce((s,i) => s + calcDaysMissed(i), 0);
@@ -210,6 +229,12 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
 
         {/* Секції паспорта здоров'я */}
         <AnthropometrySection playerId={id} measurements={measurements} maturation={maturation} dateOfBirth={player.date_of_birth} />
+
+        <WearablesBiometricsCard
+          playerId={id}
+          playerName={`${player.last_name} ${player.first_name}`}
+          initialEntries={wearableLogs}
+        />
         
         <ReinjuryRiskWidget
           playerName={`${player.last_name} ${player.first_name}`}
