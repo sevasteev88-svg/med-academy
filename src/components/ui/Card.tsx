@@ -22,10 +22,11 @@ export default function Card({
   return (
     <div
       className={`
-        relative bg-surface rounded-xl
-        border border-blue-900/20 p-4
-        ${accent ? `border-l-[3px] ${accentColors[accent]}` : ""}
-        ${interactive ? "transition-all duration-200 hover:border-blue-800/40 hover:bg-surface-hover cursor-pointer" : ""}
+        relative bg-slate-900/60 backdrop-blur-md rounded-2xl
+        border border-sky-500/15 p-4 md:p-5 shadow-lg
+        shadow-black/20
+        ${accent ? `border-l-4 ${accentColors[accent]}` : ""}
+        ${interactive ? "transition-all duration-200 hover:border-sky-400/40 hover:bg-slate-800/70 hover:shadow-sky-500/10 hover:shadow-xl cursor-pointer" : ""}
         ${className}
       `}
     >
@@ -51,21 +52,21 @@ export function Button({
 }: ButtonProps) {
   const variantStyles: Record<ButtonVariant, string> = {
     primary:
-      "bg-brand-blue hover:bg-brand-blue-light text-white font-bold shadow-glow-sm border-transparent",
+      "bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-bold shadow-lg shadow-sky-600/25 border-transparent active:scale-[0.98]",
     secondary:
-      "border border-blue-900/30 bg-surface-raised hover:bg-surface-hover text-slate-200",
+      "border border-sky-500/20 bg-slate-900/80 hover:bg-slate-800 text-slate-200 active:scale-[0.98]",
     danger:
-      "bg-status-danger hover:bg-red-600 text-white font-bold border-transparent",
+      "bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-bold shadow-lg shadow-red-600/25 border-transparent active:scale-[0.98]",
     ghost:
-      "border-transparent text-slate-400 hover:text-white hover:bg-surface-hover",
+      "border-transparent text-slate-400 hover:text-white hover:bg-slate-800/60",
   };
 
   return (
     <button
       disabled={disabled || isLoading}
       className={`
-        inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium
-        transition-colors focus:outline-none focus:ring-2 focus:ring-brand-blue/40 disabled:opacity-50
+        inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold
+        transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-sky-500/40 disabled:opacity-50
         disabled:cursor-not-allowed border ${variantStyles[variant]} ${className}
       `}
       {...props}
@@ -85,16 +86,16 @@ export function Input({ label, error, className = "", id, ...props }: InputProps
   return (
     <div className="w-full space-y-1.5">
       {label && (
-        <label htmlFor={inputId} className="block text-xs font-medium text-slate-400">
+        <label htmlFor={inputId} className="block text-xs font-semibold text-slate-300">
           {label}
         </label>
       )}
       <input
         id={inputId}
         className={`
-          w-full bg-surface border rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-slate-500
-          focus:outline-none focus:border-brand-blue/60 focus:ring-1 focus:ring-brand-blue/30 transition-colors
-          ${error ? "border-status-danger/60 focus:border-status-danger" : "border-blue-900/25"}
+          w-full bg-slate-950/60 border rounded-xl px-3.5 py-2.5 text-sm text-white placeholder:text-slate-500
+          focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-500/20 transition-all
+          ${error ? "border-status-danger/60 focus:border-status-danger" : "border-slate-800"}
           ${className}
         `}
         {...props}
@@ -114,16 +115,16 @@ export function Select({ label, error, className = "", id, children, ...props }:
   return (
     <div className="w-full space-y-1.5">
       {label && (
-        <label htmlFor={selectId} className="block text-xs font-medium text-slate-400">
+        <label htmlFor={selectId} className="block text-xs font-semibold text-slate-300">
           {label}
         </label>
       )}
       <select
         id={selectId}
         className={`
-          w-full bg-surface border rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-slate-500
-          focus:outline-none focus:border-brand-blue/60 focus:ring-1 focus:ring-brand-blue/30 transition-colors
-          ${error ? "border-status-danger/60 focus:border-status-danger" : "border-blue-900/25"}
+          w-full bg-slate-950/60 border rounded-xl px-3.5 py-2.5 text-sm text-white placeholder:text-slate-500
+          focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-500/20 transition-all
+          ${error ? "border-status-danger/60 focus:border-status-danger" : "border-slate-800"}
           ${className}
         `}
         {...props}
@@ -145,16 +146,16 @@ export function Textarea({ label, error, className = "", id, ...props }: Textare
   return (
     <div className="w-full space-y-1.5">
       {label && (
-        <label htmlFor={textareaId} className="block text-xs font-medium text-slate-400">
+        <label htmlFor={textareaId} className="block text-xs font-semibold text-slate-300">
           {label}
         </label>
       )}
       <textarea
         id={textareaId}
         className={`
-          w-full bg-surface border rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-slate-500
-          focus:outline-none focus:border-brand-blue/60 focus:ring-1 focus:ring-brand-blue/30 transition-colors
-          ${error ? "border-status-danger/60 focus:border-status-danger" : "border-blue-900/25"}
+          w-full bg-slate-950/60 border rounded-xl px-3.5 py-2.5 text-sm text-white placeholder:text-slate-500
+          focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-500/20 transition-all
+          ${error ? "border-status-danger/60 focus:border-status-danger" : "border-slate-800"}
           ${className}
         `}
         {...props}
