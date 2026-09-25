@@ -35,3 +35,29 @@ export function isDoctor(role: UserRole): boolean {
 export function isCoach(role: UserRole): boolean {
   return role === "coach";
 }
+
+/**
+ * Перевіряє, чи користувач автентифікований і має роль лікаря ('doctor').
+ * Використовується в Server Actions для захисту медичних мутацій.
+ */
+export async function assertDoctor(): Promise<{ user: AppUser } | { error: string }> {
+  const user = await getCurrentUser();
+  if (!user) {
+    return { error: "Не авторизовано. Будь ласка, увійдіть у систему." };
+  }
+  if (!isDoctor(user.role)) {
+    return { error: "Недостатньо прав. Доступ лише для медичного штабу (лікаря)." };
+  }
+  return { user };
+}
+
+/**
+ * Перевіряє наявність будь-якого автентифікованого користувача.
+ */
+export async function assertAuth(): Promise<{ user: AppUser } | { error: string }> {
+  const user = await getCurrentUser();
+  if (!user) {
+    return { error: "Не авторизовано. Будь ласка, увійдіть у систему." };
+  }
+  return { user };
+}

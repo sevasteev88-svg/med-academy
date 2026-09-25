@@ -2,6 +2,7 @@
 
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
+import { assertDoctor } from "@/lib/auth";
 import type {
   InjuryLocation,
   InjuryMechanism,
@@ -23,14 +24,16 @@ type CreateInjuryInput = {
   severity: InjurySeverity;
   mechanism: InjuryMechanism;
   dateOfInjury: string;
+  vasScore?: number | null;
   expectedReturnDate?: string;
   description?: string;
 };
 
 async function insertInjury(input: CreateInjuryInput) {
+  const auth = await assertDoctor();
+  if ("error" in auth) return { error: auth.error };
+
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { error: "Unauthorized" };
 
   const { data, error } = await supabase
     .from("injuries")
@@ -42,6 +45,7 @@ async function insertInjury(input: CreateInjuryInput) {
       severity: input.severity,
       mechanism: input.mechanism,
       date_of_injury: input.dateOfInjury,
+      vas_score: input.vasScore ?? null,
       expected_return_date: input.expectedReturnDate ?? null,
       description: input.description ?? null,
       status: "active",
@@ -75,6 +79,8 @@ export async function createInjuryAction(
   const severity = formData.get("severity") as InjurySeverity;
   const mechanism = (formData.get("mechanism") as InjuryMechanism) ?? "non_contact";
   const dateOfInjury = formData.get("dateOfInjury") as string;
+  const vasScoreRaw = formData.get("vasScore") as string | null;
+  const vasScore = vasScoreRaw !== null && vasScoreRaw !== "" ? Number(vasScoreRaw) : null;
   const expectedReturnDate = (formData.get("expectedReturnDate") as string) || undefined;
   const description = (formData.get("description") as string) || undefined;
 
@@ -84,7 +90,7 @@ export async function createInjuryAction(
 
   const result = await insertInjury({
     playerId, injuryType, location, side, severity, mechanism,
-    dateOfInjury, expectedReturnDate, description,
+    dateOfInjury, vasScore, expectedReturnDate, description,
   });
 
   if ("error" in result && result.error) return { error: result.error };

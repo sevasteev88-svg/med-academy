@@ -2,8 +2,12 @@
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
 import { REHAB_TEMPLATE } from "@/lib/constants";
+import { assertDoctor } from "@/lib/auth";
 
 export async function createRehabPhasesFromTemplate(injuryId: string) {
+  const auth = await assertDoctor();
+  if ("error" in auth) return { error: auth.error };
+
   const supabase = await createClient();
   const phases = REHAB_TEMPLATE.map((name, i) => ({
     injury_id: injuryId, name, sort_order: i,
@@ -17,6 +21,9 @@ export async function createRehabPhasesFromTemplate(injuryId: string) {
 }
 
 export async function addCustomRehabPhase(injuryId: string, name: string, afterOrder: number) {
+  const auth = await assertDoctor();
+  if ("error" in auth) return { error: auth.error };
+
   const supabase = await createClient();
   const { error } = await supabase.from("rehab_phases").insert({
     injury_id: injuryId, name: name.trim(), sort_order: afterOrder + 1, status: "planned",
@@ -27,6 +34,9 @@ export async function addCustomRehabPhase(injuryId: string, name: string, afterO
 }
 
 export async function updateRehabPhaseStatus(phaseId: string, newStatus: string, injuryId: string) {
+  const auth = await assertDoctor();
+  if ("error" in auth) return { error: auth.error };
+
   const supabase = await createClient();
   const update: Record<string, any> = { status: newStatus };
   const today = new Date().toISOString().split("T")[0];

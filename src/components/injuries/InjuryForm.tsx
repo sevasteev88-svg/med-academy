@@ -66,6 +66,7 @@ export default function InjuryForm({
   const [side, setSide] = useState<InjurySide>("left");
   const [severity, setSeverity] = useState<InjurySeverity>("moderate");
   const [mechanism, setMechanism] = useState<InjuryMechanism>("non_contact");
+  const [vasScore, setVasScore] = useState<number>(5);
   const [dateOfInjury, setDateOfInjury] = useState(new Date().toISOString().split("T")[0]);
   const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(false);
@@ -80,6 +81,7 @@ export default function InjuryForm({
         playerId, injuryType,
         location: location as InjuryLocation,
         side, severity, mechanism, dateOfInjury,
+        vasScore,
         description: description || undefined,
       });
       if ("error" in result && result.error) {
@@ -159,6 +161,59 @@ export default function InjuryForm({
                 </button>
               ))}
             </div>
+          </div>
+        </div>
+        {/* Рівень болю (ВАШ 0-10) */}
+        <div>
+          <div className="flex justify-between items-center mb-1.5">
+            <label className="text-xs text-gray-400">
+              Рівень болю (Шкала ВАШ): <span className="text-white font-bold">{vasScore}/10</span>
+            </label>
+            <span className={`text-[11px] font-medium px-2 py-0.5 rounded ${
+              vasScore <= 3
+                ? "bg-status-ok/20 text-status-ok"
+                : vasScore <= 6
+                ? "bg-status-warn/20 text-status-warn"
+                : "bg-status-danger/20 text-status-danger"
+            }`}>
+              {vasScore === 0
+                ? "Без болю"
+                : vasScore <= 3
+                ? "Слабкий біль"
+                : vasScore <= 6
+                ? "Помірний біль"
+                : vasScore <= 8
+                ? "Сильний біль"
+                : "Нестерпний біль"}
+            </span>
+          </div>
+          <div className="grid grid-cols-11 gap-1">
+            {Array.from({ length: 11 }, (_, i) => i).map((score) => {
+              const isSelected = vasScore === score;
+              const colorClass =
+                score <= 3
+                  ? isSelected
+                    ? "bg-status-ok border-status-ok text-white font-bold"
+                    : "border-gray-700 text-gray-400 hover:border-status-ok/50"
+                  : score <= 6
+                  ? isSelected
+                    ? "bg-status-warn border-status-warn text-white font-bold"
+                    : "border-gray-700 text-gray-400 hover:border-status-warn/50"
+                  : isSelected
+                  ? "bg-status-danger border-status-danger text-white font-bold"
+                  : "border-gray-700 text-gray-400 hover:border-status-danger/50";
+
+              return (
+                <button
+                  key={score}
+                  type="button"
+                  onClick={() => setVasScore(score)}
+                  className={`py-2 text-xs rounded-lg border transition-all text-center ${colorClass}`}
+                >
+                  {score}
+                </button>
+              );
+            })}
           </div>
         </div>
         <div>

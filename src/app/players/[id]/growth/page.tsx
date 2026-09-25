@@ -1,8 +1,24 @@
 import { createClient } from "@/utils/supabase/server";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import PlayerGrowthChart from "@/components/growth/PlayerGrowthChart";
-import { calcDecimalAge } from "@/lib/phv-calculator";
+import dynamic from "next/dynamic";
+import {
+  calcDecimalAge,
+  calcHeightVelocity,
+  calcWeightVelocity,
+} from "@/lib/phv-calculator";
+
+const PlayerGrowthChart = dynamic(
+  () => import("@/components/growth/PlayerGrowthChart"),
+  {
+    loading: () => (
+      <div className="w-full bg-surface border border-blue-900/20 rounded-xl p-8 flex flex-col items-center justify-center min-h-[360px] animate-pulse">
+        <div className="w-8 h-8 border-2 border-brand-blue border-t-transparent rounded-full animate-spin mb-3" />
+        <span className="text-xs text-slate-400">Завантаження графіку динаміки росту...</span>
+      </div>
+    ),
+  }
+);
 
 export default async function PlayerGrowthPage({
   params,
@@ -12,29 +28,30 @@ export default async function PlayerGrowthPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  // Дані гравця
-  const { data: player, error } = await supabase
-    .from("players")
-    .select("id, first_name, last_name, date_of_birth, sex, position, teams ( name )")
-    .eq("id", id)
-    .single();
+  const [playerRes, anthroRes, matRes] = await Promise.all([
+    supabase
+      .from("players")
+      .select("id, first_name, last_name, date_of_birth, sex, position, teams ( name )")
+      .eq("id", id)
+      .single(),
+    supabase
+      .from("anthropometry_logs")
+      .select("id, date, height, weight, sitting_height")
+      .eq("player_id", id)
+      .order("date", { ascending: true }),
+    supabase
+      .from("maturation_assessments")
+      .select(
+        "anthropometry_log_id, consensus_offset, consensus_phv_age, growth_phase, height_velocity, weight_velocity"
+      )
+      .eq("player_id", id),
+  ]);
 
+  const { data: player, error } = playerRes;
   if (error || !player) notFound();
 
-  // Усі антропометричні виміри
-  const { data: anthroRaw } = await supabase
-    .from("anthropometry_logs")
-    .select("id, date, height, weight, sitting_height")
-    .eq("player_id", id)
-    .order("date", { ascending: true });
-
-  // Усі оцінки матурації
-  const { data: matRaw } = await supabase
-    .from("maturation_assessments")
-    .select(
-      "anthropometry_log_id, consensus_offset, consensus_phv_age, growth_phase, height_velocity, weight_velocity"
-    )
-    .eq("player_id", id);
+  const anthroRaw = anthroRes.data;
+  const matRaw = matRes.data;
 
   // Мап матурації по anthropometry_log_id
   const matMap = new Map<string, any>();
@@ -42,9 +59,25 @@ export default async function PlayerGrowthPage({
     matMap.set(m.anthropometry_log_id, m);
   }
 
+  // Сортуємо виміри за датою
+  const sortedAnthro = (anthroRaw ?? []).sort(
+    (a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime()
+  );
+
   // Зводимо дані
-  const measurements = (anthroRaw ?? []).map((a: any) => {
+  const measurements = sortedAnthro.map((a: any, index: number) => {
     const mat = matMap.get(a.id);
+    const prev = index > 0 ? sortedAnthro[index - 1] : null;
+
+    // Рахуємо актуальні значення velocity динамічно за поточними правилами
+    let heightVelocity: number | null = null;
+    let weightVelocity: number | null = null;
+
+    if (prev) {
+      heightVelocity = calcHeightVelocity(prev.height, prev.date, a.height, a.date);
+      weightVelocity = calcWeightVelocity(prev.weight, prev.date, a.weight, a.date);
+    }
+
     return {
       date: a.date,
       age: calcDecimalAge(player.date_of_birth, a.date),
@@ -53,8 +86,8 @@ export default async function PlayerGrowthPage({
       sittingHeight: a.sitting_height,
       consensusOffset: mat?.consensus_offset ?? null,
       growthPhase: mat?.growth_phase ?? null,
-      heightVelocity: mat?.height_velocity ?? null,
-      weightVelocity: mat?.weight_velocity ?? null,
+      heightVelocity,
+      weightVelocity,
       estimatedPhvAge: mat?.consensus_phv_age ?? null,
     };
   });
@@ -89,7 +122,7 @@ export default async function PlayerGrowthPage({
             </p>
           </div>
           <Link
-            href="/growth/new"
+            href={`/growth/new?playerId=${id}`}
             className="bg-brand-blue hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg text-sm transition-colors"
           >
             📏 Новий вимір

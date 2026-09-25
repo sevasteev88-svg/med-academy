@@ -1,8 +1,9 @@
-﻿"use server";
+"use server";
 
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { assertDoctor } from "@/lib/auth";
 
 export type UpdatePlayerState = {
   error?: string;
@@ -12,6 +13,9 @@ export async function updatePlayerAction(
   _prev: UpdatePlayerState,
   formData: FormData
 ): Promise<UpdatePlayerState> {
+  const auth = await assertDoctor();
+  if ("error" in auth) return { error: auth.error };
+
   const supabase = await createClient();
 
   const playerId = formData.get("playerId") as string;

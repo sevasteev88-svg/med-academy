@@ -8,6 +8,14 @@ import { createClient } from "@/utils/supabase/server";
 import Link from "next/link";
 import { LOCATION_UA, INJURY_TYPE_UA, SEVERITY_UA, STATUS_UA, MECHANISM_UA, SIDE_UA, EXAM_GRADE_UA, ROM_GRADE_UA, MUSCLE_TONE_UA } from "@/lib/constants";
 import ClassificationSection from "./ClassificationSection";
+import RehabilitationProtocolSection from "@/components/injuries/RehabilitationProtocolSection";
+import RtpClearanceChecklist from "@/components/injuries/RtpClearanceChecklist";
+import MedicalImagingGallery from "@/components/injuries/MedicalImagingGallery";
+import type { ImagingStudy } from "@/actions/save-imaging-study-action";
+import MedicalTreatmentJournal from "@/components/injuries/MedicalTreatmentJournal";
+import type { MedicalTreatmentEntry } from "@/types/pharmacy";
+import Scat6ConcussionAssessment from "@/components/injuries/Scat6ConcussionAssessment";
+import type { ConcussionAssessment } from "@/types/concussion";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -47,12 +55,38 @@ export default async function InjuryDetailPage({ params }: Props) {
   const { id } = await params;
   const supabase = await createClient();
 
-  const { data: injury } = await supabase
-    .from("injuries")
-    .select(`*, players(id, first_name, last_name, position, teams(name))`)
-    .eq("id", id)
-    .single();
+  const [injuryRes, examsRes, logsRes, treatmentsRes, concussionsRes] = await Promise.all([
+    supabase
+      .from("injuries")
+      .select(`*, players(id, first_name, last_name, date_of_birth, position, teams(name))`)
+      .eq("id", id)
+      .single(),
+    supabase
+      .from("injury_examinations")
+      .select("*")
+      .eq("injury_id", id)
+      .order("date", { ascending: false }),
+    supabase
+      .from("injury_logs")
+      .select("*")
+      .eq("injury_id", id)
+      .like("note", "[IMAGING]%")
+      .order("date", { ascending: false }),
+    supabase
+      .from("injury_logs")
+      .select("*")
+      .or(`injury_id.eq.${id},injury_id.is.null`)
+      .like("note", "[TREATMENT]%")
+      .order("date", { ascending: false }),
+    supabase
+      .from("injury_logs")
+      .select("*")
+      .eq("injury_id", id)
+      .like("note", "[CONCUSSION]%")
+      .order("date", { ascending: false }),
+  ]);
 
+  const { data: injury } = injuryRes;
   if (!injury) notFound();
 
   const player = injury.players as any;
@@ -60,12 +94,45 @@ export default async function InjuryDetailPage({ params }: Props) {
   const teamName = player?.teams?.name ?? "";
   const initials = player ? `${player.last_name?.[0] ?? ""}${player.first_name?.[0] ?? ""}` : "??";
 
-  // Огляди (структуровані) з injury_examinations
-  const { data: exams } = await supabase
-    .from("injury_examinations")
-    .select("*")
-    .eq("injury_id", id)
-    .order("date", { ascending: false });
+  const exams = examsRes.data;
+  const imagingStudies: ImagingStudy[] = (logsRes.data || [])
+    .map((l) => {
+      try {
+        const rawJson = l.note.replace("[IMAGING] ", "");
+        return JSON.parse(rawJson) as ImagingStudy;
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean) as ImagingStudy[];
+
+  const medicalTreatments: MedicalTreatmentEntry[] = (treatmentsRes.data || [])
+    .map((l) => {
+      try {
+        const rawJson = l.note.replace("[TREATMENT] ", "");
+        const parsed = JSON.parse(rawJson);
+        if (parsed.injury_id === id || (!parsed.injury_id && parsed.player_id === injury.player_id)) {
+          return parsed as MedicalTreatmentEntry;
+        }
+        return null;
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean) as MedicalTreatmentEntry[];
+
+  const concussionAssessments: ConcussionAssessment[] = (concussionsRes.data || [])
+    .map((l) => {
+      try {
+        const rawJson = l.note.replace("[CONCUSSION] ", "");
+        return JSON.parse(rawJson) as ConcussionAssessment;
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean) as ConcussionAssessment[];
+
+  const isHeadInjury = injury.location === "head" || injury.injury_type === "concussion";
 
   const injDays = daysSince(injury.date_of_injury);
   const isClosed = injury.status === "closed";
@@ -179,6 +246,64 @@ export default async function InjuryDetailPage({ params }: Props) {
             }}
           />
         </div>
+
+        {/* Протокол реабілітації та AI-Асистент */}
+        <RehabilitationProtocolSection
+          injuryType={injury.injury_type}
+          location={injury.location}
+          side={injury.side}
+          severity={injury.severity}
+          mechanism={injury.mechanism}
+          vasScore={injury.vas_score}
+          bamicCode={injury.bamic_code}
+          bamicLocation={injury.bamic_location}
+          mlgrCode={injury.mlgr_code}
+          munichType={injury.munich_type}
+          reinjuryCount={injury.mlgr_reinjury ?? 0}
+          playerName={playerName}
+          teamName={teamName}
+          position={player?.position ?? "—"}
+          age={player?.date_of_birth ? Math.floor((Date.now() - new Date(player.date_of_birth).getTime()) / (365.25 * 86400000)) : 19}
+        />
+
+        {/* Чек-лист критеріїв повернення в гру (RTP Clearance) */}
+        <div className="mb-4">
+          <RtpClearanceChecklist
+            injuryId={injury.id}
+            injuryStatus={injury.status}
+            playerName={playerName}
+          />
+        </div>
+
+        {/* Архів інструментальної візуалізації (МРТ / УЗД) */}
+        <div className="mb-4">
+          <MedicalImagingGallery
+            injuryId={injury.id}
+            initialStudies={imagingStudies}
+            playerName={playerName}
+          />
+        </div>
+
+        {/* Журнал процедур, ін'єкцій та фармакотерапії (WADA Check) */}
+        <div className="mb-4">
+          <MedicalTreatmentJournal
+            injuryId={injury.id}
+            playerId={injury.player_id}
+            playerName={playerName}
+            initialTreatments={medicalTreatments}
+          />
+        </div>
+
+        {/* Протокол струсу мозку FIFA/SCAT6 (показується при травмах голови або наявності записів) */}
+        {(isHeadInjury || concussionAssessments.length > 0) && (
+          <div className="mb-4">
+            <Scat6ConcussionAssessment
+              injuryId={injury.id}
+              playerName={playerName}
+              initialAssessments={concussionAssessments}
+            />
+          </div>
+        )}
 
         {/* Основна інформація */}
         <div className="mb-4">

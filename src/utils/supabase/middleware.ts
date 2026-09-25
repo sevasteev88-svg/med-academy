@@ -8,7 +8,7 @@ import { NextResponse, type NextRequest } from "next/server";
  * Если не обновлять его при каждом запросе — пользователь
  * «разлогинится» посреди работы.
  *
- * Принимает request + response (уже обработанный next-intl),
+ * Принимает request + response,
  * прокидывает обновлённые cookies и возвращает response.
  */
 export async function updateSession(

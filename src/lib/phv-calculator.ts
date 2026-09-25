@@ -75,7 +75,11 @@ export function calcDecimalAge(dob: string, date: string): number {
   return Math.round((days / 365.25) * 100) / 100;
 }
 
-/** Швидкість росту (см/рік) */
+/** 
+ * Швидкість росту (см/рік).
+ * Враховує нелінійність росту: достовірна річна швидкість вираховується при інтервалі від 180 днів.
+ * Для коротких періодів повертає згладжену оцінку або 0 при мікро-інтервалах (< 30 днів).
+ */
 export function calcHeightVelocity(
   prevH: number,
   prevDate: string,
@@ -85,11 +89,23 @@ export function calcHeightVelocity(
   const days =
     (new Date(currDate).getTime() - new Date(prevDate).getTime()) /
     (1000 * 60 * 60 * 24);
-  if (days <= 0) return 0;
-  return Math.round(((currH - prevH) / (days / 365.25)) * 10) / 10;
+  if (days < 30) return 0; // мікро-інтервали менше місяця не екстраполюються
+  const deltaH = currH - prevH;
+  if (days >= 180) {
+    // Достовірний річний інтервал
+    return Math.round((deltaH / (days / 365.25)) * 10) / 10;
+  }
+  // Для інтервалів 1–6 місяців показуємо фактичний приріст з помірною консервативною корекцією
+  const annualRate = (deltaH / (days / 365.25));
+  // Обмежуємо нереалістичні сплески екстраполяції (максимум до 14 см/рік для фізіологічного піку)
+  const capped = Math.max(-5, Math.min(14, annualRate));
+  return Math.round(capped * 10) / 10;
 }
 
-/** Швидкість зміни ваги (кг/рік) */
+/** 
+ * Фактична зміна ваги (кг). 
+ * Не екстраполюється на рік через коливання рідини, повертає реальну дельту.
+ */
 export function calcWeightVelocity(
   prevW: number,
   prevDate: string,
@@ -100,7 +116,8 @@ export function calcWeightVelocity(
     (new Date(currDate).getTime() - new Date(prevDate).getTime()) /
     (1000 * 60 * 60 * 24);
   if (days <= 0) return 0;
-  return Math.round(((currW - prevW) / (days / 365.25)) * 10) / 10;
+  // Повертаємо фактичну дельту ваги (кг) між цими двома точками
+  return Math.round((currW - prevW) * 10) / 10;
 }
 
 function round2(n: number): number {

@@ -1,10 +1,14 @@
 "use server";
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
+import { assertDoctor } from "@/lib/auth";
 
 export type AddLogState = { error?: string; success?: boolean };
 
 export async function addInjuryLogAction(_prev: AddLogState, formData: FormData): Promise<AddLogState> {
+  const auth = await assertDoctor();
+  if ("error" in auth) return { error: auth.error };
+
   const supabase = await createClient();
   const injuryId = formData.get("injuryId") as string;
   const note = (formData.get("note") as string)?.trim();

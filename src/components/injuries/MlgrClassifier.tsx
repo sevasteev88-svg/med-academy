@@ -344,62 +344,131 @@ export default function MlgrClassifier({
 
       {/* ═══ КРОК 6: BAMIC + Munich ═══ */}
       {step === 6 && (
-        <div>
-          <div className="text-[12px] font-medium text-slate-300 mb-2">BAMIC + Munich (опціонально)</div>
+        <div className="space-y-4">
+          <div className="text-[13px] font-semibold text-slate-200">
+            BAMIC + Munich <span className="text-[11px] text-slate-500 font-normal">(додаткова класифікація)</span>
+          </div>
+
+          {/* Підказка щодо зв'язки BAMIC */}
+          {((bamicLoc && !bamicGrade) || (!bamicLoc && bamicGrade)) && (
+            <div className="p-2.5 rounded-lg bg-amber-500/15 border border-amber-500/40 text-amber-300 text-[11px] flex items-center gap-2">
+              <span className="text-sm">⚠️</span>
+              <span>
+                {bamicLoc && !bamicGrade
+                  ? "Ви обрали локалізацію. Будь ласка, оберіть також ступінь BAMIC (0a..4) зверху."
+                  : "Ви обрали ступінь. Будь ласка, оберіть також локалізацію BAMIC (a, b або c) нижче."}
+              </span>
+            </div>
+          )}
 
           {/* BAMIC грейд */}
-          <div className="text-[9px] uppercase tracking-wider text-slate-600 mb-1.5">BAMIC ступінь</div>
-          <div className="grid grid-cols-3 gap-1.5 mb-3">
-            {BAMIC_GRADES.map((b) => (
-              <button
-                key={b.key}
-                type="button"
-                onClick={() => setBamicGrade(bamicGrade === b.key ? "" : b.key)}
-                className={`py-1.5 rounded-lg border text-[11px] transition-all ${
-                  bamicGrade === b.key
-                    ? "border-amber-500/50 bg-amber-500/12 text-amber-300"
-                    : "border-blue-900/20 bg-slate-900/60 text-slate-500 hover:border-amber-500/30"
-                }`}
-                title={b.desc}
-              >
-                {b.label}
-              </button>
-            ))}
+          <div className={`p-3 rounded-xl border transition-all ${
+            bamicLoc && !bamicGrade
+              ? "bg-amber-500/10 border-amber-500/50 ring-1 ring-amber-500/40"
+              : "bg-slate-900/60 border-blue-900/30"
+          }`}>
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-[10px] uppercase font-bold tracking-wider text-slate-300">
+                1. BAMIC ступінь
+              </span>
+              {bamicLoc && !bamicGrade && (
+                <span className="text-[10px] text-amber-400 font-medium">← Потрібно обрати</span>
+              )}
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {BAMIC_GRADES.map((b) => {
+                const isSelected = bamicGrade === b.key;
+                return (
+                  <button
+                    key={b.key}
+                    type="button"
+                    onClick={() => setBamicGrade(isSelected ? "" : b.key)}
+                    className={`py-2 px-2 rounded-lg border text-[11px] font-medium transition-all ${
+                      isSelected
+                        ? "border-amber-400 bg-amber-500/25 text-amber-200 shadow-sm shadow-amber-500/20 font-bold"
+                        : bamicLoc && !bamicGrade
+                        ? "border-amber-500/30 bg-slate-950/80 text-slate-300 hover:border-amber-400 hover:text-white"
+                        : "border-slate-700 bg-slate-950/60 text-slate-400 hover:border-slate-500 hover:text-white"
+                    }`}
+                    title={b.desc}
+                  >
+                    {b.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* BAMIC локалізація */}
-          <div className="text-[9px] uppercase tracking-wider text-slate-600 mb-1.5">BAMIC локалізація</div>
-          <div className="mb-3">
-            {BAMIC_LOCATIONS.map((l) => (
-              <OptionBtn
-                key={l.key}
-                selected={bamicLoc === l.key}
-                label={l.label}
-                desc={l.desc}
-                warning={l.key === "c" ? "T-junction" : undefined}
-                onClick={() => setBamicLoc(bamicLoc === l.key ? "" : l.key)}
-              />
-            ))}
+          <div className={`p-3 rounded-xl border transition-all ${
+            !bamicLoc && bamicGrade
+              ? "bg-amber-500/10 border-amber-500/50 ring-1 ring-amber-500/40"
+              : "bg-slate-900/60 border-blue-900/30"
+          }`}>
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-[10px] uppercase font-bold tracking-wider text-slate-300">
+                2. BAMIC локалізація
+              </span>
+              {!bamicLoc && bamicGrade && (
+                <span className="text-[10px] text-amber-400 font-medium">← Потрібно обрати</span>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              {BAMIC_LOCATIONS.map((l) => {
+                const isSelected = bamicLoc === l.key;
+                return (
+                  <button
+                    key={l.key}
+                    type="button"
+                    onClick={() => setBamicLoc(isSelected ? "" : l.key)}
+                    className={`w-full text-left px-3 py-2 rounded-lg border transition-all ${
+                      isSelected
+                        ? "border-amber-400 bg-amber-500/20 text-white font-medium"
+                        : "border-slate-700 bg-slate-950/60 text-slate-400 hover:border-slate-500 hover:text-slate-200"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className={`text-[12px] ${isSelected ? "text-amber-300 font-bold" : "text-slate-300"}`}>
+                        {isSelected ? "● " : "○ "} {l.label}
+                      </span>
+                      {l.key === "c" && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 border border-red-500/30">
+                          ⚠️ T-junction
+                        </span>
+                      )}
+                    </div>
+                    {l.desc && <div className="text-[10px] text-slate-500 mt-0.5 ml-4">{l.desc}</div>}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Munich */}
-          <div className="text-[9px] uppercase tracking-wider text-slate-600 mb-1.5">Munich тип</div>
-          <div className="grid grid-cols-2 gap-1.5 mb-2">
-            {MUNICH_TYPES.map((m) => (
-              <button
-                key={m.key}
-                type="button"
-                onClick={() => setMunichType(munichType === m.key ? "" : m.key)}
-                className={`text-left px-2.5 py-1.5 rounded-lg border text-[10px] transition-all ${
-                  munichType === m.key
-                    ? "border-blue-500/50 bg-blue-500/10 text-blue-300"
-                    : "border-blue-900/20 bg-slate-900/60 text-slate-500 hover:border-blue-500/30"
-                }`}
-                title={m.desc}
-              >
-                {m.label}
-              </button>
-            ))}
+          <div className="p-3 rounded-xl border border-blue-900/30 bg-slate-900/60">
+            <div className="text-[10px] uppercase font-bold tracking-wider text-slate-300 mb-2">
+              3. Munich тип
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {MUNICH_TYPES.map((m) => {
+                const isSelected = munichType === m.key;
+                return (
+                  <button
+                    key={m.key}
+                    type="button"
+                    onClick={() => setMunichType(isSelected ? "" : m.key)}
+                    className={`text-left px-2.5 py-2 rounded-lg border text-[11px] transition-all ${
+                      isSelected
+                        ? "border-blue-400 bg-blue-500/25 text-blue-200 font-semibold"
+                        : "border-slate-700 bg-slate-950/60 text-slate-400 hover:border-slate-500 hover:text-slate-200"
+                    }`}
+                    title={m.desc}
+                  >
+                    {m.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <NavButtons onBack={() => setStep(5)} showBack />

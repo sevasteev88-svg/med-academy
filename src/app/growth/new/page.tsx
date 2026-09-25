@@ -1,7 +1,12 @@
 import { createClient } from "@/utils/supabase/server";
 import AnthropometryForm from "@/components/growth/AnthropometryForm";
 
-export default async function NewMeasurementPage() {
+export default async function NewMeasurementPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ playerId?: string }>;
+}) {
+  const { playerId } = await searchParams;
   const supabase = await createClient();
   const { data: players } = await supabase
     .from("players")
@@ -14,7 +19,7 @@ export default async function NewMeasurementPage() {
         <h1 className="text-2xl font-bold text-white mb-6">
           Антропометричний огляд
         </h1>
-        <AnthropometryForm players={players ?? []} />
+        <AnthropometryForm players={players ?? []} initialPlayerId={playerId} />
       </div>
     </div>
   );

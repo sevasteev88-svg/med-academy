@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 
 /**
@@ -21,50 +21,86 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Не авторизовано" }, { status: 401 });
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  const geminiKey = process.env.GEMINI_API_KEY;
 
-  if (!apiKey) {
+  if (!anthropicKey && !geminiKey) {
     return NextResponse.json(
-      { error: "ANTHROPIC_API_KEY не налаштований" },
+      { error: "API ключ для AI не налаштований. Додайте GEMINI_API_KEY або ANTHROPIC_API_KEY у .env.local" },
       { status: 500 }
     );
   }
 
   try {
     const data = await request.json();
-
     const prompt = buildPrompt(data);
 
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 4000,
-        messages: [{ role: "user", content: prompt }],
-      }),
-    });
-
-    if (!response.ok) {
-      const err = await response.text();
-      console.error("Claude API error:", err);
-      return NextResponse.json(
-        { error: "Помилка Claude API" },
-        { status: 502 }
+    // 1. Якщо є GEMINI_API_KEY — використовуємо Gemini 2.5 Flash
+    if (geminiKey) {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              temperature: 0.3,
+              maxOutputTokens: 8192,
+            },
+          }),
+        }
       );
+
+      if (!response.ok) {
+        const err = await response.text();
+        console.error("Gemini API error:", err);
+        return NextResponse.json(
+          { error: "Помилка Gemini API" },
+          { status: 502 }
+        );
+      }
+
+      const result = await response.json();
+      const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+      return NextResponse.json({ report: text });
     }
 
-    const result = await response.json();
-    const text = result.content
-      ?.filter((b: any) => b.type === "text")
-      .map((b: any) => b.text)
-      .join("\n");
+    // 2. Якщо є ANTHROPIC_API_KEY — Claude Sonnet
+    if (anthropicKey) {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": anthropicKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 4000,
+          messages: [{ role: "user", content: prompt }],
+        }),
+      });
 
-    return NextResponse.json({ report: text });
+      if (!response.ok) {
+        const err = await response.text();
+        console.error("Claude API error:", err);
+        return NextResponse.json(
+          { error: "Помилка Claude API" },
+          { status: 502 }
+        );
+      }
+
+      const result = await response.json();
+      const text = result.content
+        ?.filter((b: any) => b.type === "text")
+        .map((b: any) => b.text)
+        .join("\n");
+
+      return NextResponse.json({ report: text });
+    }
+
+    return NextResponse.json({ error: "Немає доступного провайдера AI" }, { status: 500 });
   } catch (err) {
     console.error("Weekly report error:", err);
     return NextResponse.json(

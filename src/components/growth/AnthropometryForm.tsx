@@ -26,7 +26,13 @@ function ageAt(dob: string, date: string): number {
   return (new Date(date).getTime() - new Date(dob).getTime()) / (365.25 * 86400000);
 }
 
-export default function AnthropometryForm({ players }: { players: Player[] }) {
+export default function AnthropometryForm({
+  players,
+  initialPlayerId,
+}: {
+  players: Player[];
+  initialPlayerId?: string;
+}) {
   const [isPending, startTransition] = useTransition();
   const [result, setResult] = useState<PhvResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +40,7 @@ export default function AnthropometryForm({ players }: { players: Player[] }) {
   const [computePhv, setComputePhv] = useState(true);
 
   const [form, setForm] = useState({
-    playerId: "",
+    playerId: initialPlayerId ?? "",
     date: new Date().toISOString().slice(0, 10),
     height: "",
     weight: "",

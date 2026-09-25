@@ -1,8 +1,8 @@
-﻿"use client";
+"use client";
 
 import { useActionState } from "react";
 import { createPlayerAction, type CreatePlayerState } from "@/actions/create-player-action";
-import Card from "@/components/ui/Card";
+import Card, { Button, Input, Select } from "@/components/ui/Card";
 import { POSITION_LABELS, POSITION_FULL, TEAM_CATEGORY_UA } from "@/lib/constants";
 
 type Team = { id: string; name: string; category: string };
@@ -14,11 +14,6 @@ const sides = [
   { value: "both",  label: "Обидві" },
 ];
 
-/* Стилі для полів */
-const inputClass =
-  "w-full bg-surface-raised border border-blue-900/20 rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-brand-blue/50 focus:ring-1 focus:ring-brand-blue/30 transition-colors";
-const labelClass = "block text-xs text-slate-500 mb-1.5";
-
 export default function AddPlayerForm({ teams }: { teams: Team[] }) {
   const [state, formAction, isPending] = useActionState<CreatePlayerState, FormData>(
     createPlayerAction,
@@ -29,88 +24,64 @@ export default function AddPlayerForm({ teams }: { teams: Team[] }) {
   const academy = teams.filter((t) => t.category === "academy");
 
   return (
-    <Card>
+    <Card className="p-6">
       <form action={formAction} className="space-y-5">
         {/* Команда */}
-        <div>
-          <label className={labelClass}>Команда *</label>
-          <select name="teamId" required className={inputClass}>
-            <option value="">Оберіть команду</option>
-            {youth.length > 0 && (
-              <optgroup label={TEAM_CATEGORY_UA.youth}>
-                {youth.map((t) => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
-                ))}
-              </optgroup>
-            )}
-            {academy.length > 0 && (
-              <optgroup label={TEAM_CATEGORY_UA.academy}>
-                {academy.map((t) => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
-                ))}
-              </optgroup>
-            )}
-          </select>
-        </div>
+        <Select label="Команда *" name="teamId" required>
+          <option value="">Оберіть команду</option>
+          {youth.length > 0 && (
+            <optgroup label={TEAM_CATEGORY_UA.youth}>
+              {youth.map((t) => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </optgroup>
+          )}
+          {academy.length > 0 && (
+            <optgroup label={TEAM_CATEGORY_UA.academy}>
+              {academy.map((t) => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </optgroup>
+          )}
+        </Select>
 
         {/* ПІБ */}
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelClass}>Прізвище *</label>
-            <input name="lastName" required placeholder="Іванов" className={inputClass} />
-          </div>
-          <div>
-            <label className={labelClass}>Ім'я *</label>
-            <input name="firstName" required placeholder="Олександр" className={inputClass} />
-          </div>
+          <Input label="Прізвище *" name="lastName" required placeholder="Іванов" />
+          <Input label="Ім'я *" name="firstName" required placeholder="Олександр" />
         </div>
 
         {/* Дата народження + Стать */}
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelClass}>Дата народження *</label>
-            <input name="dateOfBirth" type="date" required className={inputClass} />
-          </div>
-          <div>
-            <label className={labelClass}>Стать *</label>
-            <select name="sex" required className={inputClass} defaultValue="male">
-              <option value="male">Хлопець</option>
-              <option value="female">Дівчина</option>
-            </select>
-          </div>
+          <Input label="Дата народження *" name="dateOfBirth" type="date" required />
+          <Select label="Стать *" name="sex" required defaultValue="male">
+            <option value="male">Хлопець</option>
+            <option value="female">Дівчина</option>
+          </Select>
         </div>
 
         {/* Позиція */}
-        <div>
-          <label className={labelClass}>Позиція *</label>
-          <select name="position" required className={inputClass}>
-            <option value="">Оберіть позицію</option>
-            {positions.map(([code, short]) => (
-              <option key={code} value={code}>
-                {short} — {POSITION_FULL[code]}
-              </option>
-            ))}
-          </select>
-        </div>
+        <Select label="Позиція *" name="position" required>
+          <option value="">Оберіть позицію</option>
+          {positions.map(([code, short]) => (
+            <option key={code} value={code}>
+              {short} — {POSITION_FULL[code]}
+            </option>
+          ))}
+        </Select>
 
         {/* Ведучі нога / рука */}
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelClass}>Ведуча нога</label>
-            <select name="dominantLeg" className={inputClass} defaultValue="right">
-              {sides.map((s) => (
-                <option key={s.value} value={s.value}>{s.label}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className={labelClass}>Ведуча рука</label>
-            <select name="dominantArm" className={inputClass} defaultValue="right">
-              {sides.map((s) => (
-                <option key={s.value} value={s.value}>{s.label}</option>
-              ))}
-            </select>
-          </div>
+          <Select label="Ведуча нога" name="dominantLeg" defaultValue="right">
+            {sides.map((s) => (
+              <option key={s.value} value={s.value}>{s.label}</option>
+            ))}
+          </Select>
+          <Select label="Ведуча рука" name="dominantArm" defaultValue="right">
+            {sides.map((s) => (
+              <option key={s.value} value={s.value}>{s.label}</option>
+            ))}
+          </Select>
         </div>
 
         {/* Помилка */}
@@ -121,14 +92,10 @@ export default function AddPlayerForm({ teams }: { teams: Team[] }) {
         )}
 
         {/* Кнопки */}
-        <div className="flex gap-3 pt-2">
-          <button
-            type="submit"
-            disabled={isPending}
-            className="flex-1 bg-brand-blue hover:bg-brand-blue-light disabled:opacity-50 text-white font-bold py-2.5 rounded-lg text-sm transition-colors shadow-glow-sm"
-          >
-            {isPending ? "Зберігаємо..." : "Зберегти"}
-          </button>
+        <div className="pt-2">
+          <Button type="submit" isLoading={isPending} className="w-full">
+            Зберегти гравця
+          </Button>
         </div>
       </form>
     </Card>

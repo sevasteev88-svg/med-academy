@@ -10,6 +10,7 @@
 
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
+import { assertDoctor } from "@/lib/auth";
 import {
   calculatePhv,
   calcHeightVelocity,
@@ -28,12 +29,10 @@ type SaveAnthropometryInput = {
 };
 
 export async function saveAnthropometryWithPhv(input: SaveAnthropometryInput) {
-  const supabase = await createClient();
+  const auth = await assertDoctor();
+  if ("error" in auth) return { error: auth.error };
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { error: "Не авторизовано" };
+  const supabase = await createClient();
 
   // 1. Дані гравця
   const { data: player, error: playerErr } = await supabase

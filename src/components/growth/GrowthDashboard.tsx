@@ -1,6 +1,7 @@
 import { createClient } from "@/utils/supabase/server";
 import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
+import Link from "next/link";
 import {
   GROWTH_PHASE_LABELS,
   PHASE_TYPICAL_INJURIES,
@@ -136,30 +137,37 @@ function MethodsComparison({ assessment }: { assessment: AssessmentRow }) {
 
 // ─── Головний компонент ─────────────────────────────────────
 
-export default async function GrowthDashboard() {
+export default async function GrowthDashboard({
+  selectedTeam,
+}: {
+  selectedTeam?: string;
+}) {
   const supabase = await createClient();
 
-  const { data: players, error } = await supabase
-    .from("players")
-    .select(
+  const [{ data: players, error }, { data: allTeams }] = await Promise.all([
+    supabase
+      .from("players")
+      .select(
+        `
+        id, first_name, last_name, date_of_birth, sex, position,
+        teams ( id, name ),
+        maturation_assessments (
+          age_at_measurement, consensus_offset, consensus_phv_age,
+          mirwald_offset, mirwald_phv_age,
+          moore1_offset, moore1_phv_age,
+          moore2_offset, moore2_phv_age,
+          fransen_phv_age, methods_used,
+          growth_phase, height_velocity, weight_velocity,
+          risk_zone, risk_factors, created_at
+        )
       `
-      id, first_name, last_name, date_of_birth, sex, position,
-      teams ( name ),
-      maturation_assessments (
-        age_at_measurement, consensus_offset, consensus_phv_age,
-        mirwald_offset, mirwald_phv_age,
-        moore1_offset, moore1_phv_age,
-        moore2_offset, moore2_phv_age,
-        fransen_phv_age, methods_used,
-        growth_phase, height_velocity, weight_velocity,
-        risk_zone, risk_factors, created_at
       )
-    `
-    )
-    .order("created_at", {
-      referencedTable: "maturation_assessments",
-      ascending: false,
-    });
+      .order("created_at", {
+        referencedTable: "maturation_assessments",
+        ascending: false,
+      }),
+    supabase.from("teams").select("id, name, sort_order").order("sort_order", { ascending: true }),
+  ]);
 
   if (error) {
     return (
@@ -169,7 +177,7 @@ export default async function GrowthDashboard() {
     );
   }
 
-  const playersData = (players as unknown as PlayerRow[])
+  const rawPlayers = (players as unknown as PlayerRow[])
     .map((p) => ({
       ...p,
       latest: p.maturation_assessments?.[0] ?? null,
@@ -178,6 +186,11 @@ export default async function GrowthDashboard() {
       const order: Record<string, number> = { red: 0, yellow: 1, green: 2 };
       return (order[a.latest?.risk_zone ?? ""] ?? 3) - (order[b.latest?.risk_zone ?? ""] ?? 3);
     });
+
+  // Фільтрація по команді
+  const playersData = selectedTeam
+    ? rawPlayers.filter((p) => (p.teams as any)?.name === selectedTeam)
+    : rawPlayers;
 
   const withData = playersData.filter((p) => p.latest);
   const stats = {
@@ -190,18 +203,62 @@ export default async function GrowthDashboard() {
     noData: playersData.length - withData.length,
   };
 
+  const availableTeams = allTeams ?? [];
+
   return (
     <div className="min-h-screen bg-background text-gray-100 p-6">
-      <div className="max-w-6xl mx-auto space-y-8">
+      <div className="max-w-6xl mx-auto space-y-6">
         {/* Заголовок */}
-        <div className="border-b border-gray-800 pb-4">
-          <h1 className="text-2xl font-bold text-white">
-            Моніторинг росту та матурації
-          </h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Мультиметодний підхід: Mirwald (2002) + Moore (2015) · Зважений консенсус
-          </p>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-800 pb-4">
+          <div>
+            <h1 className="text-2xl font-bold text-white">
+              Моніторинг росту та матурації
+            </h1>
+            <p className="text-sm text-gray-500 mt-1">
+              Мультиметодний підхід: Mirwald (2002) + Moore (2015) · Зважений консенсус
+            </p>
+          </div>
+          <Link
+            href="/growth/new"
+            className="self-start sm:self-auto px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-colors"
+          >
+            + Новий замір
+          </Link>
         </div>
+
+        {/* Фільтр команд */}
+        {availableTeams.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-gray-400 mr-1">Команда:</span>
+            <Link
+              href="/growth"
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                !selectedTeam
+                  ? "bg-blue-600 border-blue-500 text-white font-bold"
+                  : "bg-surface border-gray-800 text-gray-400 hover:border-gray-600 hover:text-white"
+              }`}
+            >
+              Всі ({rawPlayers.length})
+            </Link>
+            {availableTeams.map((t) => {
+              const isSelected = selectedTeam === t.name;
+              const count = rawPlayers.filter((p) => (p.teams as any)?.name === t.name).length;
+              return (
+                <Link
+                  key={t.id}
+                  href={`/growth?team=${encodeURIComponent(t.name)}`}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                    isSelected
+                      ? "bg-blue-600 border-blue-500 text-white font-bold"
+                      : "bg-surface border-gray-800 text-gray-400 hover:border-gray-600 hover:text-white"
+                  }`}
+                >
+                  {t.name} {count > 0 && <span className="opacity-70">({count})</span>}
+                </Link>
+              );
+            })}
+          </div>
+        )}
 
         {/* Статистика */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -240,15 +297,27 @@ export default async function GrowthDashboard() {
                   <Card key={p.id} className="hover:border-status-warn/40 transition-colors">
                     <div className="flex justify-between items-start mb-3">
                       <div>
-                        <div className="font-bold text-white text-lg">
-                          {p.last_name} {p.first_name.charAt(0)}.
-                        </div>
-                        <div className="text-sm text-gray-500">
+                        <Link
+                          href={`/players/${p.id}`}
+                          className="font-bold text-white text-lg hover:text-blue-400 transition-colors flex items-center gap-1.5"
+                        >
+                          {p.last_name} {p.first_name}
+                          <span className="text-xs text-blue-500">→</span>
+                        </Link>
+                        <div className="text-sm text-gray-500 mt-0.5">
                           {(p.teams as any)?.name} · {p.position} ·{" "}
                           {p.latest!.age_at_measurement.toFixed(1)}р.
                         </div>
                       </div>
-                      <RiskBadge zone={p.latest!.risk_zone} />
+                      <div className="flex items-center gap-2">
+                        <RiskBadge zone={p.latest!.risk_zone} />
+                        <Link
+                          href={`/players/${p.id}/growth`}
+                          className="text-[11px] text-blue-400 hover:text-blue-300 underline"
+                        >
+                          Графік
+                        </Link>
+                      </div>
                     </div>
 
                     <MaturityBar offset={p.latest!.consensus_offset} />
@@ -273,9 +342,11 @@ export default async function GrowthDashboard() {
 
         {/* Таблиця всіх */}
         <section>
-          <h2 className="text-lg font-semibold text-gray-400 mb-3">
-            Усі гравці ({stats.total})
-          </h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold text-gray-400">
+              Усі гравці {selectedTeam ? `· ${selectedTeam}` : ""} ({stats.total})
+            </h2>
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -285,10 +356,11 @@ export default async function GrowthDashboard() {
                   <th className="text-center py-3 px-2 font-medium">Вік</th>
                   <th className="text-center py-3 px-2 font-medium">Фаза</th>
                   <th className="text-center py-3 px-2 font-medium">Offset</th>
-                  <th className="px-2 font-medium min-w-[140px]">Матурація</th>
+                  <th className="text-left py-3 px-2 font-medium min-w-[120px]">Шкала</th>
                   <th className="text-center py-3 px-2 font-medium">Δ зріст</th>
                   <th className="text-center py-3 px-2 font-medium">Методи</th>
                   <th className="text-center py-3 px-2 font-medium">Ризик</th>
+                  <th className="text-right py-3 px-2 font-medium">Дії</th>
                 </tr>
               </thead>
               <tbody>
@@ -305,9 +377,12 @@ export default async function GrowthDashboard() {
                       className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors"
                     >
                       <td className="py-3 px-2">
-                        <span className="font-medium text-white">
-                          {p.last_name} {p.first_name.charAt(0)}.
-                        </span>
+                        <Link
+                          href={`/players/${p.id}`}
+                          className="font-medium text-white hover:text-blue-400 transition-colors"
+                        >
+                          {p.last_name} {p.first_name}
+                        </Link>
                         <span className="text-gray-600 ml-2 text-xs">{p.position}</span>
                       </td>
                       <td className="py-3 px-2 text-gray-400">
@@ -357,6 +432,14 @@ export default async function GrowthDashboard() {
                       </td>
                       <td className="py-3 px-2 text-center">
                         {a ? <RiskBadge zone={a.risk_zone} /> : "—"}
+                      </td>
+                      <td className="py-3 px-2 text-right">
+                        <Link
+                          href={`/players/${p.id}/growth`}
+                          className="text-xs text-blue-400 hover:text-blue-300 px-2 py-1 rounded bg-blue-500/10 border border-blue-500/20 hover:bg-blue-500/20 transition-colors"
+                        >
+                          Крива росту →
+                        </Link>
                       </td>
                     </tr>
                   );

@@ -190,10 +190,20 @@ export default function PlayerGrowthChart({
               <Tooltip
                 contentStyle={{ backgroundColor: "#0f172a", border: "1px solid #1e293b", borderRadius: "8px", fontSize: "12px" }}
                 labelFormatter={(v) => `Вік: ${v} р.`}
+                formatter={(value: any, name: any) => {
+                  const val = typeof value === "number" ? value : Number(value);
+                  if (name === "Швидкість росту (см/рік)") {
+                    return [`${val > 0 ? "+" : ""}${val.toFixed(1)} см/рік`, name];
+                  }
+                  if (name === "Фактична зміна ваги (кг)") {
+                    return [`${val > 0 ? "+" : ""}${val.toFixed(1)} кг`, name];
+                  }
+                  return [val, name];
+                }}
               />
               <Legend wrapperStyle={{ fontSize: "11px" }} />
-              <Line type="monotone" dataKey="heightVelocity" name="Δ Зріст (см/рік)" stroke="#f59e0b" strokeWidth={2.5} dot={{ r: 5, fill: "#f59e0b" }} activeDot={{ r: 7 }} />
-              <Line type="monotone" dataKey="weightVelocity" name="Δ Вага (кг/рік)" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 4, fill: "#8b5cf6" }} activeDot={{ r: 6 }} />
+              <Line type="monotone" dataKey="heightVelocity" name="Швидкість росту (см/рік)" stroke="#f59e0b" strokeWidth={2.5} dot={{ r: 5, fill: "#f59e0b" }} activeDot={{ r: 7 }} />
+              <Line type="monotone" dataKey="weightVelocity" name="Фактична зміна ваги (кг)" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 4, fill: "#8b5cf6" }} activeDot={{ r: 6 }} />
             </LineChart>
           </ResponsiveContainer>
         )}
@@ -264,42 +274,69 @@ export default function PlayerGrowthChart({
               <tr className="text-slate-600 border-b border-slate-800">
                 <th className="text-left py-1.5 px-2">Дата</th>
                 <th className="text-center py-1.5 px-2">Вік</th>
-                <th className="text-center py-1.5 px-2">Зріст</th>
-                <th className="text-center py-1.5 px-2">Вага</th>
+                <th className="text-center py-1.5 px-2">Зріст (см)</th>
+                <th className="text-center py-1.5 px-2">Вага (кг)</th>
                 <th className="text-center py-1.5 px-2">Зр. сид.</th>
                 <th className="text-center py-1.5 px-2">Offset</th>
-                <th className="text-center py-1.5 px-2">Δ зріст</th>
+                <th className="text-center py-1.5 px-2">Δ Зріст</th>
+                <th className="text-center py-1.5 px-2">Δ Вага</th>
                 <th className="text-center py-1.5 px-2">Фаза</th>
               </tr>
             </thead>
             <tbody>
-              {sorted.map((m, i) => (
-                <tr key={i} className="border-b border-slate-800/50">
-                  <td className="py-1.5 px-2 text-slate-400">{new Date(m.date).toLocaleDateString("uk-UA")}</td>
-                  <td className="py-1.5 px-2 text-center font-mono text-slate-300">{m.age.toFixed(1)}</td>
-                  <td className="py-1.5 px-2 text-center font-mono text-slate-300">{m.height}</td>
-                  <td className="py-1.5 px-2 text-center font-mono text-slate-300">{m.weight}</td>
-                  <td className="py-1.5 px-2 text-center font-mono text-slate-400">{m.sittingHeight ?? "—"}</td>
-                  <td className="py-1.5 px-2 text-center font-mono text-slate-300">
-                    {m.consensusOffset != null ? `${m.consensusOffset > 0 ? "+" : ""}${m.consensusOffset.toFixed(2)}` : "—"}
-                  </td>
-                  <td className="py-1.5 px-2 text-center font-mono">
-                    <span className={m.heightVelocity != null && m.heightVelocity > 8 ? "text-yellow-500" : "text-slate-400"}>
-                      {m.heightVelocity?.toFixed(1) ?? "—"}
-                    </span>
-                  </td>
-                  <td className="py-1.5 px-2 text-center">
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
-                      m.growthPhase === "phv" ? "bg-yellow-500/20 text-yellow-500"
-                      : m.growthPhase === "post_phv" ? "bg-green-500/20 text-green-500"
-                      : m.growthPhase === "pre_phv" ? "bg-slate-700 text-slate-400"
-                      : "text-slate-600"
-                    }`}>
-                      {m.growthPhase ?? "—"}
-                    </span>
-                  </td>
-                </tr>
-              ))}
+              {sorted.map((m, i) => {
+                const prev = i > 0 ? sorted[i - 1] : null;
+                const deltaH = prev ? Math.round((m.height - prev.height) * 10) / 10 : null;
+                const deltaW = prev ? Math.round((m.weight - prev.weight) * 10) / 10 : null;
+
+                return (
+                  <tr key={i} className="border-b border-slate-800/50">
+                    <td className="py-1.5 px-2 text-slate-400">{new Date(m.date).toLocaleDateString("uk-UA")}</td>
+                    <td className="py-1.5 px-2 text-center font-mono text-slate-300">{m.age.toFixed(1)}</td>
+                    <td className="py-1.5 px-2 text-center font-mono text-slate-300">{m.height}</td>
+                    <td className="py-1.5 px-2 text-center font-mono text-slate-300">{m.weight}</td>
+                    <td className="py-1.5 px-2 text-center font-mono text-slate-400">{m.sittingHeight ?? "—"}</td>
+                    <td className="py-1.5 px-2 text-center font-mono text-slate-300">
+                      {m.consensusOffset != null ? `${m.consensusOffset > 0 ? "+" : ""}${m.consensusOffset.toFixed(2)}` : "—"}
+                    </td>
+                    <td className="py-1.5 px-2 text-center font-mono">
+                      {deltaH != null ? (
+                        <div className="flex flex-col items-center leading-tight">
+                          <span className={deltaH > 5 ? "text-yellow-400 font-semibold" : "text-slate-300"}>
+                            {deltaH > 0 ? `+${deltaH}` : deltaH} см
+                          </span>
+                          {m.heightVelocity != null && (
+                            <span className="text-[10px] text-slate-500">
+                              ({m.heightVelocity.toFixed(1)} см/р)
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td className="py-1.5 px-2 text-center font-mono">
+                      {deltaW != null ? (
+                        <span className={deltaW >= 0 ? "text-slate-300" : "text-sky-400"}>
+                          {deltaW > 0 ? `+${deltaW}` : deltaW} кг
+                        </span>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td className="py-1.5 px-2 text-center">
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                        m.growthPhase === "phv" ? "bg-yellow-500/20 text-yellow-500"
+                        : m.growthPhase === "post_phv" ? "bg-green-500/20 text-green-500"
+                        : m.growthPhase === "pre_phv" ? "bg-slate-700 text-slate-400"
+                        : "text-slate-600"
+                      }`}>
+                        {m.growthPhase ?? "—"}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

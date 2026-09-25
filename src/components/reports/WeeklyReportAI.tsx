@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import TelegramDigestModal from "./TelegramDigestModal";
 
 type ReportData = {
   activeInjuries: any[];
@@ -45,7 +46,7 @@ export default function WeeklyReportAI({ data }: { data: ReportData }) {
       }
 
       if (!json.report) {
-        setError("Claude не повернув текст звіту. Перевірте ANTHROPIC_API_KEY у Vercel Settings → Environment Variables.");
+        setError("AI не повернув текст звіту. Перевірте GEMINI_API_KEY або ANTHROPIC_API_KEY у налаштуваннях.");
         return;
       }
 
@@ -106,7 +107,7 @@ export default function WeeklyReportAI({ data }: { data: ReportData }) {
       {report && (
         <div className="space-y-4">
           {/* Тулбар */}
-          <div className="flex gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <button
               onClick={generateReport}
               disabled={loading}
@@ -120,6 +121,7 @@ export default function WeeklyReportAI({ data }: { data: ReportData }) {
             >
               {copied ? "✓ Скопійовано" : "📋 Копіювати"}
             </button>
+            <TelegramDigestModal defaultMessage={report} />
           </div>
 
           {/* Рендер Markdown */}

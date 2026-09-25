@@ -3,6 +3,7 @@ import Link from "next/link";
 import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
 import PrintButton from "@/components/ui/PrintButton";
+import WeeklyReportAI from "@/components/reports/WeeklyReportAI";
 import { INJURY_TYPE_UA, LOCATION_UA, SEVERITY_UA, STATUS_UA, TEAM_CATEGORY_UA } from "@/lib/constants";
 
 function vasVariant(v: number): "ok"|"warn"|"danger" { if(v>=7)return"danger";if(v>=4)return"warn";return"ok"; }
@@ -19,6 +20,13 @@ export default async function WeeklyReportPage() {
   const { data: weekExams } = await supabase.from("injury_examinations").select("id").gte("date", weekAgoStr);
   const { data: weekLogs } = await supabase.from("injury_logs").select("id").gte("date", weekAgoStr);
 
+  const { data: maturationAlertsRaw } = await supabase
+    .from("maturation_assessments")
+    .select("player_id, risk_zone, growth_phase, players!inner(first_name, last_name, teams!inner(name))")
+    .in("risk_zone", ["red", "yellow"])
+    .order("created_at", { ascending: false })
+    .limit(10);
+
   const allPlayers = (teams??[]).flatMap((t:any) => t.players??[]);
   function playerStatus(p:any):"ok"|"warn"|"danger" { const a=(p.injuries??[]).filter((i:any)=>i.status==="active"||i.status==="rehabilitation"); if(!a.length)return"ok"; const m=Math.max(...a.map((i:any)=>i.vas_score??0)); if(m>=7)return"danger";if(m>=4)return"warn";return"ok"; }
   const totalOk = allPlayers.filter((p:any) => playerStatus(p)==="ok").length;
@@ -27,6 +35,16 @@ export default async function WeeklyReportPage() {
   const reportDate = now.toLocaleDateString("uk-UA", { day: "numeric", month: "long", year: "numeric" });
   const weekStart = weekAgo.toLocaleDateString("uk-UA", { day: "numeric", month: "long" });
 
+  const aiData = {
+    activeInjuries: (activeInjuries ?? []).filter((i: any) => i.status === "active"),
+    rehabInjuries: (activeInjuries ?? []).filter((i: any) => i.status === "rehabilitation"),
+    upcomingReturns: (activeInjuries ?? []).filter((i: any) => i.expected_return_date),
+    maturationAlerts: maturationAlertsRaw ?? [],
+    totalPlayers: allPlayers.length,
+    availablePlayers: totalOk,
+    unavailablePlayers: totalDanger + totalWarn,
+  };
+
   return (
     <div className="min-h-screen bg-background text-slate-200 p-5 md:p-8"><div className="max-w-4xl mx-auto space-y-6">
       <div className="flex justify-between items-center print:hidden">
@@ -34,7 +52,15 @@ export default async function WeeklyReportPage() {
         <PrintButton label="📥 Завантажити PDF" />
       </div>
 
-      <div className="border-b border-blue-900/15 pb-5"><h1 className="text-lg font-bold text-white tracking-tight">📋 Тижневий звіт</h1><p className="text-xs text-slate-500 mt-1">ФК «Чорноморець» · Медичний штаб · {weekStart} — {reportDate}</p></div>
+      <div className="border-b border-blue-900/15 pb-5">
+        <h1 className="text-lg font-bold text-white tracking-tight">📋 Тижневий звіт</h1>
+        <p className="text-xs text-slate-500 mt-1">ФК «Чорноморець» · Медичний штаб · {weekStart} — {reportDate}</p>
+      </div>
+
+      {/* ШІ Генератор тижневого звіту (Gemini) */}
+      <div className="print:hidden">
+        <WeeklyReportAI data={aiData} />
+      </div>
 
       <section><h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Доступність складу</h2>
         <div className="grid grid-cols-4 gap-3">

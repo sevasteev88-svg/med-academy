@@ -1,7 +1,7 @@
 "use client";
 import { useState, useTransition } from "react";
 
-export default function DeleteButton({ onDelete, itemName, className = "" }: { onDelete: () => Promise<any>; itemName: string; className?: string }) {
+export default function DeleteButton({ onDelete, itemName, className = "" }: { onDelete: () => Promise<unknown>; itemName: string; className?: string }) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [isPending, startTransition] = useTransition();
 

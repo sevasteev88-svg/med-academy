@@ -12,17 +12,27 @@ const DOCTOR_NAV: NavItem[] = [
   { href: "/", label: "Дашборд", icon: "🏠" },
   { href: "/players", label: "Реєстр", icon: "👥" },
   { href: "/availability", label: "Доступність", icon: "🟢" },
+  { href: "/coach-briefing", label: "Брифінг тренера", icon: "🛡️" },
+  { href: "/wellness", label: "Велнес", icon: "⚡" },
+  { href: "/workload", label: "Навантаження", icon: "⏱️" },
+  { href: "/hydration", label: "Гідратація", icon: "💧" },
   { href: "/injuries", label: "Травми", icon: "🩹" },
   { href: "/exams/upcoming", label: "Огляди", icon: "🗓️" },
   { href: "/statistics", label: "Статистика", icon: "📊" },
   { href: "/reports/weekly", label: "Звіт", icon: "📋" },
+  { href: "/reports/matchday", label: "Заявка на матч", icon: "📜" },
   { href: "/reports/patterns", label: "Патерни", icon: "🔍" },
   { href: "/growth", label: "Ріст", icon: "📈" },
 ];
 
 const COACH_NAV: NavItem[] = [
   { href: "/", label: "Дашборд", icon: "🏠" },
+  { href: "/coach-briefing", label: "Брифінг тренера", icon: "🛡️" },
   { href: "/availability", label: "Доступність", icon: "🟢" },
+  { href: "/wellness", label: "Велнес", icon: "⚡" },
+  { href: "/workload", label: "Навантаження", icon: "⏱️" },
+  { href: "/hydration", label: "Гідратація", icon: "💧" },
+  { href: "/reports/matchday", label: "Заявка на матч", icon: "📜" },
 ];
 
 export default function AppNav({ role, userName }: { role: string; userName: string }) {

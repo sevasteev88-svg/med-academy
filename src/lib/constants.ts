@@ -15,3 +15,41 @@ export const REHAB_STATUS_UA: Record<string, string> = { planned: "Заплан�
 export const LOG_CATEGORY_UA: Record<string, string> = { examination: "Огляд", investigation: "Обстеження", prescription: "Призначення", procedure: "Процедура", note: "Примітка" };
 export const LOG_CATEGORY_ICONS: Record<string, string> = { examination: "🩺", investigation: "📋", prescription: "💊", procedure: "⚕️", note: "📝" };
 export const REHAB_TEMPLATE = [ "Спокій / іммобілізація", "Ізометричні вправи", "Концентричні вправи", "Ексцентричні вправи", "Бігова робота", "Робота з м'ячем", "Загальна група" ];
+
+// ── Общие форматтеры (DRY) ───────────────────────────────────────────────────
+export function daysSince(dateStr: string): number {
+  if (!dateStr) return 0;
+  return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
+}
+
+export function vasColor(vas: number | null | undefined): string {
+  if (vas == null) return "text-slate-500";
+  if (vas >= 7) return "text-red-400";
+  if (vas >= 4) return "text-amber-400";
+  return "text-green-400";
+}
+
+export function initials(p: { first_name?: string | null; last_name?: string | null } | null | undefined): string {
+  if (!p) return "??";
+  return `${p.last_name?.[0] ?? ""}${p.first_name?.[0] ?? ""}`;
+}
+
+export function fullNameShort(p: { first_name?: string | null; last_name?: string | null } | null | undefined): string {
+  if (!p || !p.last_name) return "—";
+  return `${p.last_name} ${p.first_name?.[0] ?? ""}.`;
+}
+
+export function calcAge(dob: string): number {
+  if (!dob) return 0;
+  const diff = Date.now() - new Date(dob).getTime();
+  return Math.floor(diff / (1000 * 60 * 60 * 24 * 365.25));
+}
+
+export function fmtDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleDateString("uk-UA", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}

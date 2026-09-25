@@ -1,6 +1,7 @@
 "use server";
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
+import { assertDoctor } from "@/lib/auth";
 
 export type AddExamState = { error?: string; success?: boolean };
 
@@ -8,10 +9,10 @@ export async function addExaminationAction(
   _prev: AddExamState,
   formData: FormData
 ): Promise<AddExamState> {
-  const supabase = await createClient();
+  const auth = await assertDoctor();
+  if ("error" in auth) return { error: auth.error };
 
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { error: "Не авторизовано" };
+  const supabase = await createClient();
 
   const injuryId = formData.get("injuryId") as string;
   const date = formData.get("date") as string;

@@ -5,6 +5,11 @@ import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
 import PeriodSelector from "@/components/players/PeriodSelector";
 import AnthropometrySection from "@/components/players/AnthropometrySection";
+import PreSeasonScreeningCard from "@/components/players/PreSeasonScreeningCard";
+import ReinjuryRiskWidget from "@/components/players/ReinjuryRiskWidget";
+import DentalNutritionCard from "@/components/players/DentalNutritionCard";
+import type { PreSeasonScreening } from "@/types/screening";
+import type { NutritionProfile } from "@/types/nutrition";
 import DeleteButton from "@/components/ui/DeleteButton";
 import { deletePlayerAction } from "@/actions/delete-player-action";
 import { POSITION_LABELS, POSITION_FULL, DOMINANT_UA, LOCATION_UA, SEVERITY_UA, INJURY_TYPE_UA, STATUS_UA } from "@/lib/constants";
@@ -18,21 +23,66 @@ function calcDaysMissed(inj: any): number { if(inj.actual_return_date)return Mat
 export default async function PlayerDetailPage({ params, searchParams }: { params: Promise<{id:string}>; searchParams: Promise<{from?:string;to?:string}> }) {
   const { id } = await params; const { from, to } = await searchParams;
   const supabase = await createClient();
-  const { data: player, error } = await supabase.from("players").select("*, teams ( name, category )").eq("id", id).single();
+
+  let injuryQuery = supabase.from("injuries").select("*").eq("player_id", id).order("date_of_injury", { ascending: false });
+  if (from) injuryQuery = injuryQuery.gte("date_of_injury", from);
+  if (to) injuryQuery = injuryQuery.lte("date_of_injury", to);
+
+  const [playerRes, injuriesRes, anthroRes, matRes, screeningLogsRes, nutritionLogsRes] = await Promise.all([
+    supabase.from("players").select("*, teams ( name, category )").eq("id", id).single(),
+    injuryQuery,
+    supabase.from("anthropometry_logs").select("*").eq("player_id", id).order("date", { ascending: false }),
+    supabase
+      .from("maturation_assessments")
+      .select("growth_phase, risk_zone, consensus_offset, age_at_measurement, created_at")
+      .eq("player_id", id)
+      .order("created_at", { ascending: false })
+      .limit(1),
+    supabase
+      .from("injury_logs")
+      .select("*")
+      .like("note", "[SCREENING]%")
+      .order("date", { ascending: false }),
+    supabase
+      .from("injury_logs")
+      .select("*")
+      .like("note", "[NUTRITION]%")
+      .order("date", { ascending: false }),
+  ]);
+
+  const { data: player, error } = playerRes;
   if (error || !player) return notFound();
-  let query = supabase.from("injuries").select("*").eq("player_id", id).order("date_of_injury", { ascending: false });
-  if (from) query = query.gte("date_of_injury", from); if (to) query = query.lte("date_of_injury", to);
-  const { data: injuries } = await query; const injuryList = injuries ?? [];
-  const { data: anthroData } = await supabase.from("anthropometry_logs").select("*").eq("player_id", id).order("date", { ascending: false });
-  const measurements = anthroData ?? [];
-  // Остання оцінка матурації (для блоку PHV)
-  const { data: matData } = await supabase
-    .from("maturation_assessments")
-    .select("growth_phase, risk_zone, consensus_offset, age_at_measurement, created_at")
-    .eq("player_id", id)
-    .order("created_at", { ascending: false })
-    .limit(1);
-  const maturation = matData?.[0] ?? null;
+
+  const injuryList = injuriesRes.data ?? [];
+  const measurements = anthroRes.data ?? [];
+  const maturation = matRes.data?.[0] ?? null;
+
+  const screenings: PreSeasonScreening[] = (screeningLogsRes.data || [])
+    .map((l) => {
+      try {
+        const rawJson = l.note.replace("[SCREENING] ", "");
+        const parsed = JSON.parse(rawJson);
+        return parsed.player_id === id ? (parsed as PreSeasonScreening) : null;
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean) as PreSeasonScreening[];
+
+  const nutritionLogs = (nutritionLogsRes.data || [])
+    .map((l) => {
+      try {
+        const rawJson = l.note.replace("[NUTRITION] ", "");
+        const parsed = JSON.parse(rawJson);
+        return parsed.player_id === id ? (parsed as NutritionProfile) : null;
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean) as NutritionProfile[];
+
+  const latestNutrition: NutritionProfile | null = nutritionLogs[0] || null;
+
   const totalInjuries = injuryList.length;
   const totalDaysMissed = injuryList.reduce((s,i) => s + calcDaysMissed(i), 0);
   const activeCount = injuryList.filter(i => i.status === "active").length;
@@ -59,11 +109,19 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
         </div>
         <div className="mt-4 pt-4 border-t border-blue-900/15 flex flex-wrap gap-2">
           <Link href={`/injuries/new?playerId=${id}`} className="bg-brand-blue hover:bg-brand-blue-light text-white font-bold py-2 px-4 rounded-lg text-xs transition-colors shadow-glow-sm">+ Фіксувати травму</Link>
+          <Link href={`/wellness?playerId=${id}`} className="border border-brand-blue/40 text-brand-blue hover:bg-brand-blue hover:text-white font-semibold py-2 px-4 rounded-lg text-xs transition-colors">⚡ Внести велнес</Link>
           <Link href={`/players/${id}/edit`} className="border border-slate-800 text-slate-400 hover:bg-surface-hover font-semibold py-2 px-4 rounded-lg text-xs transition-colors">✏️ Редагувати</Link>
           <DeleteButton onDelete={handleDelete} itemName="гравця" />
         </div>
       </Card>
        <AnthropometrySection playerId={id} measurements={measurements} maturation={maturation} dateOfBirth={player.date_of_birth} />
+       <ReinjuryRiskWidget
+         playerName={`${player.last_name} ${player.first_name}`}
+         growthPhase={maturation?.growth_phase}
+         reinjuryCount={injuryList.filter((i) => i.status === "closed").length}
+       />
+       <PreSeasonScreeningCard playerId={id} playerName={`${player.last_name} ${player.first_name}`} initialScreenings={screenings} />
+       <DentalNutritionCard playerId={id} playerName={`${player.last_name} ${player.first_name}`} initialProfile={latestNutrition} />
       <section><h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Період аналізу травм</h2><PeriodSelector /></section>
       <section>
         <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Статистика травм <span className="text-slate-600 normal-case tracking-normal ml-2 font-normal">({periodLabel})</span></h2>

@@ -2,10 +2,14 @@
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { assertDoctor } from "@/lib/auth";
 
 export type UpdateInjuryState = { error?: string };
 
 export async function updateInjuryAction(_prev: UpdateInjuryState, formData: FormData): Promise<UpdateInjuryState> {
+  const auth = await assertDoctor();
+  if ("error" in auth) return { error: auth.error };
+
   const supabase = await createClient();
   const injuryId = formData.get("injuryId") as string;
   const injuryType = formData.get("injuryType") as string;

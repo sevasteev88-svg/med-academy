@@ -1,6 +1,7 @@
 import { createClient } from "@/utils/supabase/server";
 import Card from "@/components/ui/Card";
 import { INJURY_TYPE_UA, LOCATION_UA, SEVERITY_UA, MECHANISM_UA, POSITION_LABELS, TEAM_CATEGORY_UA } from "@/lib/constants";
+import BodyHeatmap, { InjuryPoint } from "@/components/statistics/BodyHeatmap";
 
 function daysSince(d:string){return Math.floor((Date.now()-new Date(d).getTime())/86400000);}
 function calcDaysMissed(i:any):number{if(i.actual_return_date)return Math.max(0,Math.floor((new Date(i.actual_return_date).getTime()-new Date(i.date_of_injury).getTime())/86400000));if(i.status==="active"||i.status==="rehabilitation")return daysSince(i.date_of_injury);return 0;}
@@ -52,15 +53,18 @@ export default async function StatisticsPage() {
   // ── Рецидиви (заглушка поки немає даних) ──
   const reinjuryCount = injuries.filter((i: any) => (i.mlgr_reinjury ?? 0) > 0).length;
 
-  // ── RTP прогноз vs факт (заглушка: потрібні закриті класифіковані травми) ──
-  const closedClassified = injuries.filter(
-    (i: any) => i.status === "closed" && i.is_classified
-  );
-
-  function RankingCard({title,items,colorClass}:{title:string;items:{name:string;count:number;days:number}[];colorClass:string}) {
-    if(!items.length)return null; const max=Math.max(1,...items.map(i=>i.count));
-    return (<Card><div className="text-xs text-slate-500 mb-3 font-semibold">{title}</div><div className="space-y-2">{items.map(item=>(<div key={item.name} className="flex justify-between items-center"><span className="text-sm text-slate-300 min-w-0 truncate">{item.name}</span><div className="flex items-center gap-2 shrink-0"><div className={`h-1.5 rounded-full ${colorClass}/30 w-16 overflow-hidden`}><div className={`h-full rounded-full ${colorClass}`} style={{width:`${(item.count/max)*100}%`}}/></div><span className="text-xs font-mono text-slate-400 w-8 text-right">{item.count}</span><span className="text-[10px] text-slate-600 w-14 text-right">{item.days} дн.</span></div></div>))}</div></Card>);
-  }
+  // ── Дані для анатомічної теплової карти ──
+  const injuryPoints: InjuryPoint[] = injuries.map((i: any) => ({
+    id: i.id,
+    location: i.location,
+    side: i.side,
+    injury_type: i.injury_type,
+    severity: i.severity,
+    status: i.status,
+    player_name: `${i.players?.last_name ?? ""} ${i.players?.first_name ?? ""}`.trim() || "Гравець",
+    team_name: i.players?.teams?.name ?? "—",
+    days_missed: calcDaysMissed(i),
+  }));
 
   return (
     <div className="min-h-screen bg-background text-slate-200 p-5 md:p-8"><div className="max-w-5xl mx-auto space-y-6">
@@ -72,6 +76,10 @@ export default async function StatisticsPage() {
         <Card><div className="text-[10px] uppercase tracking-widest text-slate-600 mb-1">Реабілітація</div><div className="text-2xl font-extrabold font-mono text-status-warn">{rehabCount}</div></Card>
         <Card><div className="text-[10px] uppercase tracking-widest text-slate-600 mb-1">Сер. пропуск</div><div className="text-2xl font-extrabold font-mono text-white">{avgDaysMissed}</div></Card>
       </div>
+
+      {/* Інтерактивна анатомічна теплова карта */}
+      <BodyHeatmap injuries={injuryPoints} />
+
       <section><h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">По командах</h2><div className="grid gap-3 md:grid-cols-2">{byTeam.map(t=>(<Card key={t.name}><div className="flex justify-between items-center"><div><div className="text-sm font-bold text-white">{t.name}</div><div className="text-xs text-slate-500">{t.totalPlayers} гравців · {TEAM_CATEGORY_UA[t.category]}</div></div><div className="text-right"><div className="text-lg font-extrabold font-mono text-white">{t.injuries}</div><div className="text-[10px] text-slate-500">{t.days} дн.</div></div></div></Card>))}</div></section>
       <div className="grid md:grid-cols-2 gap-3">
         <RankingCard title="По типу" items={byType} colorClass="bg-status-danger" />
@@ -161,5 +169,40 @@ export default async function StatisticsPage() {
       </section>
       {totalInjuries===0&&<Card><p className="text-slate-500 text-center py-8">Статистика з'явиться після додавання даних.</p></Card>}
     </div></div>
+  );
+}
+
+function RankingCard({
+  title,
+  items,
+  colorClass,
+}: {
+  title: string;
+  items: { name: string; count: number; days: number }[];
+  colorClass: string;
+}) {
+  if (!items.length) return null;
+  const max = Math.max(1, ...items.map((i) => i.count));
+  return (
+    <Card>
+      <div className="text-xs text-slate-500 mb-3 font-semibold">{title}</div>
+      <div className="space-y-2">
+        {items.map((item) => (
+          <div key={item.name} className="flex justify-between items-center">
+            <span className="text-sm text-slate-300 min-w-0 truncate">{item.name}</span>
+            <div className="flex items-center gap-2 shrink-0">
+              <div className={`h-1.5 rounded-full ${colorClass}/30 w-16 overflow-hidden`}>
+                <div
+                  className={`h-full rounded-full ${colorClass}`}
+                  style={{ width: `${(item.count / max) * 100}%` }}
+                />
+              </div>
+              <span className="text-xs font-mono text-slate-400 w-8 text-right">{item.count}</span>
+              <span className="text-[10px] text-slate-400 w-14 text-right">{item.days} дн.</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
   );
 }

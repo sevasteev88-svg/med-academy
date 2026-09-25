@@ -20,14 +20,13 @@ export default function ExaminationForm({
   const [state, formAction, isPending] = useActionState<AddExamState, FormData>(addExaminationAction, {});
   const [vas, setVas] = useState(currentVas);
   const [isOpen, setIsOpen] = useState(false);
-  const formRef = useRef<HTMLFormElement>(null);
+  const [formKey, setFormKey] = useState(0);
 
-  useEffect(() => {
-    if (state.success) {
-      formRef.current?.reset();
-      setIsOpen(false);
-    }
-  }, [state.success]);
+  const handleSubmit = async (formData: FormData) => {
+    await formAction(formData);
+    setFormKey((k) => k + 1);
+    setIsOpen(false);
+  };
 
   return (
     <section>
@@ -40,7 +39,7 @@ export default function ExaminationForm({
 
       {isOpen && (
         <Card>
-          <form ref={formRef} action={formAction} className="space-y-4">
+          <form key={formKey} action={handleSubmit} className="space-y-4">
             <input type="hidden" name="injuryId" value={injuryId} />
 
             <div className="grid grid-cols-2 gap-3">

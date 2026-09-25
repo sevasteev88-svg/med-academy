@@ -1,93 +1,41 @@
 import { createClient } from "@/utils/supabase/server";
-import Link from "next/link";
-import Card from "@/components/ui/Card";
-import PrintButton from "@/components/ui/PrintButton";
-import { POSITION_LABELS, TEAM_CATEGORY_UA } from "@/lib/constants";
-import { playerStatus } from "@/lib/player-status";
-
-// Зона ризику росту (PHV) — остання оцінка. Показуємо лише yellow/red.
-function growthZone(player: any): "yellow" | "red" | null {
-  const assessments = player.maturation_assessments ?? [];
-  if (assessments.length === 0) return null;
-  const latest = [...assessments].sort(
-    (a: any, b: any) =>
-      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-  )[0];
-  if (latest.risk_zone === "red") return "red";
-  if (latest.risk_zone === "yellow") return "yellow";
-  return null;
-}
+import AvailabilityClient from "@/components/availability/AvailabilityClient";
 
 export default async function AvailabilityPage() {
   const supabase = await createClient();
-  const { data: teams } = await supabase.from("teams").select("id, name, category, sort_order, players ( id, first_name, last_name, position, injuries ( id, status, vas_score, location ), maturation_assessments ( risk_zone, created_at ) )").order("sort_order", { ascending: true });
 
-  const youth = (teams ?? []).filter((t: any) => t.category === "youth");
-  const academy = (teams ?? []).filter((t: any) => t.category === "academy");
-  const allPlayers = (teams ?? []).flatMap((t: any) => t.players ?? []);
-  const totalOk = allPlayers.filter((p: any) => playerStatus(p) === "ok").length;
-  const totalWarn = allPlayers.filter((p: any) => playerStatus(p) === "warn").length;
-  const totalDanger = allPlayers.filter((p: any) => playerStatus(p) === "danger").length;
+  const { data: teams } = await supabase
+    .from("teams")
+    .select(`
+      id,
+      name,
+      category,
+      sort_order,
+      players (
+        id,
+        first_name,
+        last_name,
+        position,
+        injuries (
+          id,
+          status,
+          vas_score,
+          location,
+          injury_type,
+          date_of_injury,
+          expected_return_date,
+          diagnosis
+        ),
+        maturation_assessments (
+          risk_zone,
+          growth_phase,
+          consensus_offset,
+          created_at
+        )
+      )
+    `)
+    .order("sort_order", { ascending: true });
 
-  function renderTeam(team: any) {
-    const players = (team.players ?? []).sort((a: any, b: any) => a.last_name.localeCompare(b.last_name, "uk"));
-    const ok = players.filter((p: any) => playerStatus(p) === "ok").length;
-    return (
-      <div key={team.id}>
-        <div className="flex items-center gap-2 mb-3">
-          <h3 className="text-base font-bold text-white">{team.name}</h3>
-          <span className="text-xs text-slate-500">{ok}/{players.length} доступних</span>
-        </div>
-        <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
-          {players.map((player: any) => {
-            const status = playerStatus(player);
-            const zone = growthZone(player);
-            return (
-              <Link key={player.id} href={`/players/${player.id}`}>
-                <div className={`relative rounded-lg p-2 text-center transition-all cursor-pointer hover:scale-105 ${status === "ok" ? "bg-status-ok/[0.08]" : status === "warn" ? "bg-status-warn/[0.08] ring-2 ring-status-warn/30" : "bg-status-danger/[0.08] ring-2 ring-status-danger/30"}`}>
-                  {zone && (
-                    <span
-                      title={zone === "red" ? "Зона росту: червона (PHV)" : "Зона росту: жовта (PHV)"}
-                      className={`absolute top-1 right-1 w-2 h-2 rounded-full ring-1 ring-background ${zone === "red" ? "bg-status-danger" : "bg-status-warn"}`}
-                    />
-                  )}
-                  <div className={`w-3 h-3 rounded-full mx-auto mb-1 ${status === "ok" ? "bg-status-ok" : status === "warn" ? "bg-status-warn" : "bg-status-danger"}`} />
-                  <div className="text-[11px] font-bold text-white truncate">{player.last_name}</div>
-                  <div className="text-[9px] text-slate-500">{POSITION_LABELS[player.position] ?? player.position}</div>
-                </div>
-              </Link>
-            );
-          })}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-background text-slate-200 p-5 md:p-8"><div className="max-w-5xl mx-auto space-y-6">
-      <header className="pb-5 border-b border-blue-900/15 flex justify-between items-start">
-        <div>
-          <h1 className="text-lg font-bold text-white tracking-tight">Доступність гравців</h1>
-          <p className="text-xs text-slate-500 mt-1">Огляд готовності · {new Date().toLocaleDateString("uk-UA", { day: "numeric", month: "long", year: "numeric" })}</p>
-        </div>
-        <PrintButton label="📥 PDF" />
-      </header>
-
-      <div className="grid grid-cols-3 gap-3">
-        <Card><div className="flex items-center gap-3"><div className="w-4 h-4 rounded-full bg-status-ok" /><div><div className="text-2xl font-extrabold font-mono text-status-ok">{totalOk}</div><div className="text-[10px] text-slate-500 uppercase">Готових</div></div></div></Card>
-        <Card><div className="flex items-center gap-3"><div className="w-4 h-4 rounded-full bg-status-warn" /><div><div className="text-2xl font-extrabold font-mono text-status-warn">{totalWarn}</div><div className="text-[10px] text-slate-500 uppercase">Обмежених</div></div></div></Card>
-        <Card><div className="flex items-center gap-3"><div className="w-4 h-4 rounded-full bg-status-danger" /><div><div className="text-2xl font-extrabold font-mono text-status-danger">{totalDanger}</div><div className="text-[10px] text-slate-500 uppercase">Травмованих</div></div></div></Card>
-      </div>
-
-      <div className="flex gap-4 text-xs text-slate-500 flex-wrap">
-        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-status-ok" /> Готовий</span>
-        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-status-warn" /> Обмежений</span>
-        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-status-danger" /> Травмований</span>
-        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full ring-1 ring-slate-600 bg-status-warn" /> Кутова мітка — зона росту (PHV)</span>
-      </div>
-
-      {youth.length > 0 && <section className="space-y-4"><h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">{TEAM_CATEGORY_UA.youth}</h2>{youth.map(renderTeam)}</section>}
-      {academy.length > 0 && <section className="space-y-4"><h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">{TEAM_CATEGORY_UA.academy}</h2>{academy.map(renderTeam)}</section>}
-    </div></div>
-  );
+  return <AvailabilityClient teams={(teams as any) ?? []} />;
 }
+

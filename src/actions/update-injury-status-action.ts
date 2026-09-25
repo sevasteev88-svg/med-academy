@@ -2,12 +2,16 @@
 
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
+import { assertDoctor } from "@/lib/auth";
 
 export async function updateInjuryStatusAction(
   injuryId: string,
   newStatus: string,
   actualReturnDate?: string
 ) {
+  const auth = await assertDoctor();
+  if ("error" in auth) return { error: auth.error };
+
   const supabase = await createClient();
 
   const update: Record<string, any> = { status: newStatus };

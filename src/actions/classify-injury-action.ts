@@ -4,6 +4,7 @@
 
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
+import { assertDoctor } from "@/lib/auth";
 import type {
   MlgrMuscle, MlgrMechanism, MlgrLocation, MlgrGrade,
   BamicGrade, BamicLocation, MunichType, RtpRisk,
@@ -53,10 +54,10 @@ function bamicGradeToSmallint(bamicGrade: string): BamicGrade | null {
 export async function classifyInjury(
   input: ClassifyInjuryInput
 ): Promise<ClassifyInjuryState> {
-  const supabase = await createClient();
+  const auth = await assertDoctor();
+  if ("error" in auth) return { error: auth.error };
 
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { error: "Не авторизовано" };
+  const supabase = await createClient();
 
   // Розрахунок очікуваної дати повернення (від дати травми + min днів RTP)
   let expectedReturnDate: string | null = null;
@@ -77,10 +78,24 @@ export async function classifyInjury(
     mlgr_reinjury:  input.mlgrReinjury,
     mlgr_code:      input.mlgrCode,
 
-    // BAMIC
-    bamic_grade:    bamicGradeToSmallint(input.bamicGrade),
-    bamic_location: input.bamicLocation || null,
-    bamic_code:     input.bamicCode,
+    // BAMIC: перевірка зв'язки (bamic_grade_location_together constraint у БД)
+    // Обидва мають бути або заповнені, або обидва null
+    ...(() => {
+      const parsedGrade = bamicGradeToSmallint(input.bamicGrade);
+      const loc = input.bamicLocation || null;
+      if (parsedGrade !== null && loc !== null) {
+        return {
+          bamic_grade: parsedGrade,
+          bamic_location: loc,
+          bamic_code: input.bamicCode,
+        };
+      }
+      return {
+        bamic_grade: null,
+        bamic_location: null,
+        bamic_code: null,
+      };
+    })(),
 
     // Munich
     munich_type:    input.munichType || null,

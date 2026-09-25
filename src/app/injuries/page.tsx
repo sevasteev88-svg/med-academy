@@ -3,30 +3,16 @@
 
 import { createClient } from "@/utils/supabase/server";
 import Link from "next/link";
-import { LOCATION_UA, INJURY_TYPE_UA, SEVERITY_UA } from "@/lib/constants";
+import {
+  LOCATION_UA,
+  INJURY_TYPE_UA,
+  SEVERITY_UA,
+  daysSince,
+  vasColor,
+  initials,
+  fullNameShort,
+} from "@/lib/constants";
 import ArchiveSection from "./ArchiveSection";
-
-// ── Утиліти ──────────────────────────────────────────────────────────────────
-function daysSince(dateStr: string): number {
-  return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
-}
-
-function vasColor(vas: number | null): string {
-  if (vas == null) return "text-slate-500";
-  if (vas >= 7) return "text-red-400";
-  if (vas >= 4) return "text-amber-400";
-  return "text-green-400";
-}
-
-function initials(p: any): string {
-  if (!p) return "??";
-  return `${p.last_name?.[0] ?? ""}${p.first_name?.[0] ?? ""}`;
-}
-
-function fullNameShort(p: any): string {
-  if (!p) return "—";
-  return `${p.last_name} ${p.first_name?.[0] ?? ""}.`;
-}
 
 // ── Картка травми ─────────────────────────────────────────────────────────────
 function InjuryRow({ inj, zone }: { inj: any; zone: "red" | "amber" | "slate" }) {
@@ -56,9 +42,9 @@ function InjuryRow({ inj, zone }: { inj: any; zone: "red" | "amber" | "slate" })
           <span className="text-[12px] font-medium text-slate-200 truncate">
             {fullNameShort(p)}
           </span>
-          <span className="text-[9px] text-slate-600">{p?.teams?.name ?? "—"}</span>
+          <span className="text-[10px] text-slate-400">{p?.teams?.name ?? "—"}</span>
         </div>
-        <div className="text-[10px] text-slate-600 truncate">
+        <div className="text-[10px] text-slate-400 truncate">
           {INJURY_TYPE_UA[inj.injury_type] ?? inj.injury_type} ·{" "}
           {LOCATION_UA[inj.location] ?? inj.location}
           {inj.status !== "closed" && <> · {daysSince(inj.date_of_injury)} дн.</>}
@@ -77,7 +63,7 @@ function InjuryRow({ inj, zone }: { inj: any; zone: "red" | "amber" | "slate" })
         )}
       </div>
       {inj.status === "closed" ? (
-        <span className="text-[10px] text-slate-600 flex-shrink-0">
+        <span className="text-[10px] text-slate-400 flex-shrink-0">
           {inj.days_missed != null ? `${inj.days_missed} дн.` : "закрита"}
         </span>
       ) : (
@@ -93,7 +79,7 @@ function ZoneLabel({ color, children }: { color: string; children: React.ReactNo
   return (
     <div className="flex items-center gap-2 mb-2">
       <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${color}`} />
-      <span className="text-[9px] uppercase tracking-widest text-slate-600 whitespace-nowrap">
+      <span className="text-[9px] uppercase tracking-widest text-slate-400 whitespace-nowrap">
         {children}
       </span>
       <div className="flex-1 h-px bg-blue-900/15" />
