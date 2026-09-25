@@ -28,6 +28,7 @@ export default function RehabExercisePlanBuilder({
   // Filters for exercise library
   const [selectedMuscle, setSelectedMuscle] = useState<MuscleGroup | "all">("all");
   const [selectedJoint, setSelectedJoint] = useState<string>("all");
+  const [selectedInjury, setSelectedInjury] = useState<string>("all");
   const [selectedPhase, setSelectedPhase] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -47,10 +48,11 @@ export default function RehabExercisePlanBuilder({
     return filterExerciseDatabase({
       muscleGroup: selectedMuscle !== "all" ? selectedMuscle : undefined,
       joint: selectedJoint !== "all" ? selectedJoint : undefined,
+      injuryTag: selectedInjury !== "all" ? selectedInjury : undefined,
       phase: selectedPhase !== "all" ? selectedPhase : undefined,
       searchQuery: searchQuery.trim() || undefined,
     });
-  }, [selectedMuscle, selectedJoint, selectedPhase, searchQuery]);
+  }, [selectedMuscle, selectedJoint, selectedInjury, selectedPhase, searchQuery]);
 
   // Add exercise to staged plan
   const handleAddExerciseToPlan = (ex: ExerciseLibraryItem) => {
@@ -319,6 +321,25 @@ export default function RehabExercisePlanBuilder({
                   <option value="groin">🩲 Пах</option>
                   <option value="spine">🧱 Хребет / Кор</option>
                   <option value="shoulder">🦾 Плече</option>
+                </select>
+
+                <select
+                  value={selectedInjury}
+                  onChange={(e) => setSelectedInjury(e.target.value)}
+                  aria-label="Специфічна травма"
+                  className="bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs font-semibold text-slate-200 focus:border-sky-500"
+                >
+                  <option value="all">Усі травми (Футбольний профіль)</option>
+                  <option value="hamstring_strain">🦵 Надрив задньої поверхні (Хамстрінг)</option>
+                  <option value="acl_tear">🦿 Пластика / Травма ПКС коліна</option>
+                  <option value="patellar_tendon">⚡ Тендиніт зв&apos;язки надколінка (Jumper Knee)</option>
+                  <option value="meniscus">🩹 Пошкодження меніска</option>
+                  <option value="groin_pain">🩲 Пахова біль / Пубалгія / Аддуктор</option>
+                  <option value="ankle_sprain">👟 Розтягнення зв&apos;язок гомілкостопа</option>
+                  <option value="achilles_tendinopathy">🦶 Ахіллопатія / Литковий м&apos;яз</option>
+                  <option value="fifa_rtp_clearance">🏆 FIFA RTP Тестовий допуск</option>
+                  <option value="rotator_cuff">🦾 Травма плеча / Воротар</option>
+                  <option value="lumbar_spine">🧱 Поперековий синдром / Грижа</option>
                 </select>
 
                 <select
