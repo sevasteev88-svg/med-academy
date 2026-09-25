@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 
 export interface RiskAlertItem {
@@ -29,6 +30,20 @@ export default function RiskAlertsCenter({
   const [isOpen, setIsOpen] = useState(false);
   const [filter, setFilter] = useState<"all" | "critical" | "warning">("all");
   const [dismissed, setDismissed] = useState<string[]>([]);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setIsOpen(false);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen]);
 
   const activeAlerts = alerts.filter((a) => !dismissed.includes(a.id));
   const filtered = activeAlerts.filter((a) => {
@@ -220,128 +235,141 @@ export default function RiskAlertsCenter({
         )}
       </button>
 
-      {/* Slide-over Drawer */}
-      {isOpen && (
-        <div className="fixed inset-0 z-50 overflow-hidden bg-black/60 backdrop-blur-sm animate-fadeIn">
-          <div className="absolute inset-y-0 right-0 max-w-full flex pl-10">
-            <div className="w-screen max-w-md bg-slate-900 border-l border-sky-500/25 p-5 space-y-4 shadow-2xl flex flex-col justify-between">
-              {/* Header */}
-              <div className="pb-3 border-b border-sky-500/15">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xl">🔔</span>
-                    <h3 className="text-base font-bold text-white">Сповіщення та Ризики</h3>
-                  </div>
-                  <button
-                    onClick={() => setIsOpen(false)}
-                    className="p-1 rounded-lg text-slate-400 hover:text-white text-sm"
-                  >
-                    ✕
-                  </button>
-                </div>
-                <div className="flex items-center gap-2 mt-2">
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 font-semibold">
-                    {criticalCount} критичних
-                  </span>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold">
-                    {warningCount} увага
-                  </span>
-                </div>
-              </div>
+      {/* Slide-over Drawer via Portal to escape sidebar overflow/filter */}
+      {isOpen && mounted && typeof document !== "undefined" &&
+        createPortal(
+          <div className="fixed inset-0 z-[9999] overflow-hidden">
+            {/* Clickable backdrop overlay */}
+            <div
+              className="fixed inset-0 bg-black/70 backdrop-blur-sm transition-opacity cursor-pointer"
+              onClick={() => setIsOpen(false)}
+              title="Натисніть для закриття"
+              aria-label="Закрити сповіщення"
+            />
 
-              {/* Alerts List */}
-              <div className="flex-1 overflow-y-auto space-y-3 pr-1 custom-scrollbar">
-                {activeAlerts.length === 0 ? (
-                  <div className="h-64 flex flex-col items-center justify-center text-center p-4">
-                    <span className="text-3xl mb-2">🎉</span>
-                    <p className="text-xs font-bold text-white">Усі показники в нормі</p>
-                    <p className="text-[11px] text-slate-400 mt-1">
-                      Немає активних критичних ризиків по складу
-                    </p>
-                  </div>
-                ) : (
-                  activeAlerts.map((alert) => (
-                    <div
-                      key={alert.id}
-                      className={`p-3.5 rounded-xl border text-xs space-y-2 ${
-                        alert.severity === "critical"
-                          ? "bg-rose-950/30 border-rose-500/30"
-                          : "bg-amber-950/30 border-amber-500/30"
-                      }`}
+            {/* Slide-over Drawer Container */}
+            <div className="fixed inset-y-0 right-0 max-w-full flex pl-6 pointer-events-none">
+              <div className="w-screen max-w-md bg-slate-900 border-l border-sky-500/25 p-5 space-y-4 shadow-2xl flex flex-col justify-between pointer-events-auto">
+                {/* Header */}
+                <div className="pb-3 border-b border-sky-500/15">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">🔔</span>
+                      <h3 className="text-base font-bold text-white">Сповіщення та Ризики</h3>
+                    </div>
+                    <button
+                      onClick={() => setIsOpen(false)}
+                      className="w-8 h-8 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center text-sm transition-colors border border-white/10"
+                      title="Закрити (Esc)"
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
+                      ✕
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2 mt-2">
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 font-semibold">
+                      {criticalCount} критичних
+                    </span>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold">
+                      {warningCount} увага
+                    </span>
+                  </div>
+                </div>
+
+                {/* Alerts List */}
+                <div className="flex-1 overflow-y-auto space-y-3 pr-1 custom-scrollbar">
+                  {activeAlerts.length === 0 ? (
+                    <div className="h-64 flex flex-col items-center justify-center text-center p-4">
+                      <span className="text-3xl mb-2">🎉</span>
+                      <p className="text-xs font-bold text-white">Усі показники в нормі</p>
+                      <p className="text-[11px] text-slate-400 mt-1">
+                        Немає активних критичних ризиків по складу
+                      </p>
+                    </div>
+                  ) : (
+                    activeAlerts.map((alert) => (
+                      <div
+                        key={alert.id}
+                        className={`p-3.5 rounded-xl border text-xs space-y-2 ${
+                          alert.severity === "critical"
+                            ? "bg-rose-950/30 border-rose-500/30"
+                            : "bg-amber-950/30 border-amber-500/30"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <Link
+                              href={`/players/${alert.playerId}`}
+                              onClick={() => setIsOpen(false)}
+                              className="font-bold text-white hover:text-sky-300 transition-colors"
+                            >
+                              {alert.playerName}
+                            </Link>
+                            <div className="text-[10px] text-slate-400">
+                              {alert.teamName} · {alert.position}
+                            </div>
+                          </div>
+                          <span
+                            className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded-full border ${
+                              alert.severity === "critical"
+                                ? "bg-rose-500/20 text-rose-300 border-rose-500/30"
+                                : "bg-amber-500/20 text-amber-300 border-amber-500/30"
+                            }`}
+                          >
+                            {alert.metric}
+                          </span>
+                        </div>
+
+                        <div className="text-[11px] font-semibold text-slate-200">{alert.title}</div>
+                        <p className="text-[10px] text-slate-400 leading-snug">{alert.mechanism}</p>
+
+                        <div className="p-2 rounded-lg bg-slate-950/70 border border-white/5 text-[10px]">
+                          <strong className="text-sky-300">Дія: </strong>
+                          <span className="text-slate-300">{alert.actionRequired}</span>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-1 text-[10px]">
                           <Link
                             href={`/players/${alert.playerId}`}
                             onClick={() => setIsOpen(false)}
-                            className="font-bold text-white hover:text-sky-300 transition-colors"
+                            className="text-sky-400 hover:text-sky-300 font-semibold"
                           >
-                            {alert.playerName}
+                            Картка гравця →
                           </Link>
-                          <div className="text-[10px] text-slate-400">
-                            {alert.teamName} · {alert.position}
-                          </div>
+                          <button
+                            onClick={() => dismissAlert(alert.id)}
+                            className="text-slate-500 hover:text-slate-300"
+                          >
+                            Приховати
+                          </button>
                         </div>
-                        <span
-                          className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded-full border ${
-                            alert.severity === "critical"
-                              ? "bg-rose-500/20 text-rose-300 border-rose-500/30"
-                              : "bg-amber-500/20 text-amber-300 border-amber-500/30"
-                          }`}
-                        >
-                          {alert.metric}
-                        </span>
                       </div>
+                    ))
+                  )}
+                </div>
 
-                      <div className="text-[11px] font-semibold text-slate-200">{alert.title}</div>
-                      <p className="text-[10px] text-slate-400 leading-snug">{alert.mechanism}</p>
-
-                      <div className="p-2 rounded-lg bg-slate-950/70 border border-white/5 text-[10px]">
-                        <strong className="text-sky-300">Дія: </strong>
-                        <span className="text-slate-300">{alert.actionRequired}</span>
-                      </div>
-
-                      <div className="flex items-center justify-between pt-1 text-[10px]">
-                        <Link
-                          href={`/players/${alert.playerId}`}
-                          onClick={() => setIsOpen(false)}
-                          className="text-sky-400 hover:text-sky-300 font-semibold"
-                        >
-                          Картка гравця →
-                        </Link>
-                        <button
-                          onClick={() => dismissAlert(alert.id)}
-                          className="text-slate-500 hover:text-slate-300"
-                        >
-                          Приховати
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-
-              {/* Footer */}
-              <div className="pt-3 border-t border-sky-500/15 flex items-center justify-between text-xs">
-                <Link
-                  href="/workload"
-                  onClick={() => setIsOpen(false)}
-                  className="text-sky-400 hover:text-sky-300 font-semibold text-[11px]"
-                >
-                  ⏱️ Моніторинг ACWR
-                </Link>
-                <Link
-                  href="/rtp"
-                  onClick={() => setIsOpen(false)}
-                  className="text-sky-400 hover:text-sky-300 font-semibold text-[11px]"
-                >
-                  🏃 Графік RTP
-                </Link>
+                {/* Footer */}
+                <div className="pt-3 border-t border-sky-500/15 flex items-center justify-between text-xs">
+                  <Link
+                    href="/workload"
+                    onClick={() => setIsOpen(false)}
+                    className="text-sky-400 hover:text-sky-300 font-semibold text-[11px]"
+                  >
+                    ⏱️ Моніторинг ACWR
+                  </Link>
+                  <Link
+                    href="/rtp"
+                    onClick={() => setIsOpen(false)}
+                    className="text-sky-400 hover:text-sky-300 font-semibold text-[11px]"
+                  >
+                    🏃 Графік RTP
+                  </Link>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )
+      }
     </>
   );
 }
