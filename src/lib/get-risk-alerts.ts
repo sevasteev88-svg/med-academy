@@ -11,7 +11,7 @@ export async function getRiskAlerts(): Promise<RiskAlertItem[]> {
       .select("id, first_name, last_name, position, team_id, teams ( id, name )"),
     supabase
       .from("injuries")
-      .select("id, player_id, diagnosis, location, vas_score, status, date_of_injury, expected_return_date")
+      .select("id, player_id, injury_type, description, location, vas_score, status, date_of_injury, expected_return_date")
       .in("status", ["active", "rehabilitation"]),
     supabase
       .from("maturation_assessments")
