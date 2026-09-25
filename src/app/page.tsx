@@ -150,7 +150,7 @@ export default async function Home() {
     { icon: <Bandage     size={14} />, value: activeInjuries ?? 0,  label: "Активні травми",  accent: "red",   href: "/injuries" },
     { icon: <Activity    size={14} />, value: onRehab        ?? 0,  label: "На реабілітації", accent: "amber", href: "/rtp" },
     { icon: <CheckCircle size={14} />, value: readyCount,           label: "Готові до матчу", accent: "green", href: "/availability" },
-    { icon: <Calendar    size={14} />, value: examsThisWeek  ?? 0,  label: "Огляди на тижні", accent: "blue",  href: "/injuries" },
+    { icon: <Calendar    size={14} />, value: examsThisWeek  ?? 0,  label: "Огляди на тижні", accent: "blue",  href: "/exams/upcoming" },
   ];
 
   // ── Тріаж: активні + реабілітація, сортування за ВАШ ──
