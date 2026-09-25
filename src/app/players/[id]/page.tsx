@@ -13,12 +13,14 @@ import WearablesBiometricsCard from "@/components/players/WearablesBiometricsCar
 import PlayerSportsIntelligenceCard from "@/components/players/PlayerSportsIntelligenceCard";
 import PlayerRehabCheckinHistory from "@/components/players/PlayerRehabCheckinHistory";
 import LsiSymmetryAssessmentCard from "@/components/injuries/LsiSymmetryAssessmentCard";
+import RehabExercisePlanBuilder from "@/components/injuries/RehabExercisePlanBuilder";
 import type { PreSeasonScreening } from "@/types/screening";
 import type { NutritionProfile } from "@/types/nutrition";
 import type { PlayerPhoto } from "@/types/photo";
 import type { WearableBiometricsEntry } from "@/types/wearables";
 import type { RehabCheckinData } from "@/types/rehab-portal";
 import type { LsiAssessmentRecord } from "@/types/lsi";
+import type { PlayerCustomRehabPlan } from "@/types/exercise-library";
 import DeleteButton from "@/components/ui/DeleteButton";
 import PrintButton from "@/components/ui/PrintButton";
 import { deletePlayerAction } from "@/actions/delete-player-action";
@@ -38,7 +40,7 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
   if (from) injuryQuery = injuryQuery.gte("date_of_injury", from);
   if (to) injuryQuery = injuryQuery.lte("date_of_injury", to);
 
-  const [playerRes, injuriesRes, anthroRes, matRes, screeningLogsRes, nutritionLogsRes, photoLogsRes, wearableLogsRes, rehabLogsRes, pinLogsRes, lsiLogsRes] = await Promise.all([
+  const [playerRes, injuriesRes, anthroRes, matRes, screeningLogsRes, nutritionLogsRes, photoLogsRes, wearableLogsRes, rehabLogsRes, pinLogsRes, lsiLogsRes, planLogsRes] = await Promise.all([
     supabase.from("players").select("*, teams ( name, category )").eq("id", id).single(),
     injuryQuery,
     supabase.from("anthropometry_logs").select("*").eq("player_id", id).order("date", { ascending: false }),
@@ -86,6 +88,13 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
       .select("*")
       .like("note", "[LSI_ASSESSMENT]%")
       .order("date", { ascending: false }),
+    supabase
+      .from("injury_logs")
+      .select("note")
+      .eq("player_id", id)
+      .like("note", "[CUSTOM_REHAB_PLAN]%")
+      .order("created_at", { ascending: false })
+      .limit(1),
   ]);
 
   const { data: player, error } = playerRes;
@@ -179,6 +188,14 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
       }
     })
     .filter(Boolean) as LsiAssessmentRecord[];
+
+  let playerCustomPlan: PlayerCustomRehabPlan | null = null;
+  if (planLogsRes.data && planLogsRes.data.length > 0) {
+    try {
+      const raw = planLogsRes.data[0].note.replace("[CUSTOM_REHAB_PLAN] ", "");
+      playerCustomPlan = JSON.parse(raw);
+    } catch {}
+  }
 
   const totalInjuries = injuryList.length;
   const totalDaysMissed = injuryList.reduce((s,i) => s + calcDaysMissed(i), 0);
@@ -343,6 +360,12 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
           playerId={id}
           playerName={`${player.last_name} ${player.first_name}`}
           initialRecords={lsiRecords}
+        />
+
+        <RehabExercisePlanBuilder
+          playerId={id}
+          playerName={`${player.last_name} ${player.first_name}`}
+          initialPlan={playerCustomPlan}
         />
 
         {/* Період аналізу травм */}

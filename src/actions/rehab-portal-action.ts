@@ -101,7 +101,24 @@ export async function verifyPlayerPinAction(playerId: string, enteredPin: string
     } catch {}
   }
 
-  // 6. Отримуємо останні чек-іни для побудови графіка динаміки (VAS & Сон)
+  // 6. Отримуємо збережений персональний план ЛФК від лікаря (якщо є)
+  const { data: customPlanLogs } = await supabase
+    .from("injury_logs")
+    .select("note")
+    .eq("player_id", playerId)
+    .like("note", "[CUSTOM_REHAB_PLAN]%")
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  let customRehabPlan: any = null;
+  if (customPlanLogs && customPlanLogs.length > 0) {
+    try {
+      const raw = customPlanLogs[0].note.replace("[CUSTOM_REHAB_PLAN] ", "");
+      customRehabPlan = JSON.parse(raw);
+    } catch {}
+  }
+
+  // 7. Отримуємо останні чек-іни для побудови графіка динаміки (VAS & Сон)
   const { data: pastCheckinLogs } = await supabase
     .from("injury_logs")
     .select("note, date")
@@ -131,6 +148,7 @@ export async function verifyPlayerPinAction(playerId: string, enteredPin: string
       injuries: injuries || [],
       currentRtpPhase,
       doctorInstruction,
+      customRehabPlan,
       pastCheckins,
     },
   };

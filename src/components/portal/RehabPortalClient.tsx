@@ -71,10 +71,22 @@ export default function RehabPortalClient({
           setVasScore(primaryInjury.vas_score || 0);
         }
 
-        // Generate tailored exercises
-        const phaseNum = (res.player.currentRtpPhase || 1) as RtpPhaseNumber;
-        const initialEx = getExercisesForInjuryAndPhase(primaryInjury?.location || "knee", phaseNum);
-        setExercises(initialEx);
+        // Load custom exercises crafted by doctor or fallback to automatic protocol
+        if (res.player.customRehabPlan && res.player.customRehabPlan.exercises?.length > 0) {
+          const customEx = res.player.customRehabPlan.exercises.map((e: any) => ({
+            id: e.exerciseId || e.id || `ex-${Math.random()}`,
+            name: e.name,
+            setsReps: e.setsReps,
+            targetArea: e.targetArea,
+            technique: e.technique,
+            completed: false,
+          }));
+          setExercises(customEx);
+        } else {
+          const phaseNum = (res.player.currentRtpPhase || 1) as RtpPhaseNumber;
+          const initialEx = getExercisesForInjuryAndPhase(primaryInjury?.location || "knee", phaseNum);
+          setExercises(initialEx);
+        }
         setQuests(DEFAULT_RECOVERY_QUESTS);
       }
     });
