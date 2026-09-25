@@ -70,7 +70,10 @@ export async function submitRtpClearanceAction(
     note: `[RTP_CLEARANCE] ${JSON.stringify(clearancePayload)}`,
   };
 
-  await supabase.from("injury_logs").insert(clearanceLog as any);
+  const { error: insertErr } = await supabase.from("injury_logs").insert(clearanceLog as any);
+  if (insertErr) {
+    return { error: `Помилка збереження: ${insertErr.message}` };
+  }
 
   // Якщо лікар підтвердив повний допуск і закриття травми
   if (closeInjuryNow) {
@@ -92,6 +95,7 @@ export async function submitRtpClearanceAction(
   revalidatePath(`/injuries/${injuryId}`);
   revalidatePath("/availability");
   revalidatePath("/exams/upcoming");
+  revalidatePath("/rtp");
   revalidatePath("/");
 
   return {

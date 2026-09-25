@@ -97,7 +97,7 @@ export default async function InjuryDetailPage({ params }: Props) {
       .select("*")
       .eq("injury_id", id)
       .like("note", "[RTP_CLEARANCE]%")
-      .order("date", { ascending: false })
+      .order("created_at", { ascending: false })
       .limit(1),
   ]);
 
