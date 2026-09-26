@@ -3,20 +3,32 @@ import Link from "next/link";
 import Image from "next/image";
 import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
-import PlayerSearch from "@/components/players/PlayerSearch";
-import { POSITION_LABELS, TEAM_CATEGORY_UA } from "@/lib/constants";
+import PlayerFilters from "@/components/players/PlayerFilters";
+import { POSITION_LABELS, TEAM_CATEGORY_UA, LOCATION_UA, INJURY_TYPE_UA } from "@/lib/constants";
 import { playerStatus } from "@/lib/player-status";
 
 function calcAge(dob: string): number {
   return Math.floor((Date.now() - new Date(dob).getTime()) / (365.25 * 86400000));
 }
 
+function growthZone(player: any): "yellow" | "red" | null {
+  const assessments = player?.maturation_assessments ?? [];
+  if (assessments.length === 0) return null;
+  const latest = [...assessments].sort(
+    (a: any, b: any) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  )[0];
+  if (latest.risk_zone === "red") return "red";
+  if (latest.risk_zone === "yellow") return "yellow";
+  return null;
+}
+
 export default async function PlayersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; team?: string; status?: string }>;
 }) {
-  const { q } = await searchParams;
+  const { q, team: selectedTeam, status: selectedStatus } = await searchParams;
   const supabase = await createClient();
 
   const [teamsRes, photosRes] = await Promise.all([
@@ -26,7 +38,8 @@ export default async function PlayersPage({
         id, name, category, sort_order,
         players (
           id, first_name, last_name, date_of_birth, position,
-          injuries ( id, status, vas_score )
+          injuries ( id, status, vas_score, location, injury_type ),
+          maturation_assessments ( risk_zone, growth_phase, created_at )
         )
       `)
       .order("sort_order", { ascending: true }),
@@ -37,7 +50,7 @@ export default async function PlayersPage({
       .order("date", { ascending: false }),
   ]);
 
-  const teams = teamsRes.data;
+  const rawTeams = teamsRes.data || [];
 
   // Карта фото гравців
   const photoMap: Record<string, string> = {};
@@ -53,25 +66,49 @@ export default async function PlayersPage({
     }
   });
 
-  // Фільтр пошуку
+  // Усі доступні команди для фільтра
+  const teamOptions = rawTeams.map((t) => ({ id: t.id, name: t.name }));
+
+  // Фільтрація пошуку та статусів
   const searchQuery = q?.toLowerCase() ?? "";
 
   function filterPlayers(teamList: any[]) {
-    if (!searchQuery) return teamList;
-    return teamList.map((team: any) => ({
-      ...team,
-      players: (team.players ?? []).filter((p: any) =>
-        p.last_name.toLowerCase().includes(searchQuery) ||
-        p.first_name.toLowerCase().includes(searchQuery)
-      ),
-    })).filter((team: any) => team.players.length > 0);
+    return teamList
+      .filter((t: any) => {
+        if (!selectedTeam || selectedTeam === "all") return true;
+        return t.id === selectedTeam;
+      })
+      .map((team: any) => {
+        let players = team.players ?? [];
+
+        // 1. Пошук по імені / прізвищу
+        if (searchQuery) {
+          players = players.filter(
+            (p: any) =>
+              p.last_name.toLowerCase().includes(searchQuery) ||
+              p.first_name.toLowerCase().includes(searchQuery)
+          );
+        }
+
+        // 2. Фільтр за медичним статусом
+        if (selectedStatus && selectedStatus !== "all") {
+          players = players.filter((p: any) => {
+            const st = playerStatus(p);
+            return st === selectedStatus;
+          });
+        }
+
+        return {
+          ...team,
+          players,
+        };
+      })
+      .filter((team: any) => team.players.length > 0);
   }
 
-  const youth = filterPlayers((teams ?? []).filter((t: any) => t.category === "youth"));
-  const academy = filterPlayers((teams ?? []).filter((t: any) => t.category === "academy"));
+  const youth = filterPlayers(rawTeams.filter((t: any) => t.category === "youth"));
+  const academy = filterPlayers(rawTeams.filter((t: any) => t.category === "academy"));
   const totalFiltered = [...youth, ...academy].reduce((s, t: any) => s + (t.players?.length ?? 0), 0);
-
-  
 
   function statusLabel(s: "ok" | "warn" | "danger"): string {
     if (s === "ok") return "Готовий";
@@ -108,19 +145,26 @@ export default async function PlayersPage({
                   const status = playerStatus(player);
                   const initials = `${player.last_name?.[0] ?? ""}${player.first_name?.[0] ?? ""}`;
                   const photo = photoMap[player.id];
+                  const gZone = growthZone(player);
+
+                  // Активна травма
+                  const activeInj = (player.injuries ?? []).find(
+                    (i: any) => i.status === "active" || i.status === "rehabilitation"
+                  );
+
                   return (
                     <Link key={player.id} href={`/players/${player.id}`} className="group block">
-                      <Card interactive accent={status === "ok" ? null : status} className="p-3.5">
-                        <div className="flex items-center justify-between gap-3">
+                      <Card interactive accent={status === "ok" ? null : status} className="p-3.5 space-y-2.5">
+                        <div className="flex items-start justify-between gap-3">
                           <div className="flex items-center gap-3 min-w-0">
                             {/* Аватар з фото або ініціалами */}
-                            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-slate-800 to-slate-900 border border-sky-500/20 group-hover:border-sky-400/50 flex items-center justify-center font-bold font-mono text-xs text-sky-300 shrink-0 shadow-inner overflow-hidden relative">
+                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-slate-800 to-slate-900 border border-sky-500/20 group-hover:border-sky-400/50 flex items-center justify-center font-bold font-mono text-xs text-sky-300 shrink-0 shadow-inner overflow-hidden relative">
                               {photo ? (
                                 <Image
                                   src={photo}
                                   alt={player.last_name}
                                   fill
-                                  sizes="44px"
+                                  sizes="48px"
                                   className="object-cover"
                                 />
                               ) : (
@@ -132,16 +176,53 @@ export default async function PlayersPage({
                                 {player.last_name} {player.first_name}
                               </div>
                               <div className="flex items-center gap-1.5 text-xs text-slate-400 mt-0.5">
-                                <span className="font-mono text-slate-300 px-1.5 py-0.2 rounded bg-slate-800/80 text-[10px] font-semibold border border-slate-700/60">
-                                  {POSITION_LABELS[player.position] ?? player.position}
-                                </span>
+                                {player.position && (
+                                  <span className="font-mono text-sky-300 px-1.5 py-0.2 rounded bg-sky-500/10 text-[10px] font-semibold border border-sky-500/20">
+                                    {POSITION_LABELS[player.position] ?? player.position}
+                                  </span>
+                                )}
                                 <span>·</span>
                                 <span>{calcAge(player.date_of_birth)} р.</span>
                               </div>
                             </div>
                           </div>
-                          <Badge variant={status}>{statusLabel(status)}</Badge>
+
+                          <div className="flex flex-col items-end gap-1.5 shrink-0">
+                            <Badge variant={status}>{statusLabel(status)}</Badge>
+                            {gZone && (
+                              <span
+                                className={`text-[9px] font-bold font-mono px-1.5 py-0.5 rounded border ${
+                                  gZone === "red"
+                                    ? "bg-rose-500/15 text-rose-300 border-rose-500/30 shadow-sm"
+                                    : "bg-amber-500/15 text-amber-300 border-amber-500/30 shadow-sm"
+                                }`}
+                              >
+                                PHV {gZone}
+                              </span>
+                            )}
+                          </div>
                         </div>
+
+                        {/* Інформація про активну травму / біль ВАШ */}
+                        {activeInj && (
+                          <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-slate-400">
+                            <span className="truncate pr-2">
+                              🩹 {INJURY_TYPE_UA[activeInj.injury_type] ?? activeInj.injury_type} (
+                              {LOCATION_UA[activeInj.location] ?? activeInj.location})
+                            </span>
+                            {activeInj.vas_score != null && (
+                              <span
+                                className={`font-mono font-bold px-1.5 py-0.2 rounded text-[10px] shrink-0 border ${
+                                  activeInj.vas_score >= 7
+                                    ? "bg-rose-500/15 text-rose-300 border-rose-500/30"
+                                    : "bg-amber-500/15 text-amber-300 border-amber-500/30"
+                                }`}
+                              >
+                                ВАШ {activeInj.vas_score}/10
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </Card>
                     </Link>
                   );
@@ -165,24 +246,25 @@ export default async function PlayersPage({
             </div>
             <p className="text-xs text-slate-400 mt-1">
               База гравців Академії та молодіжного складу ФК «Чорноморець»
-              {searchQuery && (
+              {(searchQuery || (selectedTeam && selectedTeam !== "all") || (selectedStatus && selectedStatus !== "all")) && (
                 <span className="text-sky-400 ml-1">· Знайдено: {totalFiltered}</span>
               )}
             </p>
           </div>
-          <div className="flex items-center gap-3 w-full sm:w-auto">
-            <div className="flex-1 sm:flex-initial">
-              <PlayerSearch />
-            </div>
+          <div className="w-full sm:w-auto">
             <Link
               href="/players/new"
-              className="bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition-all shadow-lg shadow-sky-600/20 active:scale-95 whitespace-nowrap flex items-center gap-1.5"
+              className="bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition-all shadow-lg shadow-sky-600/20 active:scale-95 whitespace-nowrap flex items-center justify-center gap-1.5 w-full sm:w-auto"
             >
               <span>+</span> Додати гравця
             </Link>
           </div>
         </div>
 
+        {/* Панель інтерактивних фільтрів та пошуку */}
+        <PlayerFilters teams={teamOptions} />
+
+        {/* Списки команд */}
         {renderTeamGroup(TEAM_CATEGORY_UA.youth, youth)}
         {renderTeamGroup(TEAM_CATEGORY_UA.academy, academy)}
 
@@ -190,10 +272,10 @@ export default async function PlayersPage({
           <Card className="text-center py-12">
             <span className="text-3xl block mb-2">🔍</span>
             <p className="text-sm font-semibold text-slate-300">
-              {searchQuery
-                ? `Гравців з прізвищем «${q}» не знайдено`
-                : "Гравців ще не додано. Натисніть «+ Додати гравця» щоб почати."
-              }
+              За вибраними параметрами гравців не знайдено
+            </p>
+            <p className="text-xs text-slate-500 mt-1">
+              Спробуйте скинути фільтри або змінити пошуковий запит
             </p>
           </Card>
         )}
@@ -201,3 +283,4 @@ export default async function PlayersPage({
     </div>
   );
 }
+
