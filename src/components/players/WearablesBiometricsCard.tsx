@@ -66,9 +66,13 @@ export default function WearablesBiometricsCard({
     });
   };
 
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
   // Швидка демонстраційна авто-синхронізація (емуляція Apple Watch / WHOOP Cloud)
   const handleQuickSync = (dev: WearableDeviceType) => {
     setSyncModalOpen(false);
+    setErrorMsg(null);
+    setSuccessMsg(null);
     startTransition(async () => {
       // Генерація фізіологічно коректних футбольних метрик
       const rec = Math.floor(Math.random() * 35) + 65; // 65-99%
@@ -90,8 +94,13 @@ export default function WearablesBiometricsCard({
         source: dev === "apple_watch" ? "apple_health" : "api_sync",
       });
 
-      if (res.biometrics) {
+      if (res.error) {
+        setErrorMsg(res.error);
+      } else if (res.biometrics) {
         setEntries([res.biometrics, ...entries]);
+        const devName = dev === "apple_watch" ? "Apple Watch (HealthKit)" : "WHOOP 4.0";
+        setSuccessMsg(`Дані успішно імпортовано з ${devName}! Оновлено Recovery (${rec}%), HRV (${hrv} мс), Сон (${sleep} год).`);
+        setTimeout(() => setSuccessMsg(null), 6000);
       }
     });
   };
@@ -123,10 +132,11 @@ export default function WearablesBiometricsCard({
           <button
             type="button"
             onClick={() => setSyncModalOpen(true)}
-            className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white shadow-[0_0_15px_rgba(14,165,233,0.3)] text-xs font-bold transition-all flex items-center gap-1.5"
+            disabled={isPending}
+            className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white shadow-[0_0_15px_rgba(14,165,233,0.3)] text-xs font-bold transition-all flex items-center gap-1.5 disabled:opacity-50"
           >
             <span>🔄</span>
-            <span>Синхронізувати</span>
+            <span>{isPending ? "Синхронізація..." : "Синхронізувати"}</span>
           </button>
           <button
             type="button"
@@ -137,6 +147,26 @@ export default function WearablesBiometricsCard({
           </button>
         </div>
       </div>
+
+      {/* Сповіщення про успішний імпорт або помилку */}
+      {successMsg && (
+        <div className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs flex items-center justify-between animate-fade-in">
+          <div className="flex items-center gap-2">
+            <span>✅</span>
+            <span>{successMsg}</span>
+          </div>
+          <button type="button" onClick={() => setSuccessMsg(null)} className="text-emerald-400 hover:text-white">✕</button>
+        </div>
+      )}
+      {errorMsg && (
+        <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span>⚠️</span>
+            <span>{errorMsg}</span>
+          </div>
+          <button type="button" onClick={() => setErrorMsg(null)} className="text-rose-400 hover:text-white">✕</button>
+        </div>
+      )}
 
       {/* Останній статус відновлення */}
       {latest ? (
