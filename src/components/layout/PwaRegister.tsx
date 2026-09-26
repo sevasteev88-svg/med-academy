@@ -50,18 +50,24 @@ export default function PwaRegister() {
     };
   }, []);
 
+  const [showDesktopTip, setShowDesktopTip] = useState(false);
+
   const handleInstallClick = async () => {
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === "accepted") {
-      setShowInstallPrompt(false);
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === "accepted") {
+        setShowInstallPrompt(false);
+      }
+      setDeferredPrompt(null);
+    } else {
+      setShowDesktopTip(true);
     }
-    setDeferredPrompt(null);
   };
 
   const dismissPrompt = () => {
     setShowInstallPrompt(false);
+    setShowDesktopTip(false);
     localStorage.setItem("pwa_install_dismissed", "true");
   };
 
@@ -76,31 +82,52 @@ export default function PwaRegister() {
     <>
       {/* Android/Desktop Chrome Banner */}
       {showInstallPrompt && (
-        <div className="fixed bottom-20 md:bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-96 z-50 p-4 rounded-2xl bg-slate-900/95 border border-sky-500/40 backdrop-blur-xl shadow-2xl shadow-sky-950/60 flex items-center justify-between gap-3 animate-slideUp">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-slate-950 border border-sky-500/30 flex items-center justify-center text-xl overflow-hidden shrink-0">
-              <img src="/logo-chr.png" alt="Чорноморець" className="w-8 h-8 object-contain" />
+        <div className="fixed bottom-20 md:bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-96 z-50 p-4 rounded-2xl bg-slate-900/95 border border-sky-500/40 backdrop-blur-xl shadow-2xl shadow-sky-950/60 flex flex-col gap-3 animate-slideUp">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-slate-950 border border-sky-500/30 flex items-center justify-center text-xl overflow-hidden shrink-0">
+                <img src="/logo-chr.png" alt="Чорноморець" className="w-8 h-8 object-contain" />
+              </div>
+              <div className="min-w-0">
+                <h4 className="text-xs font-bold text-white truncate">Встановити додаток</h4>
+                <p className="text-[10px] text-slate-400 truncate">Швидкий доступ з робочого столу</p>
+              </div>
             </div>
-            <div>
-              <h4 className="text-xs font-bold text-white">Встановити додаток</h4>
-              <p className="text-[10px] text-slate-400">Швидкий доступ з головного екрану</p>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                onClick={handleInstallClick}
+                className="px-3 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-white font-bold text-xs shadow-md shadow-sky-500/30 transition-all active:scale-95"
+              >
+                Встановити
+              </button>
+              <button
+                onClick={dismissPrompt}
+                className="p-1.5 text-slate-400 hover:text-white text-xs transition-colors"
+                title="Закрити"
+              >
+                ✕
+              </button>
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              onClick={handleInstallClick}
-              className="px-3 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-white font-bold text-xs shadow-md shadow-sky-500/30 transition-all active:scale-95"
-            >
-              Встановити
-            </button>
-            <button
-              onClick={dismissPrompt}
-              className="p-1.5 text-slate-400 hover:text-white text-xs transition-colors"
-            >
-              ✕
-            </button>
-          </div>
+          {/* Підказка для комп'ютера Chrome/Edge якщо нативний виклик блокується */}
+          {showDesktopTip && (
+            <div className="p-2.5 rounded-xl bg-slate-950/80 border border-sky-500/25 text-[11px] text-slate-300 space-y-1 animate-fadeIn">
+              <div className="font-bold text-sky-300 flex items-center gap-1.5">
+                <span>🖥️</span> Як встановити у браузері на ПК:
+              </div>
+              <p className="text-[10px] text-slate-400 leading-snug">
+                1. У правому верхньому кутку Chrome натисніть <strong>три крапки ⋮</strong>
+              </p>
+              <p className="text-[10px] text-slate-400 leading-snug">
+                2. Виберіть <strong>«Зберегти та поділитися»</strong> (або <i>«Трансляція, збереження...»</i>)
+              </p>
+              <p className="text-[10px] text-slate-400 leading-snug">
+                3. Натисніть <strong>«Встановити сторінку як додаток»</strong>.
+              </p>
+            </div>
+          )}
         </div>
       )}
 
