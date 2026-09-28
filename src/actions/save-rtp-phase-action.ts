@@ -43,7 +43,6 @@ export async function saveRtpPhaseAction({
   // 1. Зберігаємо у журнал injury_logs
   const { error: logErr } = await supabase.from("injury_logs").insert({
     injury_id: injuryId,
-    player_id: playerId,
     category: "procedure",
     date: new Date().toISOString().split("T")[0],
     note: `[RTP_PHASE] ${JSON.stringify(payload)}`,

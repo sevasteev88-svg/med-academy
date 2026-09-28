@@ -14,8 +14,7 @@ export async function getPlayerRehabPlanAction(playerId: string): Promise<Player
   const { data: logs, error } = await supabase
     .from("injury_logs")
     .select("note, created_at")
-    .eq("player_id", playerId)
-    .like("note", "[CUSTOM_REHAB_PLAN]%")
+    .like("note", `[CUSTOM_REHAB_PLAN] %"player_id":"${playerId}"%`)
     .order("created_at", { ascending: false })
     .limit(1);
 
@@ -48,9 +47,38 @@ export async function savePlayerRehabPlanAction(planData: Omit<PlayerCustomRehab
 
   const payload = `[CUSTOM_REHAB_PLAN] ${JSON.stringify(plan)}`;
 
+  // Отримуємо або створюємо системну травму для зв'язку
+  let targetInjuryId: string | null = null;
+  const { data: existingInj } = await supabase
+    .from("injuries")
+    .select("id")
+    .eq("player_id", planData.player_id)
+    .order("date_of_injury", { ascending: false })
+    .limit(1);
+
+  if (existingInj && existingInj.length > 0) {
+    targetInjuryId = existingInj[0].id;
+  } else {
+    const { data: newInj } = await supabase
+      .from("injuries")
+      .insert({
+        player_id: planData.player_id,
+        date_of_injury: new Date().toISOString().split("T")[0],
+        injury_type: "illness",
+        location: "other",
+        severity: "minor",
+        status: "closed",
+        description: "План ЛФК / Реабілітація",
+        vas_score: 0,
+      } as any)
+      .select("id")
+      .single();
+
+    if (newInj) targetInjuryId = newInj.id;
+  }
+
   const { error } = await supabase.from("injury_logs").insert({
-    player_id: planData.player_id,
-    injury_id: null as any,
+    injury_id: targetInjuryId,
     date: new Date().toISOString().split("T")[0],
     category: "treatment",
     note: payload,

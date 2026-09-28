@@ -27,8 +27,7 @@ export async function verifyPlayerPinAction(playerId: string, enteredPin: string
   const { data: pinLogs } = await supabase
     .from("injury_logs")
     .select("note")
-    .eq("player_id", playerId)
-    .like("note", "[PLAYER_PIN]%")
+    .like("note", `[PLAYER_PIN] %"player_id":"${playerId}"%`)
     .order("date", { ascending: false })
     .limit(1);
 
@@ -88,8 +87,7 @@ export async function verifyPlayerPinAction(playerId: string, enteredPin: string
   const { data: instructionLogs } = await supabase
     .from("injury_logs")
     .select("note")
-    .eq("player_id", playerId)
-    .like("note", "[DOCTOR_INSTRUCTION]%")
+    .like("note", `[DOCTOR_INSTRUCTION] %"player_id":"${playerId}"%`)
     .order("date", { ascending: false })
     .limit(1);
 
@@ -105,8 +103,7 @@ export async function verifyPlayerPinAction(playerId: string, enteredPin: string
   const { data: customPlanLogs } = await supabase
     .from("injury_logs")
     .select("note")
-    .eq("player_id", playerId)
-    .like("note", "[CUSTOM_REHAB_PLAN]%")
+    .like("note", `[CUSTOM_REHAB_PLAN] %"player_id":"${playerId}"%`)
     .order("created_at", { ascending: false })
     .limit(1);
 
@@ -122,8 +119,7 @@ export async function verifyPlayerPinAction(playerId: string, enteredPin: string
   const { data: pastCheckinLogs } = await supabase
     .from("injury_logs")
     .select("note, date")
-    .eq("player_id", playerId)
-    .like("note", "[REHAB_CHECKIN]%")
+    .like("note", `[REHAB_CHECKIN] %"player_id":"${playerId}"%`)
     .order("date", { ascending: true })
     .limit(14);
 
@@ -160,16 +156,49 @@ export async function verifyPlayerPinAction(playerId: string, enteredPin: string
 export async function submitRehabCheckinAction(data: RehabCheckinData) {
   const supabase = await createClient();
 
+  // Знаходимо цільову травму або будь-яку останню травму гравця
+  let targetInjuryId = data.injury_id;
+  if (!targetInjuryId) {
+    const { data: existingInj } = await supabase
+      .from("injuries")
+      .select("id")
+      .eq("player_id", data.player_id)
+      .order("date_of_injury", { ascending: false })
+      .limit(1);
+
+    if (existingInj && existingInj.length > 0) {
+      targetInjuryId = existingInj[0].id;
+    } else {
+      // Створюємо системний запис для зв'язку
+      const { data: newInj } = await supabase
+        .from("injuries")
+        .insert({
+          player_id: data.player_id,
+          date_of_injury: data.date || new Date().toISOString().split("T")[0],
+          injury_type: "illness",
+          location: "other",
+          severity: "minor",
+          status: "closed",
+          description: "Самозвіти відновлення / Чек-ін",
+          vas_score: data.vas_score ?? 0,
+        } as any)
+        .select("id")
+        .single();
+
+      if (newInj) targetInjuryId = newInj.id;
+    }
+  }
+
   const payload: RehabCheckinData = {
     ...data,
+    injury_id: targetInjuryId,
     date: data.date || new Date().toISOString().split("T")[0],
     time: data.time || new Date().toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" }),
   };
 
-  // Зберігаємо у журнал
+  // Зберігаємо у журнал injury_logs (таблиця має колонки: id, injury_id, date, note, category)
   const { error: logErr } = await supabase.from("injury_logs").insert({
-    injury_id: data.injury_id,
-    player_id: data.player_id,
+    injury_id: targetInjuryId,
     category: "note",
     date: payload.date,
     note: `[REHAB_CHECKIN] ${JSON.stringify(payload)}`,
@@ -180,15 +209,17 @@ export async function submitRehabCheckinAction(data: RehabCheckinData) {
   }
 
   // Оновлюємо поточний бал болю ВАШ у травмі
-  if (data.vas_score !== undefined && data.injury_id) {
+  if (data.vas_score !== undefined && targetInjuryId) {
     await supabase
       .from("injuries")
       .update({ vas_score: data.vas_score })
-      .eq("id", data.injury_id);
+      .eq("id", targetInjuryId);
   }
 
   revalidatePath("/rtp");
-  revalidatePath(`/injuries/${data.injury_id}`);
+  if (targetInjuryId) {
+    revalidatePath(`/injuries/${targetInjuryId}`);
+  }
   revalidatePath(`/players/${data.player_id}`);
   revalidatePath("/");
 
@@ -211,8 +242,38 @@ export async function setPlayerPinAction(playerId: string, newPin: string) {
     updated_at: new Date().toISOString(),
   };
 
+  // Отримуємо або створюємо травму для зв'язку
+  let targetInjuryId: string | null = null;
+  const { data: existingInj } = await supabase
+    .from("injuries")
+    .select("id")
+    .eq("player_id", playerId)
+    .order("date_of_injury", { ascending: false })
+    .limit(1);
+
+  if (existingInj && existingInj.length > 0) {
+    targetInjuryId = existingInj[0].id;
+  } else {
+    const { data: newInj } = await supabase
+      .from("injuries")
+      .insert({
+        player_id: playerId,
+        date_of_injury: new Date().toISOString().split("T")[0],
+        injury_type: "illness",
+        location: "other",
+        severity: "minor",
+        status: "closed",
+        description: "Налаштування профілю гравця / PIN",
+        vas_score: 0,
+      } as any)
+      .select("id")
+      .single();
+
+    if (newInj) targetInjuryId = newInj.id;
+  }
+
   const { error } = await supabase.from("injury_logs").insert({
-    player_id: playerId,
+    injury_id: targetInjuryId,
     category: "note",
     date: new Date().toISOString().split("T")[0],
     note: `[PLAYER_PIN] ${JSON.stringify(payload)}`,
@@ -247,8 +308,38 @@ export async function saveDoctorInstructionAction({
     updated_at: new Date().toISOString(),
   };
 
+  // Отримуємо або створюємо травму для зв'язку
+  let targetInjuryId: string | null = null;
+  const { data: existingInj } = await supabase
+    .from("injuries")
+    .select("id")
+    .eq("player_id", playerId)
+    .order("date_of_injury", { ascending: false })
+    .limit(1);
+
+  if (existingInj && existingInj.length > 0) {
+    targetInjuryId = existingInj[0].id;
+  } else {
+    const { data: newInj } = await supabase
+      .from("injuries")
+      .insert({
+        player_id: playerId,
+        date_of_injury: new Date().toISOString().split("T")[0],
+        injury_type: "illness",
+        location: "other",
+        severity: "minor",
+        status: "closed",
+        description: "Вказівка лікаря гравцю",
+        vas_score: 0,
+      } as any)
+      .select("id")
+      .single();
+
+    if (newInj) targetInjuryId = newInj.id;
+  }
+
   const { error } = await supabase.from("injury_logs").insert({
-    player_id: playerId,
+    injury_id: targetInjuryId,
     category: "prescription",
     date: new Date().toISOString().split("T")[0],
     note: `[DOCTOR_INSTRUCTION] ${JSON.stringify(payload)}`,

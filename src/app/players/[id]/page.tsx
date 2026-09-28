@@ -73,14 +73,12 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
     supabase
       .from("injury_logs")
       .select("*")
-      .eq("player_id", id)
       .like("note", "[REHAB_CHECKIN]%")
       .order("date", { ascending: false }),
     supabase
       .from("injury_logs")
       .select("note")
-      .eq("player_id", id)
-      .like("note", "[PLAYER_PIN]%")
+      .like("note", `[PLAYER_PIN] %"player_id":"${id}"%`)
       .order("date", { ascending: false })
       .limit(1),
     supabase
@@ -91,8 +89,7 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
     supabase
       .from("injury_logs")
       .select("note")
-      .eq("player_id", id)
-      .like("note", "[CUSTOM_REHAB_PLAN]%")
+      .like("note", `[CUSTOM_REHAB_PLAN] %"player_id":"${id}"%`)
       .order("created_at", { ascending: false })
       .limit(1),
   ]);
