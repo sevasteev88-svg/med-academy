@@ -42,6 +42,16 @@ export default function RehabPortalClient({
   const [psychReadiness, setPsychReadiness] = useState<number>(8); // 1-10 (I-PRRS)
   const [sleepQuality, setSleepQuality] = useState<number>(4);
   const [fatigueLevel, setFatigueLevel] = useState<number>(2);
+  const [muscleSoreness, setMuscleSoreness] = useState<number>(4);
+  const [sorenessLocation, setSorenessLocation] = useState<string>("");
+  const [stressLevel, setStressLevel] = useState<number>(4);
+
+  // Training Session RPE (Borg Scale for ACWR)
+  const [hasTrainingSession, setHasTrainingSession] = useState<boolean>(false);
+  const [sessionType, setSessionType] = useState<"match" | "training_team" | "individual_rehab" | "gym_strength" | "recovery">("training_team");
+  const [sessionDurationMinutes, setSessionDurationMinutes] = useState<number>(75);
+  const [sessionRpeScore, setSessionRpeScore] = useState<number>(6);
+
   const [playerComment, setPlayerComment] = useState<string>("");
 
   // Wearables manual input (Oura, Apple Watch, WHOOP, Garmin)
@@ -146,6 +156,9 @@ export default function RehabPortalClient({
         psychological_readiness: psychReadiness,
         sleep_quality: sleepQuality,
         fatigue_level: fatigueLevel,
+        muscle_soreness: muscleSoreness,
+        soreness_location: muscleSoreness <= 3 ? sorenessLocation : undefined,
+        stress_level: stressLevel,
         player_comment: playerComment.trim() || undefined,
         wearable_data: hasWearableData
           ? {
@@ -155,6 +168,13 @@ export default function RehabPortalClient({
               resting_hr: Number(wearableRhr),
               sleep_duration_hours: Number(wearableSleepHours),
               sleep_efficiency_pct: Number(wearableSleepEff),
+            }
+          : undefined,
+        training_session: hasTrainingSession
+          ? {
+              session_type: sessionType,
+              duration_minutes: Number(sessionDurationMinutes),
+              rpe_score: Number(sessionRpeScore),
             }
           : undefined,
       });
@@ -561,37 +581,221 @@ export default function RehabPortalClient({
               </div>
             </div>
 
-            {/* Sleep & Fatigue */}
-            <div className="grid grid-cols-2 gap-2.5">
-              <div className="p-3 rounded-2xl bg-slate-950/60 border border-white/5 space-y-1">
-                <div className="flex justify-between text-[11px] font-bold text-slate-300">
-                  <span>😴 Якість сну:</span>
-                  <span className="font-mono text-sky-400">{sleepQuality}/5</span>
-                </div>
-                <input
-                  type="range"
-                  min="1"
-                  max="5"
-                  value={sleepQuality}
-                  onChange={(e) => setSleepQuality(Number(e.target.value))}
-                  className="w-full accent-sky-400"
-                />
+            {/* Hooper-Mackinnon 4-metric Morning Wellness */}
+            <div className="p-3.5 rounded-2xl bg-slate-950/70 border border-sky-500/20 space-y-3">
+              <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                <span className="text-xs font-bold text-sky-300 flex items-center gap-1.5">
+                  <span>📊</span> Ранковий Wellness (шкала Hooper-Mackinnon):
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono">
+                  {sleepQuality + (6 - fatigueLevel) + muscleSoreness + stressLevel} / 20 балів
+                </span>
               </div>
 
-              <div className="p-3 rounded-2xl bg-slate-950/60 border border-white/5 space-y-1">
-                <div className="flex justify-between text-[11px] font-bold text-slate-300">
-                  <span>⚡ Загальна втома:</span>
-                  <span className="font-mono text-amber-400">{fatigueLevel}/5</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {/* 1. Сон */}
+                <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
+                  <div className="flex justify-between text-[11px] font-bold text-slate-300">
+                    <span>😴 Якість сну:</span>
+                    <span className="font-mono text-sky-400">{sleepQuality}/5</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max="5"
+                    value={sleepQuality}
+                    onChange={(e) => setSleepQuality(Number(e.target.value))}
+                    className="w-full accent-sky-400 cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[9px] text-slate-500">
+                    <span>1 (Дуже погано)</span>
+                    <span>5 (Чудово)</span>
+                  </div>
                 </div>
-                <input
-                  type="range"
-                  min="1"
-                  max="5"
-                  value={fatigueLevel}
-                  onChange={(e) => setFatigueLevel(Number(e.target.value))}
-                  className="w-full accent-amber-400"
-                />
+
+                {/* 2. Втома */}
+                <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
+                  <div className="flex justify-between text-[11px] font-bold text-slate-300">
+                    <span>⚡ Рівень втоми:</span>
+                    <span className="font-mono text-amber-400">{fatigueLevel}/5</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max="5"
+                    value={fatigueLevel}
+                    onChange={(e) => setFatigueLevel(Number(e.target.value))}
+                    className="w-full accent-amber-400 cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[9px] text-slate-500">
+                    <span>1 (Свіжий)</span>
+                    <span>5 (Виснажений)</span>
+                  </div>
+                </div>
+
+                {/* 3. Крепатура */}
+                <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
+                  <div className="flex justify-between text-[11px] font-bold text-slate-300">
+                    <span>🦵 Крепатура м&apos;язів (DOMS):</span>
+                    <span className="font-mono text-rose-400">{muscleSoreness}/5</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max="5"
+                    value={muscleSoreness}
+                    onChange={(e) => setMuscleSoreness(Number(e.target.value))}
+                    className="w-full accent-rose-400 cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[9px] text-slate-500">
+                    <span>1 (Сильний біль)</span>
+                    <span>5 (М&apos;язи свіжі)</span>
+                  </div>
+                </div>
+
+                {/* 4. Стрес */}
+                <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
+                  <div className="flex justify-between text-[11px] font-bold text-slate-300">
+                    <span>🧠 Психологічний стрес:</span>
+                    <span className="font-mono text-purple-400">{stressLevel}/5</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max="5"
+                    value={stressLevel}
+                    onChange={(e) => setStressLevel(Number(e.target.value))}
+                    className="w-full accent-purple-400 cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[9px] text-slate-500">
+                    <span>1 (Тривога/стрес)</span>
+                    <span>5 (Спокійний)</span>
+                  </div>
+                </div>
               </div>
+
+              {/* Уточнення локалізації кріпатури якщо м'язи болять (бал <= 3) */}
+              {muscleSoreness <= 3 && (
+                <div className="p-2.5 rounded-xl bg-rose-950/30 border border-rose-500/25 space-y-1 animate-fadeIn">
+                  <label className="text-[10px] font-bold text-rose-300 block">
+                    ⚠️ Де саме відчуваєш найбільшу крепатуру / забитість?
+                  </label>
+                  <select
+                    value={sorenessLocation}
+                    onChange={(e) => setSorenessLocation(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none focus:border-rose-400"
+                  >
+                    <option value="">Оберіть м&apos;яз (опціонально)...</option>
+                    <option value="Задня поверхня стегна (Хамстрінг)">🦵 Задня поверхня стегна (Хамстрінг)</option>
+                    <option value="Передня поверхня (Квадрицепс)">🦵 Передня поверхня (Квадрицепс)</option>
+                    <option value="Пах / Привідні м'язи (Аддуктор)">🩲 Пах / Привідні м&apos;язи (Аддуктор)</option>
+                    <option value="Литковий м'яз / Ахілл">🦶 Литковий м&apos;яз / Ахілл</option>
+                    <option value="Сідничні м'язи">🍑 Сідничні м&apos;язи</option>
+                    <option value="Поперек / Спина">🧱 Поперек / Спина</option>
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {/* Session-RPE (Оцінка важкості тренування за шкалою Борга для розрахунку ACWR) */}
+            <div className="p-3.5 rounded-2xl bg-slate-950/70 border border-amber-500/25 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-base">⏱️</span>
+                  <div>
+                    <label className="text-xs font-bold text-slate-200 block">
+                      Важкість тренування (Session-RPE)
+                    </label>
+                    <span className="text-[10px] text-slate-400">
+                      Для розрахунку навантаження та коефіцієнта ACWR
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setHasTrainingSession(!hasTrainingSession)}
+                  className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition-all border ${
+                    hasTrainingSession
+                      ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                      : "bg-slate-900 text-slate-400 border-slate-700 hover:text-white"
+                  }`}
+                >
+                  {hasTrainingSession ? "✓ Оцінити" : "+ Додати тренування"}
+                </button>
+              </div>
+
+              {hasTrainingSession && (
+                <div className="space-y-3 pt-2 border-t border-slate-800/80 animate-fadeIn">
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                        Тип заняття:
+                      </label>
+                      <select
+                        value={sessionType}
+                        onChange={(e) => setSessionType(e.target.value as any)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white"
+                      >
+                        <option value="training_team">🏃 Командне тренування</option>
+                        <option value="match">⚽ Офіційний матч</option>
+                        <option value="gym_strength">🏋️ Силовий зал</option>
+                        <option value="individual_rehab">🩹 Індивідуальна реабілітація</option>
+                        <option value="recovery">🧘 Відновлення / Стретчинг</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                        Тривалість (хвилини):
+                      </label>
+                      <input
+                        type="number"
+                        min="10"
+                        max="180"
+                        step="5"
+                        value={sessionDurationMinutes}
+                        onChange={(e) => setSessionDurationMinutes(Number(e.target.value))}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-center font-mono font-bold text-sky-400"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Borg CR-10 Slider */}
+                  <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1.5">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-bold text-slate-300">
+                        Важкість за шкалою Борга (RPE):
+                      </span>
+                      <span className="font-mono font-bold px-2 py-0.5 rounded-lg bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                        {sessionRpeScore} / 10
+                      </span>
+                    </div>
+
+                    <input
+                      type="range"
+                      min="1"
+                      max="10"
+                      step="1"
+                      value={sessionRpeScore}
+                      onChange={(e) => setSessionRpeScore(Number(e.target.value))}
+                      className="w-full accent-amber-400 cursor-pointer"
+                    />
+
+                    <div className="flex justify-between text-[9px] text-slate-400">
+                      <span>1-2 (Легко)</span>
+                      <span>5-6 (Важко)</span>
+                      <span>9-10 (Максимум)</span>
+                    </div>
+
+                    <div className="text-[10px] text-slate-400 pt-1 border-t border-slate-800 flex justify-between font-mono">
+                      <span>Розраховане навантаження:</span>
+                      <span className="text-emerald-400 font-bold">
+                        {sessionDurationMinutes * sessionRpeScore} AU (ум. од.)
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Wearable Biometrics Section (Oura / Apple Watch / WHOOP / Garmin) */}

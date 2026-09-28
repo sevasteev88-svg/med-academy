@@ -30,6 +30,9 @@ export interface RehabCheckinData {
   psychological_readiness?: number; // 1-10 (I-PRRS)
   sleep_quality: number; // 1-5
   fatigue_level: number; // 1-5
+  muscle_soreness?: number; // 1-5 (Hooper-Mackinnon DOMS)
+  soreness_location?: string; // hamstrings, quads, calves, groin, back, etc.
+  stress_level?: number; // 1-5 (Hooper-Mackinnon Stress)
   player_comment?: string;
   wearable_data?: {
     device_type: "oura" | "apple_watch" | "whoop" | "garmin";
@@ -38,6 +41,12 @@ export interface RehabCheckinData {
     resting_hr?: number; // bpm
     sleep_duration_hours?: number; // hours
     sleep_efficiency_pct?: number; // 0-100%
+  };
+  // Session-RPE (для авто-розрахунку ACWR без GPS)
+  training_session?: {
+    session_type: "match" | "training_team" | "individual_rehab" | "gym_strength" | "recovery";
+    duration_minutes: number;
+    rpe_score: number; // 1-10 за шкалою Борга CR-10
   };
 }
 

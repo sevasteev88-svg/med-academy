@@ -251,6 +251,25 @@ export default function PlayerRehabCheckinHistory({
                   </div>
                 )}
 
+                {(chk.muscle_soreness !== undefined || chk.stress_level !== undefined || chk.training_session) && (
+                  <div className="p-2 rounded-xl bg-slate-950/80 border border-slate-800 text-[10px] text-slate-300 flex items-center justify-between flex-wrap gap-2 mt-1">
+                    <div className="flex items-center gap-2">
+                      {chk.muscle_soreness !== undefined && (
+                        <span>Крепатура: <strong className={chk.muscle_soreness <= 2 ? "text-rose-400 font-bold" : "text-slate-200"}>{chk.muscle_soreness}/5</strong> {chk.soreness_location ? `(${chk.soreness_location})` : ""}</span>
+                      )}
+                      {chk.stress_level !== undefined && (
+                        <span>· Стрес: <strong className="text-purple-300">{chk.stress_level}/5</strong></span>
+                      )}
+                    </div>
+
+                    {chk.training_session && (
+                      <span className="font-mono text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                        ⏱️ RPE {chk.training_session.rpe_score}/10 · {chk.training_session.duration_minutes} хв ({chk.training_session.duration_minutes * chk.training_session.rpe_score} AU)
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 {chk.player_comment && (
                   <div className="p-2 rounded-lg bg-slate-900/80 border border-sky-500/20 text-[11px] text-slate-200 mt-1">
                     <strong className="text-sky-300">Коментар гравця: </strong>

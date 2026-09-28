@@ -238,6 +238,55 @@ export async function submitRehabCheckinAction(data: RehabCheckinData) {
     });
   }
 
+  // Якщо футболіст відповів на пункти Хопкінса/Макліна (сон, втома, крепатура, стрес) — синхронізуємо в розділ /wellness
+  if (data.muscle_soreness !== undefined || data.stress_level !== undefined) {
+    const wellSurvey = {
+      id: `well_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      player_id: data.player_id,
+      date: payload.date,
+      sleep_quality: data.sleep_quality,
+      fatigue_level: data.fatigue_level,
+      muscle_soreness: data.muscle_soreness ?? 4,
+      stress_level: data.stress_level ?? 4,
+      soreness_location: data.soreness_location || null,
+      total_score: Number(data.sleep_quality) + Number(data.fatigue_level) + Number(data.muscle_soreness ?? 4) + Number(data.stress_level ?? 4),
+      readiness_status: (Number(data.sleep_quality) + Number(data.fatigue_level) + Number(data.muscle_soreness ?? 4) + Number(data.stress_level ?? 4)) >= 16 ? "optimal" : (Number(data.sleep_quality) + Number(data.fatigue_level) + Number(data.muscle_soreness ?? 4) + Number(data.stress_level ?? 4)) >= 12 ? "warning" : "risk",
+      notes: data.player_comment || null,
+      created_at: new Date().toISOString(),
+    };
+
+    await supabase.from("injury_logs").insert({
+      injury_id: targetInjuryId,
+      category: "examination",
+      date: payload.date,
+      note: `[WELLNESS] ${JSON.stringify(wellSurvey)}`,
+    });
+  }
+
+  // Якщо футболіст вказав навантаження тренування (тривалість + RPE за шкалою Борга) — записуємо сесію для розрахунку ACWR
+  if (data.training_session && data.training_session.duration_minutes > 0) {
+    const duration = Number(data.training_session.duration_minutes);
+    const rpe = Number(data.training_session.rpe_score);
+    const sessionPayload = {
+      id: `sess_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      player_id: data.player_id,
+      date: payload.date,
+      session_type: data.training_session.session_type || "training_team",
+      duration_minutes: duration,
+      rpe_score: rpe,
+      workload_au: duration * rpe,
+      notes: "Самостійний звіт гравця через мобільний кабінет",
+      created_at: new Date().toISOString(),
+    };
+
+    await supabase.from("injury_logs").insert({
+      injury_id: targetInjuryId,
+      category: "procedure",
+      date: payload.date,
+      note: `[WORKLOAD] ${JSON.stringify(sessionPayload)}`,
+    });
+  }
+
   // Оновлюємо поточний бал болю ВАШ у травмі
   if (data.vas_score !== undefined && targetInjuryId) {
     await supabase
