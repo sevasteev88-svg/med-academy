@@ -44,6 +44,15 @@ export default function RehabPortalClient({
   const [fatigueLevel, setFatigueLevel] = useState<number>(2);
   const [playerComment, setPlayerComment] = useState<string>("");
 
+  // Wearables manual input (Oura, Apple Watch, WHOOP, Garmin)
+  const [hasWearableData, setHasWearableData] = useState<boolean>(false);
+  const [wearableDevice, setWearableDevice] = useState<"oura" | "apple_watch" | "whoop" | "garmin">("oura");
+  const [wearableRecovery, setWearableRecovery] = useState<number>(82);
+  const [wearableHrv, setWearableHrv] = useState<number>(68);
+  const [wearableRhr, setWearableRhr] = useState<number>(49);
+  const [wearableSleepHours, setWearableSleepHours] = useState<number>(7.8);
+  const [wearableSleepEff, setWearableSleepEff] = useState<number>(90);
+
   const [isSubmitted, setIsSubmitted] = useState<boolean>(false);
   const [isSubmitting, startSubmit] = useTransition();
 
@@ -138,6 +147,16 @@ export default function RehabPortalClient({
         sleep_quality: sleepQuality,
         fatigue_level: fatigueLevel,
         player_comment: playerComment.trim() || undefined,
+        wearable_data: hasWearableData
+          ? {
+              device_type: wearableDevice,
+              recovery_score: Number(wearableRecovery),
+              hrv_rmssd: Number(wearableHrv),
+              resting_hr: Number(wearableRhr),
+              sleep_duration_hours: Number(wearableSleepHours),
+              sleep_efficiency_pct: Number(wearableSleepEff),
+            }
+          : undefined,
       });
 
       if (res.success) {
@@ -573,6 +592,131 @@ export default function RehabPortalClient({
                   className="w-full accent-amber-400"
                 />
               </div>
+            </div>
+
+            {/* Wearable Biometrics Section (Oura / Apple Watch / WHOOP / Garmin) */}
+            <div className="p-3.5 rounded-2xl bg-slate-950/70 border border-sky-500/20 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-base">⌚</span>
+                  <div>
+                    <label className="text-xs font-bold text-slate-200 block">
+                      Показники смарт-годинника / кільця
+                    </label>
+                    <span className="text-[10px] text-slate-400">
+                      Oura Ring, Apple Watch, WHOOP, Garmin
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setHasWearableData(!hasWearableData)}
+                  className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition-all border ${
+                    hasWearableData
+                      ? "bg-sky-500/20 text-sky-300 border-sky-500/40"
+                      : "bg-slate-900 text-slate-400 border-slate-700 hover:text-white"
+                  }`}
+                >
+                  {hasWearableData ? "✓ Внести дані" : "+ Додати"}
+                </button>
+              </div>
+
+              {hasWearableData && (
+                <div className="space-y-3 pt-2 border-t border-slate-800/80 animate-fadeIn">
+                  {/* Device selector */}
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                      Мій пристрій:
+                    </label>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {[
+                        { id: "oura", label: "Oura Ring", icon: "💍" },
+                        { id: "apple_watch", label: "Apple Watch", icon: "🍎" },
+                        { id: "whoop", label: "WHOOP", icon: "⭕" },
+                        { id: "garmin", label: "Garmin", icon: "⌚" },
+                      ].map((d) => (
+                        <button
+                          key={d.id}
+                          type="button"
+                          onClick={() => setWearableDevice(d.id as any)}
+                          className={`py-1.5 px-1 rounded-xl text-center text-[10px] font-bold transition-all border flex flex-col items-center gap-0.5 ${
+                            wearableDevice === d.id
+                              ? "bg-sky-500/20 text-sky-200 border-sky-400 shadow-sm shadow-sky-500/20"
+                              : "bg-slate-900/80 text-slate-400 border-slate-800 hover:border-slate-700"
+                          }`}
+                        >
+                          <span className="text-sm">{d.icon}</span>
+                          <span className="truncate w-full">{d.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Metrics Inputs */}
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
+                      <div className="flex justify-between text-[11px]">
+                        <span className="text-slate-400">Recovery / Readiness:</span>
+                        <span className="font-mono font-bold text-emerald-400">{wearableRecovery}%</span>
+                      </div>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={wearableRecovery}
+                        onChange={(e) => setWearableRecovery(Number(e.target.value))}
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-center font-mono font-bold text-emerald-300 text-xs focus:border-sky-500"
+                      />
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
+                      <div className="flex justify-between text-[11px]">
+                        <span className="text-slate-400">HRV (ВСР, RMSSD):</span>
+                        <span className="font-mono font-bold text-sky-400">{wearableHrv} мс</span>
+                      </div>
+                      <input
+                        type="number"
+                        min="10"
+                        max="250"
+                        value={wearableHrv}
+                        onChange={(e) => setWearableHrv(Number(e.target.value))}
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-center font-mono font-bold text-sky-300 text-xs focus:border-sky-500"
+                      />
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
+                      <div className="flex justify-between text-[11px]">
+                        <span className="text-slate-400">Пульс спокою (RHR):</span>
+                        <span className="font-mono font-bold text-indigo-300">{wearableRhr} уд/хв</span>
+                      </div>
+                      <input
+                        type="number"
+                        min="30"
+                        max="120"
+                        value={wearableRhr}
+                        onChange={(e) => setWearableRhr(Number(e.target.value))}
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-center font-mono font-bold text-indigo-200 text-xs focus:border-sky-500"
+                      />
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
+                      <div className="flex justify-between text-[11px]">
+                        <span className="text-slate-400">Тривалість сну:</span>
+                        <span className="font-mono font-bold text-amber-300">{wearableSleepHours} год</span>
+                      </div>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="16"
+                        value={wearableSleepHours}
+                        onChange={(e) => setWearableSleepHours(Number(e.target.value))}
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-center font-mono font-bold text-amber-200 text-xs focus:border-sky-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Player Comment */}

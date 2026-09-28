@@ -237,6 +237,20 @@ export default function PlayerRehabCheckinHistory({
                   </div>
                 </div>
 
+                {chk.wearable_data && (
+                  <div className="p-2 rounded-xl bg-slate-900 border border-sky-500/20 text-[10px] text-slate-300 flex items-center justify-between flex-wrap gap-2 mt-1">
+                    <span className="font-bold text-sky-400 flex items-center gap-1">
+                      <span>{chk.wearable_data.device_type === "oura" ? "💍 Oura Ring" : chk.wearable_data.device_type === "apple_watch" ? "🍎 Apple Watch" : chk.wearable_data.device_type === "whoop" ? "⭕ WHOOP" : "⌚ Garmin"}</span>
+                    </span>
+                    <div className="flex items-center gap-2.5 font-mono">
+                      <span>Відновлення: <strong className="text-emerald-400 font-bold">{chk.wearable_data.recovery_score}%</strong></span>
+                      <span>HRV: <strong className="text-sky-300 font-bold">{chk.wearable_data.hrv_rmssd} мс</strong></span>
+                      <span>Пульс спокою: <strong className="text-indigo-300 font-bold">{chk.wearable_data.resting_hr} уд/хв</strong></span>
+                      <span>Сон: <strong className="text-amber-300 font-bold">{chk.wearable_data.sleep_duration_hours} год</strong></span>
+                    </div>
+                  </div>
+                )}
+
                 {chk.player_comment && (
                   <div className="p-2 rounded-lg bg-slate-900/80 border border-sky-500/20 text-[11px] text-slate-200 mt-1">
                     <strong className="text-sky-300">Коментар гравця: </strong>

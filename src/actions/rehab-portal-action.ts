@@ -214,6 +214,30 @@ export async function submitRehabCheckinAction(data: RehabCheckinData) {
     return { error: `Помилка збереження рапорту: ${logErr.message}` };
   }
 
+  // Якщо футболіст заповнив показники свого девайса (Oura / Apple Watch / WHOOP) — записуємо також у біометричний трекінг гравця
+  if (data.wearable_data) {
+    const wearEntry = {
+      id: `wear_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      player_id: data.player_id,
+      device_type: data.wearable_data.device_type,
+      date: payload.date,
+      recovery_score: data.wearable_data.recovery_score ?? Math.round((data.sleep_quality / 5) * 85),
+      hrv_rmssd: data.wearable_data.hrv_rmssd ?? 65,
+      resting_hr: data.wearable_data.resting_hr ?? 52,
+      sleep_duration_hours: data.wearable_data.sleep_duration_hours ?? 8.0,
+      sleep_efficiency_pct: data.wearable_data.sleep_efficiency_pct ?? 90,
+      source: "manual",
+      created_at: new Date().toISOString(),
+    };
+
+    await supabase.from("injury_logs").insert({
+      injury_id: targetInjuryId,
+      category: "procedure",
+      date: payload.date,
+      note: `[WEARABLE] ${JSON.stringify(wearEntry)}`,
+    });
+  }
+
   // Оновлюємо поточний бал болю ВАШ у травмі
   if (data.vas_score !== undefined && targetInjuryId) {
     await supabase

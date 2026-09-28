@@ -31,6 +31,14 @@ export interface RehabCheckinData {
   sleep_quality: number; // 1-5
   fatigue_level: number; // 1-5
   player_comment?: string;
+  wearable_data?: {
+    device_type: "oura" | "apple_watch" | "whoop" | "garmin";
+    recovery_score?: number; // 0-100%
+    hrv_rmssd?: number; // ms
+    resting_hr?: number; // bpm
+    sleep_duration_hours?: number; // hours
+    sleep_efficiency_pct?: number; // 0-100%
+  };
 }
 
 export interface PlayerPinRecord {
