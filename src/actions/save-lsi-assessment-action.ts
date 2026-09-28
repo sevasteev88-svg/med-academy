@@ -21,8 +21,40 @@ export async function saveLsiAssessmentAction(
 
   const payload = `[LSI_ASSESSMENT] ${JSON.stringify(record)}`;
 
+  // Отримуємо або створюємо системний запис травми для прив'язки
+  let targetInjuryId = assessmentData.injury_id || null;
+  if (!targetInjuryId) {
+    const { data: existingInj } = await supabase
+      .from("injuries")
+      .select("id")
+      .eq("player_id", assessmentData.player_id)
+      .order("date_of_injury", { ascending: false })
+      .limit(1);
+
+    if (existingInj && existingInj.length > 0) {
+      targetInjuryId = existingInj[0].id;
+    } else {
+      const { data: newInj } = await supabase
+        .from("injuries")
+        .insert({
+          player_id: assessmentData.player_id,
+          date_of_injury: assessmentData.date,
+          injury_type: "illness",
+          location: "other",
+          severity: "minor",
+          status: "closed",
+          description: "Тестування симетрії LSI / Динамометрія",
+          vas_score: 0,
+        } as any)
+        .select("id")
+        .single();
+
+      if (newInj) targetInjuryId = newInj.id;
+    }
+  }
+
   const { error } = await supabase.from("injury_logs").insert({
-    injury_id: assessmentData.injury_id || (null as any),
+    injury_id: targetInjuryId,
     date: assessmentData.date,
     category: "functional_test",
     note: payload,

@@ -106,9 +106,12 @@ export default function LsiSymmetryAssessmentCard({
     }));
   };
 
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     if (calculatedTestResults.length === 0) return;
+    setErrorMsg(null);
 
     startTransition(async () => {
       const res = await saveLsiAssessmentAction({
@@ -131,7 +134,9 @@ export default function LsiSymmetryAssessmentCard({
         notes,
       });
 
-      if (res.success && res.record) {
+      if (res.error) {
+        setErrorMsg(res.error);
+      } else if (res.success && res.record) {
         setRecords((prev) => [res.record!, ...prev]);
         setIsFormOpen(false);
       }
@@ -140,6 +145,15 @@ export default function LsiSymmetryAssessmentCard({
 
   return (
     <div className="rounded-2xl border border-sky-500/20 bg-slate-900/60 backdrop-blur-xl p-5 md:p-6 shadow-xl space-y-6">
+      {errorMsg && (
+        <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span>⚠️</span>
+            <span>{errorMsg}</span>
+          </div>
+          <button type="button" onClick={() => setErrorMsg(null)} className="text-rose-400 hover:text-white">✕</button>
+        </div>
+      )}
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
