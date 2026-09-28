@@ -103,16 +103,22 @@ export async function verifyPlayerPinAction(playerId: string, enteredPin: string
   const { data: customPlanLogs } = await supabase
     .from("injury_logs")
     .select("note")
-    .like("note", `[CUSTOM_REHAB_PLAN] %"player_id":"${playerId}"%`)
+    .like("note", "[CUSTOM_REHAB_PLAN]%")
     .order("created_at", { ascending: false })
-    .limit(1);
+    .limit(20);
 
   let customRehabPlan: any = null;
   if (customPlanLogs && customPlanLogs.length > 0) {
-    try {
-      const raw = customPlanLogs[0].note.replace("[CUSTOM_REHAB_PLAN] ", "");
-      customRehabPlan = JSON.parse(raw);
-    } catch {}
+    for (const log of customPlanLogs) {
+      try {
+        const raw = log.note.replace("[CUSTOM_REHAB_PLAN] ", "");
+        const parsed = JSON.parse(raw);
+        if (parsed.player_id === playerId) {
+          customRehabPlan = parsed;
+          break;
+        }
+      } catch {}
+    }
   }
 
   // 7. Отримуємо останні чек-іни для побудови графіка динаміки (VAS & Сон)

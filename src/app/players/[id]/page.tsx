@@ -89,9 +89,9 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
     supabase
       .from("injury_logs")
       .select("note")
-      .like("note", `[CUSTOM_REHAB_PLAN] %"player_id":"${id}"%`)
+      .like("note", "[CUSTOM_REHAB_PLAN]%")
       .order("created_at", { ascending: false })
-      .limit(1),
+      .limit(20),
   ]);
 
   const { data: player, error } = playerRes;
@@ -188,10 +188,16 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
 
   let playerCustomPlan: PlayerCustomRehabPlan | null = null;
   if (planLogsRes.data && planLogsRes.data.length > 0) {
-    try {
-      const raw = planLogsRes.data[0].note.replace("[CUSTOM_REHAB_PLAN] ", "");
-      playerCustomPlan = JSON.parse(raw);
-    } catch {}
+    for (const log of planLogsRes.data) {
+      try {
+        const raw = log.note.replace("[CUSTOM_REHAB_PLAN] ", "");
+        const parsed = JSON.parse(raw);
+        if (parsed.player_id === id) {
+          playerCustomPlan = parsed;
+          break;
+        }
+      } catch {}
+    }
   }
 
   const totalInjuries = injuryList.length;

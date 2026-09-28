@@ -14,20 +14,27 @@ export async function getPlayerRehabPlanAction(playerId: string): Promise<Player
   const { data: logs, error } = await supabase
     .from("injury_logs")
     .select("note, created_at")
-    .like("note", `[CUSTOM_REHAB_PLAN] %"player_id":"${playerId}"%`)
+    .like("note", "[CUSTOM_REHAB_PLAN]%")
     .order("created_at", { ascending: false })
-    .limit(1);
+    .limit(20);
 
   if (error || !logs || logs.length === 0) {
     return null;
   }
 
-  try {
-    const raw = logs[0].note.replace("[CUSTOM_REHAB_PLAN] ", "");
-    return JSON.parse(raw) as PlayerCustomRehabPlan;
-  } catch {
-    return null;
+  for (const log of logs) {
+    try {
+      const raw = log.note.replace("[CUSTOM_REHAB_PLAN] ", "");
+      const parsed = JSON.parse(raw) as PlayerCustomRehabPlan;
+      if (parsed.player_id === playerId) {
+        return parsed;
+      }
+    } catch {
+      continue;
+    }
   }
+
+  return null;
 }
 
 /**
@@ -80,7 +87,7 @@ export async function savePlayerRehabPlanAction(planData: Omit<PlayerCustomRehab
   const { error } = await supabase.from("injury_logs").insert({
     injury_id: targetInjuryId,
     date: new Date().toISOString().split("T")[0],
-    category: "treatment",
+    category: "procedure",
     note: payload,
   } as any);
 

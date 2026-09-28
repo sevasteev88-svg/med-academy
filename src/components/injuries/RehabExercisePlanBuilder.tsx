@@ -40,6 +40,7 @@ export default function RehabExercisePlanBuilder({
     initialPlan?.exercises || []
   );
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
+  const [saveErrorMsg, setSaveErrorMsg] = useState<string | null>(null);
 
   const [isPending, startTransition] = useTransition();
 
@@ -92,6 +93,9 @@ export default function RehabExercisePlanBuilder({
     e.preventDefault();
     if (stagedExercises.length === 0) return;
 
+    setSaveSuccessMsg(null);
+    setSaveErrorMsg(null);
+
     startTransition(async () => {
       const res = await savePlayerRehabPlanAction({
         player_id: playerId,
@@ -105,11 +109,17 @@ export default function RehabExercisePlanBuilder({
         is_active: true,
       });
 
+      if (res.error) {
+        setSaveErrorMsg(res.error);
+        return;
+      }
+
       if (res.success && res.plan) {
         setActivePlan(res.plan);
+        setStagedExercises(res.plan.exercises);
         setIsBuilderOpen(false);
-        setSaveSuccessMsg("План ЛФК збережено та синхронізовано з телефоном гравця! 📱");
-        setTimeout(() => setSaveSuccessMsg(null), 6000);
+        setSaveSuccessMsg(`Комплекс із ${res.plan.exercises.length} вправ збережено та призначено гравцю! 📱`);
+        setTimeout(() => setSaveSuccessMsg(null), 8000);
       }
     });
   };
@@ -145,6 +155,13 @@ export default function RehabExercisePlanBuilder({
         <div className="p-3 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center gap-2">
           <span>✓</span>
           <span>{saveSuccessMsg}</span>
+        </div>
+      )}
+
+      {saveErrorMsg && (
+        <div className="p-3 rounded-xl bg-rose-950/50 border border-rose-500/40 text-rose-300 text-xs font-semibold flex items-center gap-2">
+          <span>⚠️</span>
+          <span>Помилка збереження: {saveErrorMsg}</span>
         </div>
       )}
 
