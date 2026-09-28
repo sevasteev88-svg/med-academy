@@ -87,27 +87,39 @@ export default function RehabPortalClient({
       } else if (res.player) {
         setAuthenticatedPlayer(res.player);
         const primaryInjury = res.player.injuries?.[0];
+        const isHealthy = !primaryInjury;
+
         if (primaryInjury?.vas_score !== undefined) {
           setVasScore(primaryInjury.vas_score || 0);
+        } else {
+          setVasScore(0);
         }
 
-        // Load custom exercises crafted by doctor or fallback to automatic protocol
-        if (res.player.customRehabPlan && res.player.customRehabPlan.exercises?.length > 0) {
-          const customEx = res.player.customRehabPlan.exercises.map((e: any) => ({
-            id: e.exerciseId || e.id || `ex-${Math.random()}`,
-            name: e.name,
-            setsReps: e.setsReps,
-            targetArea: e.targetArea,
-            technique: e.technique,
-            completed: false,
-          }));
-          setExercises(customEx);
+        if (isHealthy) {
+          // Для здорового футболіста відразу відкриваємо вкладку чек-іну і очищуємо ЛФК
+          setActiveTab("checkin");
+          setExercises([]);
+          setQuests([]);
         } else {
-          const phaseNum = (res.player.currentRtpPhase || 1) as RtpPhaseNumber;
-          const initialEx = getExercisesForInjuryAndPhase(primaryInjury?.location || "knee", phaseNum);
-          setExercises(initialEx);
+          setActiveTab("plan");
+          // Load custom exercises crafted by doctor or fallback to automatic protocol
+          if (res.player.customRehabPlan && res.player.customRehabPlan.exercises?.length > 0) {
+            const customEx = res.player.customRehabPlan.exercises.map((e: any) => ({
+              id: e.exerciseId || e.id || `ex-${Math.random()}`,
+              name: e.name,
+              setsReps: e.setsReps,
+              targetArea: e.targetArea,
+              technique: e.technique,
+              completed: false,
+            }));
+            setExercises(customEx);
+          } else {
+            const phaseNum = (res.player.currentRtpPhase || 1) as RtpPhaseNumber;
+            const initialEx = getExercisesForInjuryAndPhase(primaryInjury?.location || "knee", phaseNum);
+            setExercises(initialEx);
+          }
+          setQuests(DEFAULT_RECOVERY_QUESTS);
         }
-        setQuests(DEFAULT_RECOVERY_QUESTS);
       }
     });
   };
@@ -216,22 +228,37 @@ export default function RehabPortalClient({
         </div>
 
         <div className="p-4 rounded-2xl bg-slate-950/70 border border-white/5 text-left text-xs space-y-2">
-          <div className="flex justify-between text-slate-400">
-            <span>Зафіксований біль (ВАШ):</span>
-            <span className="font-mono font-bold text-white">{vasScore} / 10</span>
-          </div>
-          <div className="flex justify-between text-slate-400">
-            <span>Виконано вправ ЛФК:</span>
-            <span className="font-bold text-emerald-400">
-              {completedExercisesCount} з {exercises.length} вправ
-            </span>
-          </div>
-          <div className="flex justify-between text-slate-400">
-            <span>Квести відновлення:</span>
-            <span className="font-bold text-sky-400">
-              {completedQuestsCount} з {quests.length} закрито
-            </span>
-          </div>
+          {primaryInjury ? (
+            <>
+              <div className="flex justify-between text-slate-400">
+                <span>Зафіксований біль (ВАШ):</span>
+                <span className="font-mono font-bold text-white">{vasScore} / 10</span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>Виконано вправ ЛФК:</span>
+                <span className="font-bold text-emerald-400">
+                  {completedExercisesCount} з {exercises.length} вправ
+                </span>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="flex justify-between text-slate-400">
+                <span>Ранковий Wellness:</span>
+                <span className="font-bold text-emerald-400">
+                  {sleepQuality + (6 - fatigueLevel) + muscleSoreness + stressLevel} / 20 балів
+                </span>
+              </div>
+              {hasTrainingSession && (
+                <div className="flex justify-between text-slate-400">
+                  <span>Оцінка тренування:</span>
+                  <span className="font-mono font-bold text-amber-300">
+                    RPE {sessionRpeScore}/10 ({sessionDurationMinutes * sessionRpeScore} AU)
+                  </span>
+                </div>
+              )}
+            </>
+          )}
         </div>
 
         <button
@@ -309,89 +336,118 @@ export default function RehabPortalClient({
           </div>
         )}
 
-        {/* Countdown & RTP Journey Header */}
-        <div className={`p-4 rounded-2xl border ${currentPhaseCfg.borderClass} ${currentPhaseCfg.bgClass} space-y-2.5`}>
-          <div className="flex items-center justify-between">
-            <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border ${currentPhaseCfg.badgeClass}`}>
-              {currentPhaseCfg.shortTitle}
-            </span>
-
-            {daysRemaining !== null && (
-              <span className="text-xs font-mono font-bold text-white bg-slate-900/80 px-2.5 py-1 rounded-xl border border-white/10 flex items-center gap-1">
-                <span>⏳ До повернення:</span>
-                <span className={daysRemaining <= 3 ? "text-emerald-400" : "text-sky-300"}>
-                  ~{daysRemaining > 0 ? `${daysRemaining} дн.` : "Сьогодні!"}
-                </span>
+        {/* Countdown & RTP Journey Header (тільки для травмованих гравців на етапі реабілітації) */}
+        {primaryInjury && (
+          <div className={`p-4 rounded-2xl border ${currentPhaseCfg.borderClass} ${currentPhaseCfg.bgClass} space-y-2.5`}>
+            <div className="flex items-center justify-between">
+              <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border ${currentPhaseCfg.badgeClass}`}>
+                {currentPhaseCfg.shortTitle}
               </span>
-            )}
-          </div>
 
-          <div>
-            <div className="text-xs font-bold text-white">{currentPhaseCfg.title}</div>
-            <p className="text-[11px] text-slate-300 leading-snug mt-0.5">
-              {currentPhaseCfg.tagline}
-            </p>
-          </div>
-
-          {/* 5-Phase Mini Dots */}
-          <div className="pt-1.5 border-t border-white/10">
-            <div className="flex items-center justify-between text-[9px] text-slate-400 mb-1">
-              <span>Шлях повернення у гру</span>
-              <span className="font-mono text-sky-400 font-bold">{currentPhaseNumber * 20}%</span>
+              {daysRemaining !== null && (
+                <span className="text-xs font-mono font-bold text-white bg-slate-900/80 px-2.5 py-1 rounded-xl border border-white/10 flex items-center gap-1">
+                  <span>⏳ До повернення:</span>
+                  <span className={daysRemaining <= 3 ? "text-emerald-400" : "text-sky-300"}>
+                    ~{daysRemaining > 0 ? `${daysRemaining} дн.` : "Сьогодні!"}
+                  </span>
+                </span>
+              )}
             </div>
-            <div className="flex gap-1.5">
-              {[1, 2, 3, 4, 5].map((st) => (
-                <div
-                  key={st}
-                  className={`flex-1 h-1.5 rounded-full transition-all ${
-                    st < currentPhaseNumber
-                      ? "bg-emerald-400"
-                      : st === currentPhaseNumber
-                      ? "bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.8)]"
-                      : "bg-slate-800"
-                  }`}
-                />
-              ))}
+
+            <div>
+              <div className="text-xs font-bold text-white">{currentPhaseCfg.title}</div>
+              <p className="text-[11px] text-slate-300 leading-snug mt-0.5">
+                {currentPhaseCfg.tagline}
+              </p>
+            </div>
+
+            {/* 5-Phase Mini Dots */}
+            <div className="pt-1.5 border-t border-white/10">
+              <div className="flex items-center justify-between text-[9px] text-slate-400 mb-1">
+                <span>Шлях повернення у гру</span>
+                <span className="font-mono text-sky-400 font-bold">{currentPhaseNumber * 20}%</span>
+              </div>
+              <div className="flex gap-1.5">
+                {[1, 2, 3, 4, 5].map((st) => (
+                  <div
+                    key={st}
+                    className={`flex-1 h-1.5 rounded-full transition-all ${
+                      st < currentPhaseNumber
+                        ? "bg-emerald-400"
+                        : st === currentPhaseNumber
+                        ? "bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.8)]"
+                        : "bg-slate-800"
+                    }`}
+                  />
+                ))}
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
-        {/* 3 Main Tabs */}
-        <div className="grid grid-cols-3 gap-1 p-1 bg-slate-950/80 rounded-2xl border border-sky-500/20 text-xs font-semibold">
-          <button
-            type="button"
-            onClick={() => setActiveTab("plan")}
-            className={`py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
-              activeTab === "plan"
-                ? "bg-sky-500 text-white shadow-md shadow-sky-500/30"
-                : "text-slate-400 hover:text-white"
-            }`}
-          >
-            <span>🏋️</span> План ЛФК
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("checkin")}
-            className={`py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
-              activeTab === "checkin"
-                ? "bg-sky-500 text-white shadow-md shadow-sky-500/30"
-                : "text-slate-400 hover:text-white"
-            }`}
-          >
-            <span>🩹</span> Чек-ін
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("progress")}
-            className={`py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
-              activeTab === "progress"
-                ? "bg-sky-500 text-white shadow-md shadow-sky-500/30"
-                : "text-slate-400 hover:text-white"
-            }`}
-          >
-            <span>📈</span> Прогрес
-          </button>
-        </div>
+        {/* Tabs: для травмованих 3 вкладки, для здорових фокус на Чек-ін та Прогрес */}
+        {primaryInjury ? (
+          <div className="grid grid-cols-3 gap-1 p-1 bg-slate-950/80 rounded-2xl border border-sky-500/20 text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => setActiveTab("plan")}
+              className={`py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                activeTab === "plan"
+                  ? "bg-sky-500 text-white shadow-md shadow-sky-500/30"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              <span>🏋️</span> План ЛФК
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("checkin")}
+              className={`py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                activeTab === "checkin"
+                  ? "bg-sky-500 text-white shadow-md shadow-sky-500/30"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              <span>📋</span> Чек-ін
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("progress")}
+              className={`py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                activeTab === "progress"
+                  ? "bg-sky-500 text-white shadow-md shadow-sky-500/30"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              <span>📈</span> Динаміка
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-1 p-1 bg-slate-950/80 rounded-2xl border border-sky-500/20 text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => setActiveTab("checkin")}
+              className={`py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                activeTab === "checkin"
+                  ? "bg-sky-500 text-white shadow-md shadow-sky-500/30"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              <span>☀️</span> Щоденний Wellness
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("progress")}
+              className={`py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                activeTab === "progress"
+                  ? "bg-sky-500 text-white shadow-md shadow-sky-500/30"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              <span>📈</span> Мій стан та сон
+            </button>
+          </div>
+        )}
 
         {/* TAB 1: План ЛФК та Квести відновлення */}
         {activeTab === "plan" && (
@@ -495,101 +551,106 @@ export default function RehabPortalClient({
         {/* TAB 2: Чек-ін стану та болю */}
         {activeTab === "checkin" && (
           <form onSubmit={handleSubmitCheckin} className="space-y-4 animate-fadeIn">
-            {/* VAS Pain Slider */}
-            <div className="space-y-2 p-3.5 rounded-2xl bg-slate-950/60 border border-white/5">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
-                  <span>🩹</span> Рівень болю зараз (Шкала ВАШ):
-                </label>
-                <span className={`font-mono text-xs font-black px-2.5 py-0.5 rounded-lg border ${
-                  vasScore >= 7
-                    ? "bg-rose-500/20 text-rose-300 border-rose-500/30"
-                    : vasScore >= 4
-                    ? "bg-amber-500/20 text-amber-300 border-amber-500/30"
-                    : "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
-                }`}>
-                  {vasScore} / 10
-                </span>
-              </div>
+            {/* Injury-Specific Assessment: VAS Pain, Swelling, Stiffness, I-PRRS (тільки якщо у гравця є активна травма) */}
+            {primaryInjury && (
+              <>
+                {/* VAS Pain Slider */}
+                <div className="space-y-2 p-3.5 rounded-2xl bg-slate-950/60 border border-white/5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                      <span>🩹</span> Рівень болю у місці пошкодження (Шкала ВАШ):
+                    </label>
+                    <span className={`font-mono text-xs font-black px-2.5 py-0.5 rounded-lg border ${
+                      vasScore >= 7
+                        ? "bg-rose-500/20 text-rose-300 border-rose-500/30"
+                        : vasScore >= 4
+                        ? "bg-amber-500/20 text-amber-300 border-amber-500/30"
+                        : "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
+                    }`}>
+                      {vasScore} / 10
+                    </span>
+                  </div>
 
-              <input
-                type="range"
-                min="0"
-                max="10"
-                step="1"
-                value={vasScore}
-                onChange={(e) => setVasScore(Number(e.target.value))}
-                className="w-full accent-sky-400 cursor-pointer"
-              />
+                  <input
+                    type="range"
+                    min="0"
+                    max="10"
+                    step="1"
+                    value={vasScore}
+                    onChange={(e) => setVasScore(Number(e.target.value))}
+                    className="w-full accent-sky-400 cursor-pointer"
+                  />
 
-              <div className="flex justify-between text-[10px] text-slate-400 font-medium">
-                <span>0 (Не болить)</span>
-                <span>3 (Дискомфорт)</span>
-                <span>6 (Помірний)</span>
-                <span>10 (Сильний)</span>
-              </div>
-            </div>
+                  <div className="flex justify-between text-[10px] text-slate-400 font-medium">
+                    <span>0 (Не болить)</span>
+                    <span>3 (Дискомфорт)</span>
+                    <span>6 (Помірний)</span>
+                    <span>10 (Сильний)</span>
+                  </div>
+                </div>
 
-            {/* Swelling & Stiffness */}
-            <div className="grid grid-cols-2 gap-2.5">
-              <div className="space-y-1.5 p-3 rounded-2xl bg-slate-950/60 border border-white/5">
-                <label className="text-[11px] font-bold text-slate-300 block">
-                  🦿 Набряк у суглобі/м'язі:
-                </label>
-                <select
-                  value={swelling}
-                  onChange={(e: any) => setSwelling(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-sky-400"
-                >
-                  <option value="none">Відсутній (Норма)</option>
-                  <option value="mild">Легкий набряк</option>
-                  <option value="moderate">Помірний набряк</option>
-                  <option value="severe">Виражений набряк ⚠️</option>
-                </select>
-              </div>
+                {/* Swelling & Stiffness */}
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div className="space-y-1.5 p-3 rounded-2xl bg-slate-950/60 border border-white/5">
+                    <label className="text-[11px] font-bold text-slate-300 block">
+                      🦿 Набряк у суглобі/м&apos;язі:
+                    </label>
+                    <select
+                      value={swelling}
+                      onChange={(e: any) => setSwelling(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-sky-400"
+                    >
+                      <option value="none">Відсутній (Норма)</option>
+                      <option value="mild">Легкий набряк</option>
+                      <option value="moderate">Помірний набряк</option>
+                      <option value="severe">Виражений набряк ⚠️</option>
+                    </select>
+                  </div>
 
-              <div className="space-y-1.5 p-3 rounded-2xl bg-slate-950/60 border border-white/5">
-                <label className="text-[11px] font-bold text-slate-300 block">
-                  ⏰ Ранкова скутість:
-                </label>
-                <select
-                  value={stiffnessMinutes}
-                  onChange={(e) => setStiffnessMinutes(Number(e.target.value))}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-sky-400"
-                >
-                  <option value={0}>Немає (0 хв)</option>
-                  <option value={15}>До 15 хв</option>
-                  <option value={30}>15 - 30 хв</option>
-                  <option value={60}>Більше 30 хв</option>
-                </select>
-              </div>
-            </div>
+                  <div className="space-y-1.5 p-3 rounded-2xl bg-slate-950/60 border border-white/5">
+                    <label className="text-[11px] font-bold text-slate-300 block">
+                      ⏰ Ранкова скутість:
+                    </label>
+                    <select
+                      value={stiffnessMinutes}
+                      onChange={(e) => setStiffnessMinutes(Number(e.target.value))}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-sky-400"
+                    >
+                      <option value={0}>Немає (0 хв)</option>
+                      <option value={15}>До 15 хв</option>
+                      <option value={30}>15 - 30 хв</option>
+                      <option value={60}>Більше 30 хв</option>
+                    </select>
+                  </div>
+                </div>
 
-            {/* Psychological Readiness (FIFA I-PRRS) */}
-            <div className="space-y-2 p-3.5 rounded-2xl bg-slate-950/60 border border-white/5">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
-                  <span>🏆</span> Психологічна впевненість у кінцівці (без страху):
-                </label>
-                <span className="font-mono text-xs font-bold text-sky-400">
-                  {psychReadiness} / 10
-                </span>
-              </div>
-              <input
-                type="range"
-                min="1"
-                max="10"
-                step="1"
-                value={psychReadiness}
-                onChange={(e) => setPsychReadiness(Number(e.target.value))}
-                className="w-full accent-indigo-400 cursor-pointer"
-              />
-              <div className="flex justify-between text-[10px] text-slate-400">
-                <span>1 (Боюся наступати)</span>
-                <span>5 (Обережно)</span>
-                <span>10 (100% впевнений)</span>
-              </div>
-            </div>
+                {/* Psychological Readiness (FIFA I-PRRS) */}
+                <div className="space-y-2 p-3.5 rounded-2xl bg-slate-950/60 border border-white/5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                      <span>🏆</span> Психологічна впевненість у кінцівці (без страху):
+                    </label>
+                    <span className="font-mono text-xs font-bold text-sky-400">
+                      {psychReadiness} / 10
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max="10"
+                    step="1"
+                    value={psychReadiness}
+                    onChange={(e) => setPsychReadiness(Number(e.target.value))}
+                    className="w-full accent-indigo-400 cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[10px] text-slate-400">
+                    <span>1 (Боюся наступати)</span>
+                    <span>5 (Обережно)</span>
+                    <span>10 (100% впевнений)</span>
+                  </div>
+                </div>
+              </>
+            )}
 
             {/* Hooper-Mackinnon 4-metric Morning Wellness */}
             <div className="p-3.5 rounded-2xl bg-slate-950/70 border border-sky-500/20 space-y-3">
