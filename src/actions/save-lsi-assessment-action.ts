@@ -56,7 +56,7 @@ export async function saveLsiAssessmentAction(
   const { error } = await supabase.from("injury_logs").insert({
     injury_id: targetInjuryId,
     date: assessmentData.date,
-    category: "functional_test",
+    category: "examination",
     note: payload,
   } as any);
 
