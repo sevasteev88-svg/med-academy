@@ -45,8 +45,41 @@ export async function saveWearableBiometricsAction(input: {
 
   const payload = `[WEARABLE] ${JSON.stringify(record)}`;
 
+  // Отримуємо існуючу травму гравця (активну або будь-яку останню) для прив'язки запису журналу
+  let targetInjuryId: string | null = null;
+  const { data: activeInjuries } = await supabase
+    .from("injuries")
+    .select("id")
+    .eq("player_id", input.playerId)
+    .order("date_of_injury", { ascending: false })
+    .limit(1);
+
+  if (activeInjuries && activeInjuries.length > 0) {
+    targetInjuryId = activeInjuries[0].id;
+  } else {
+    // Якщо у гравця ще немає жодного запису в injuries — створюємо системний базовий запис медичного моніторингу
+    const { data: newInjury, error: createInjErr } = await supabase
+      .from("injuries")
+      .insert({
+        player_id: input.playerId,
+        date_of_injury: record.date,
+        injury_type: "illness",
+        location: "other",
+        severity: "minor",
+        status: "closed",
+        description: "Базовий медичний моніторинг / Біометрія",
+        vas_score: 0,
+      } as any)
+      .select("id")
+      .single();
+
+    if (!createInjErr && newInjury) {
+      targetInjuryId = newInjury.id;
+    }
+  }
+
   const { error } = await supabase.from("injury_logs").insert({
-    injury_id: null as any,
+    injury_id: targetInjuryId,
     date: record.date,
     category: "examination",
     note: payload,
