@@ -10,45 +10,44 @@ export const metadata = {
 export default async function RehabPortalPage() {
   const supabase = await createClient();
 
-  // Отримуємо всіх травмованих гравців
-  const { data: injuriesData } = await supabase
-    .from("injuries")
+  // Отримуємо всіх гравців клубу (здорових та травмованих)
+  const { data: playersData } = await supabase
+    .from("players")
     .select(`
       id,
-      location,
-      description,
-      injury_type,
-      players!inner (
+      first_name,
+      last_name,
+      position,
+      teams (
+        name
+      ),
+      injuries (
         id,
-        first_name,
-        last_name,
-        position,
-        teams (
-          name
-        )
+        location,
+        description,
+        injury_type,
+        status,
+        date_of_injury
       )
     `)
-    .in("status", ["active", "rehabilitation"])
-    .order("date_of_injury", { ascending: false });
+    .order("last_name", { ascending: true });
 
-  // Унікальні гравці
-  const seenPlayers = new Set<string>();
-  const injuredPlayers = (injuriesData || [])
-    .map((inj: any) => {
-      const pl = inj.players;
-      if (!pl || seenPlayers.has(pl.id)) return null;
-      seenPlayers.add(pl.id);
+  const allPlayers = (playersData || []).map((pl: any) => {
+    const activeInjuries = (pl.injuries || []).filter(
+      (i: any) => i.status === "active" || i.status === "rehabilitation"
+    );
+    const primaryInj = activeInjuries[0];
 
-      return {
-        id: pl.id,
-        name: `${pl.last_name} ${pl.first_name}`,
-        team: pl.teams?.name || "Академія",
-        position: pl.position,
-        diagnosis: inj.description || inj.injury_type || "Травма",
-        location: inj.location,
-      };
-    })
-    .filter(Boolean) as any[];
+    return {
+      id: pl.id,
+      name: `${pl.last_name} ${pl.first_name}`,
+      team: pl.teams?.name || "Академія",
+      position: pl.position,
+      diagnosis: primaryInj ? (primaryInj.description || primaryInj.injury_type || "Травма") : "Здоровий (Основна група)",
+      location: primaryInj ? primaryInj.location : "full_fit",
+      isInjured: Boolean(primaryInj),
+    };
+  });
 
   return (
     <div className="min-h-screen text-slate-200 flex flex-col justify-between p-4 sm:p-6 md:p-8">
@@ -67,7 +66,7 @@ export default async function RehabPortalPage() {
 
       {/* Main Client Component */}
       <div className="flex-1 flex items-center justify-center">
-        <RehabPortalClient injuredPlayers={injuredPlayers} />
+        <RehabPortalClient injuredPlayers={allPlayers} />
       </div>
 
       {/* Footer */}

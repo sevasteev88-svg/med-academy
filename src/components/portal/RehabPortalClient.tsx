@@ -15,6 +15,7 @@ interface PlayerOption {
   position: string;
   diagnosis: string;
   location: string;
+  isInjured?: boolean;
 }
 
 export default function RehabPortalClient({
@@ -267,7 +268,16 @@ export default function RehabPortalClient({
                 {authenticatedPlayer.name}
               </h2>
               <p className="text-xs text-slate-400 mt-0.5">
-                {authenticatedPlayer.team} · <span className="text-rose-300 font-medium">{primaryInjury?.diagnosis || "Відновлення"}</span>
+                {authenticatedPlayer.team} ·{" "}
+                {primaryInjury ? (
+                  <span className="text-rose-300 font-medium">
+                    {primaryInjury.diagnosis || primaryInjury.injury_type || "Відновлення"}
+                  </span>
+                ) : (
+                  <span className="text-emerald-400 font-medium">
+                    🟢 Основна група (Готовий)
+                  </span>
+                )}
               </p>
             </div>
           </div>
@@ -1041,11 +1051,17 @@ export default function RehabPortalClient({
             className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-sky-400 transition-colors"
           >
             <option value="">— Оберіть зі списку —</option>
-            {injuredPlayers.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name} ({p.team} · {LOCATION_UA[p.location] || p.location})
-              </option>
-            ))}
+            {injuredPlayers.map((p) => {
+              const statusTag = p.isInjured
+                ? `🩹 ${LOCATION_UA[p.location] || p.diagnosis || "Реабілітація"}`
+                : "🟢 Здоровий";
+
+              return (
+                <option key={p.id} value={p.id}>
+                  {p.name} ({p.team} · {statusTag})
+                </option>
+              );
+            })}
           </select>
         </div>
 
