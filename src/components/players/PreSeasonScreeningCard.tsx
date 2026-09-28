@@ -65,8 +65,11 @@ export default function PreSeasonScreeningCard({
   const latest = screenings[0] || null;
   const latestMeta = latest ? CLEARANCE_STATUS_META[latest.overall_status] : null;
 
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMsg(null);
 
     startTransition(async () => {
       const res = await saveScreeningAction({
@@ -96,7 +99,9 @@ export default function PreSeasonScreeningCard({
         valid_until: validUntil,
       });
 
-      if (res.screening) {
+      if (res.error) {
+        setErrorMsg(res.error);
+      } else if (res.screening) {
         setScreenings([res.screening, ...screenings]);
         setSelectedScreening(res.screening);
         setIsFormOpen(false);
@@ -106,6 +111,15 @@ export default function PreSeasonScreeningCard({
 
   return (
     <div className="bg-slate-900/90 border border-blue-900/25 rounded-2xl p-5 space-y-4">
+      {errorMsg && (
+        <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span>⚠️</span>
+            <span>{errorMsg}</span>
+          </div>
+          <button type="button" onClick={() => setErrorMsg(null)} className="text-rose-400 hover:text-white">✕</button>
+        </div>
+      )}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-blue-900/20 pb-3">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-xl">
