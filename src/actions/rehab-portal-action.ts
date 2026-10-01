@@ -162,8 +162,9 @@ export async function verifyPlayerPinAction(playerId: string, enteredPin: string
 export async function submitRehabCheckinAction(data: RehabCheckinData) {
   const supabase = await createClient();
 
-  // Знаходимо цільову травму або будь-яку останню травму гравця
-  let targetInjuryId = data.injury_id;
+  // Знаходимо цільову травму або прив'язуємо до існуючої / null
+  let targetInjuryId: string | null = (data.injury_id && data.injury_id.trim() !== "") ? data.injury_id.trim() : null;
+
   if (!targetInjuryId) {
     const { data: existingInj } = await supabase
       .from("injuries")
@@ -172,11 +173,11 @@ export async function submitRehabCheckinAction(data: RehabCheckinData) {
       .order("date_of_injury", { ascending: false })
       .limit(1);
 
-    if (existingInj && existingInj.length > 0) {
+    if (existingInj && existingInj.length > 0 && existingInj[0].id) {
       targetInjuryId = existingInj[0].id;
     } else {
-      // Створюємо системний запис для зв'язку
-      const { data: newInj } = await supabase
+      // Створюємо системний базовий запис для здорового гравця, щоб зв'язати журнал
+      const { data: newInj, error: newInjErr } = await supabase
         .from("injuries")
         .insert({
           player_id: data.player_id,
@@ -189,30 +190,46 @@ export async function submitRehabCheckinAction(data: RehabCheckinData) {
           vas_score: data.vas_score ?? 0,
         } as any)
         .select("id")
-        .single();
+        .maybeSingle();
 
-      if (newInj) targetInjuryId = newInj.id;
+      if (newInj && newInj.id) {
+        targetInjuryId = newInj.id;
+      } else {
+        // Якщо таблиця injuries вимагає особливих прав або повертає null — targetInjuryId залишається null
+        targetInjuryId = null;
+      }
     }
   }
 
   const payload: RehabCheckinData = {
     ...data,
-    injury_id: targetInjuryId,
+    injury_id: targetInjuryId || "",
     date: data.date || new Date().toISOString().split("T")[0],
     time: data.time || new Date().toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" }),
   };
 
-  // Зберігаємо у журнал injury_logs (таблиця має колонки: id, injury_id, date, note, category)
-  const { error: logErr } = await supabase.from("injury_logs").insert({
-    injury_id: targetInjuryId,
+  // Зберігаємо у журнал injury_logs (якщо targetInjuryId валідний або null, не порожній рядок "")
+  const logInsertData: any = {
     category: "note",
     date: payload.date,
     note: `[REHAB_CHECKIN] ${JSON.stringify(payload)}`,
-  });
+  };
+  if (targetInjuryId) {
+    logInsertData.injury_id = targetInjuryId;
+  }
+
+  const { error: logErr } = await supabase.from("injury_logs").insert(logInsertData);
 
   if (logErr) {
     return { error: `Помилка збереження рапорту: ${logErr.message}` };
   }
+
+  // Допоміжна функція безпечного додавання в injury_logs
+  const safeInsertLog = async (category: string, date: string, note: string) => {
+    const logItem: any = { category, date, note };
+    if (targetInjuryId) logItem.injury_id = targetInjuryId;
+    return supabase.from("injury_logs").insert(logItem);
+  };
 
   // Якщо футболіст заповнив показники свого девайса (Oura / Apple Watch / WHOOP) — записуємо також у біометричний трекінг гравця
   if (data.wearable_data) {
@@ -230,12 +247,7 @@ export async function submitRehabCheckinAction(data: RehabCheckinData) {
       created_at: new Date().toISOString(),
     };
 
-    await supabase.from("injury_logs").insert({
-      injury_id: targetInjuryId,
-      category: "procedure",
-      date: payload.date,
-      note: `[WEARABLE] ${JSON.stringify(wearEntry)}`,
-    });
+    await safeInsertLog("procedure", payload.date, `[WEARABLE] ${JSON.stringify(wearEntry)}`);
   }
 
   // Якщо футболіст відповів на пункти Хопкінса/Макліна (сон, втома, крепатура, стрес) — синхронізуємо в розділ /wellness
@@ -255,12 +267,7 @@ export async function submitRehabCheckinAction(data: RehabCheckinData) {
       created_at: new Date().toISOString(),
     };
 
-    await supabase.from("injury_logs").insert({
-      injury_id: targetInjuryId,
-      category: "examination",
-      date: payload.date,
-      note: `[WELLNESS] ${JSON.stringify(wellSurvey)}`,
-    });
+    await safeInsertLog("examination", payload.date, `[WELLNESS] ${JSON.stringify(wellSurvey)}`);
   }
 
   // Якщо футболіст вказав навантаження тренування (тривалість + RPE за шкалою Борга) — записуємо сесію для розрахунку ACWR
@@ -279,12 +286,7 @@ export async function submitRehabCheckinAction(data: RehabCheckinData) {
       created_at: new Date().toISOString(),
     };
 
-    await supabase.from("injury_logs").insert({
-      injury_id: targetInjuryId,
-      category: "procedure",
-      date: payload.date,
-      note: `[WORKLOAD] ${JSON.stringify(sessionPayload)}`,
-    });
+    await safeInsertLog("procedure", payload.date, `[WORKLOAD] ${JSON.stringify(sessionPayload)}`);
   }
 
   // Оновлюємо поточний бал болю ВАШ у травмі

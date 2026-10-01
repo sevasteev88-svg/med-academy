@@ -65,6 +65,11 @@ export default function AppNav({
     startTransition(async () => { await logoutAction(); });
   }
 
+  // Гравець у кабінеті не повинен бачити панель лікаря/тренера і переходити по ній
+  if (pathname.startsWith("/rehab-portal")) {
+    return null;
+  }
+
   return (
     <>
       {/* Десктоп / Планшет / Ландшафт */}

@@ -55,12 +55,14 @@ export default async function RehabPortalPage() {
     <div className="min-h-screen text-slate-200 flex flex-col justify-between p-4 sm:p-6 md:p-8">
       {/* Top minimal header */}
       <div className="max-w-md mx-auto w-full flex items-center justify-between pb-4 gap-2">
-        <Link
-          href="/"
-          className="text-xs text-slate-500 hover:text-sky-300 transition-colors flex items-center gap-1"
-        >
-          <span>←</span> На головну
-        </Link>
+        <div className="flex items-center gap-2">
+          <div className="w-6 h-6 rounded-lg bg-sky-500/20 flex items-center justify-center text-xs">
+            ⚽
+          </div>
+          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+            ФК Чорноморець · Кабінет гравця
+          </span>
+        </div>
         <PortalQrCodeModal />
       </div>
 
