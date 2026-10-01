@@ -7,6 +7,8 @@ export const metadata = {
   description: "Особистий кабінет травмованого футболіста для щоденного звіту про біль та відновлення",
 };
 
+import PortalQrCodeModal from "@/components/portal/PortalQrCodeModal";
+
 export default async function RehabPortalPage() {
   const supabase = await createClient();
 
@@ -52,16 +54,14 @@ export default async function RehabPortalPage() {
   return (
     <div className="min-h-screen text-slate-200 flex flex-col justify-between p-4 sm:p-6 md:p-8">
       {/* Top minimal header */}
-      <div className="max-w-md mx-auto w-full flex items-center justify-between pb-4">
+      <div className="max-w-md mx-auto w-full flex items-center justify-between pb-4 gap-2">
         <Link
           href="/"
           className="text-xs text-slate-500 hover:text-sky-300 transition-colors flex items-center gap-1"
         >
           <span>←</span> На головну
         </Link>
-        <span className="text-[10px] font-mono text-slate-500">
-          FC Chornomorets Medical Portal
-        </span>
+        <PortalQrCodeModal />
       </div>
 
       {/* Main Client Component */}

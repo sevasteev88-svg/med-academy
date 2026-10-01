@@ -4,6 +4,7 @@ import React, { useState, useTransition } from "react";
 import Link from "next/link";
 import Card from "@/components/ui/Card";
 import { setPlayerPinAction, saveDoctorInstructionAction } from "@/actions/rehab-portal-action";
+import PortalQrCodeModal from "@/components/portal/PortalQrCodeModal";
 import type { RehabCheckinData } from "@/types/rehab-portal";
 
 export default function PlayerRehabCheckinHistory({
@@ -91,8 +92,12 @@ export default function PlayerRehabCheckinHistory({
           </div>
         </div>
 
-        {/* PIN management */}
-        <div className="flex items-center gap-2">
+        {/* PIN management & QR code */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <PortalQrCodeModal
+            title={`Медичний Портал · ${playerName}`}
+            subtitle="Скануйте для швидкого входу та внесення щоденного велнесу"
+          />
           {!isEditingPin ? (
             <div className="flex items-center gap-2 bg-slate-950/70 px-3 py-1.5 rounded-xl border border-sky-500/20">
               <span className="text-[10px] text-slate-400">Особистий PIN:</span>
