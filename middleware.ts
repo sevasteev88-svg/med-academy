@@ -21,9 +21,9 @@ export async function middleware(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   const path = request.nextUrl.pathname;
 
-  // Публічні сторінки — не вимагають авторизації
-  if (path === "/login" || path === "/register") {
-    if (user) {
+  // Публічні сторінки — не вимагають авторизації лікаря (вхід, реєстрація та портал гравця за PIN)
+  if (path === "/login" || path === "/register" || path.startsWith("/rehab-portal")) {
+    if (user && (path === "/login" || path === "/register")) {
       return NextResponse.redirect(new URL("/", request.url));
     }
     return response;

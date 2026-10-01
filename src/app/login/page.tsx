@@ -53,7 +53,7 @@ export default function LoginPage() {
             className="w-full py-3 px-4 rounded-xl border border-sky-500/30 bg-slate-900/80 hover:bg-slate-800 text-sky-300 font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-lg active:scale-95 text-center"
           >
             <span>📱</span>
-            <span>Вхід для травмованих гравців (PIN-код)</span>
+            <span>Вхід для футболістів клубу (PIN-код)</span>
           </Link>
 
           <p className="text-center text-xs text-slate-500">
