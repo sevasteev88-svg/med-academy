@@ -12,6 +12,7 @@ import PlayerPhotoUploader from "@/components/players/PlayerPhotoUploader";
 import WearablesBiometricsCard from "@/components/players/WearablesBiometricsCard";
 import PlayerSportsIntelligenceCard from "@/components/players/PlayerSportsIntelligenceCard";
 import PlayerRehabCheckinHistory from "@/components/players/PlayerRehabCheckinHistory";
+import { getOrGeneratePlayerPortalToken } from "@/actions/rehab-portal-action";
 import LsiSymmetryAssessmentCard from "@/components/injuries/LsiSymmetryAssessmentCard";
 import RehabExercisePlanBuilder from "@/components/injuries/RehabExercisePlanBuilder";
 import type { PreSeasonScreening } from "@/types/screening";
@@ -165,14 +166,7 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
     })
     .filter(Boolean) as RehabCheckinData[];
 
-  let customPin = "";
-  if (pinLogsRes.data && pinLogsRes.data.length > 0) {
-    try {
-      const raw = pinLogsRes.data[0].note.replace("[PLAYER_PIN] ", "");
-      const parsed = JSON.parse(raw);
-      customPin = parsed.pin;
-    } catch {}
-  }
+  const portalToken = await getOrGeneratePlayerPortalToken(id);
 
   const lsiRecords = (lsiLogsRes.data || [])
     .map((l) => {
@@ -354,8 +348,7 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
         <PlayerRehabCheckinHistory
           playerId={id}
           playerName={`${player.last_name} ${player.first_name}`}
-          dateOfBirth={player.date_of_birth}
-          currentPin={customPin}
+          portalToken={portalToken}
           checkins={rehabCheckins}
         />
 

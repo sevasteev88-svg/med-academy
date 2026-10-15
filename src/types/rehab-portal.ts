@@ -52,7 +52,8 @@ export interface RehabCheckinData {
 
 export interface PlayerPinRecord {
   player_id: string;
-  pin: string; // 4 digits
+  pin_hash?: string;
+  must_change_pin?: boolean;
   updated_at: string;
 }
 
@@ -61,4 +62,12 @@ export interface DoctorDailyInstruction {
   instruction: string;
   appointment_time?: string;
   updated_at: string;
+}
+
+export interface PlayerSessionPayload {
+  playerId: string;
+  portalToken: string;
+  mustChangePin: boolean;
+  issuedAt: number;
+  expiresAt: number;
 }

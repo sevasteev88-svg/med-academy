@@ -1,33 +1,50 @@
 "use client";
 
 import React, { useState, useTransition, useMemo } from "react";
-import Link from "next/link";
-import { verifyPlayerPinAction, submitRehabCheckinAction } from "@/actions/rehab-portal-action";
+import {
+  authenticatePlayerWithTokenAction,
+  changePlayerPinAction,
+  submitRehabCheckinAction,
+  playerLogoutAction,
+} from "@/actions/rehab-portal-action";
 import { RTP_PHASES, type RtpPhaseNumber } from "@/types/rtp";
 import { getExercisesForInjuryAndPhase, DEFAULT_RECOVERY_QUESTS } from "@/lib/rehab-exercises";
 import type { RehabExerciseItem, DailyRecoveryQuest } from "@/types/rehab-portal";
 import { LOCATION_UA } from "@/lib/constants";
 
-interface PlayerOption {
-  id: string;
-  name: string;
-  team: string;
-  position: string;
-  diagnosis: string;
-  location: string;
-  isInjured?: boolean;
+interface Props {
+  initialSessionData?: any;
+  tokenFromUrl?: string;
+  playerPreview?: {
+    name: string;
+    team: string;
+    position: string;
+  } | null;
 }
 
 export default function RehabPortalClient({
-  injuredPlayers,
-}: {
-  injuredPlayers: PlayerOption[];
-}) {
-  const [selectedPlayerId, setSelectedPlayerId] = useState<string>("");
+  initialSessionData,
+  tokenFromUrl = "",
+  playerPreview,
+}: Props) {
+  const [tokenInput, setTokenInput] = useState<string>(tokenFromUrl);
   const [pin, setPin] = useState<string>("");
   const [authError, setAuthError] = useState<string | null>(null);
-  const [authenticatedPlayer, setAuthenticatedPlayer] = useState<any | null>(null);
+  const [authenticatedPlayer, setAuthenticatedPlayer] = useState<any | null>(
+    initialSessionData?.player || null
+  );
+  const [mustChangePin, setMustChangePin] = useState<boolean>(
+    Boolean(initialSessionData?.mustChangePin)
+  );
+
+  // Forced PIN change state
+  const [newPin, setNewPin] = useState<string>("");
+  const [confirmPin, setConfirmPin] = useState<string>("");
+  const [changePinError, setChangePinError] = useState<string | null>(null);
+  const [isChangingPin, startChangePin] = useTransition();
+
   const [isVerifying, startVerify] = useTransition();
+  const [isLoggingOut, startLogout] = useTransition();
 
   // Active Tab inside Player Cabinet
   const [activeTab, setActiveTab] = useState<"plan" | "checkin" | "progress">("plan");
@@ -67,60 +84,110 @@ export default function RehabPortalClient({
   const [isSubmitted, setIsSubmitted] = useState<boolean>(false);
   const [isSubmitting, startSubmit] = useTransition();
 
-  // Verify PIN
+  // Initialize exercises on mount if already authenticated
+  React.useEffect(() => {
+    if (initialSessionData?.player) {
+      setupPlayerData(initialSessionData.player);
+    }
+  }, [initialSessionData]);
+
+  const setupPlayerData = (player: any) => {
+    const primaryInjury = player.injuries?.[0];
+    const isHealthy = !primaryInjury;
+
+    if (primaryInjury?.vas_score !== undefined) {
+      setVasScore(primaryInjury.vas_score || 0);
+    } else {
+      setVasScore(0);
+    }
+
+    if (isHealthy) {
+      setActiveTab("checkin");
+      setExercises([]);
+      setQuests([]);
+    } else {
+      setActiveTab("plan");
+      if (player.customRehabPlan && player.customRehabPlan.exercises?.length > 0) {
+        const customEx = player.customRehabPlan.exercises.map((e: any) => ({
+          id: e.exerciseId || e.id || `ex-${Math.random()}`,
+          name: e.name,
+          setsReps: e.setsReps,
+          targetArea: e.targetArea,
+          technique: e.technique,
+          completed: false,
+        }));
+        setExercises(customEx);
+      } else {
+        const phaseNum = (player.currentRtpPhase || 1) as RtpPhaseNumber;
+        const initialEx = getExercisesForInjuryAndPhase(primaryInjury?.location || "knee", phaseNum);
+        setExercises(initialEx);
+      }
+      setQuests(DEFAULT_RECOVERY_QUESTS);
+    }
+  };
+
+  // Verify PIN with token
   const handleVerify = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedPlayerId) {
-      setAuthError("Оберіть своє прізвище зі списку");
+    const token = (tokenInput || tokenFromUrl).trim();
+    if (!token) {
+      setAuthError("Не вказано персональний токен або посилання для входу");
       return;
     }
-    if (pin.length < 4) {
-      setAuthError("Введіть 4-значний PIN-код");
+    if (pin.length !== 6) {
+      setAuthError("Введіть 6-значний PIN-код");
       return;
     }
 
     setAuthError(null);
     startVerify(async () => {
-      const res = await verifyPlayerPinAction(selectedPlayerId, pin);
+      const res = await authenticatePlayerWithTokenAction({
+        token,
+        enteredPin: pin,
+      });
+
       if (res.error) {
         setAuthError(res.error);
-      } else if (res.player) {
-        setAuthenticatedPlayer(res.player);
-        const primaryInjury = res.player.injuries?.[0];
-        const isHealthy = !primaryInjury;
-
-        if (primaryInjury?.vas_score !== undefined) {
-          setVasScore(primaryInjury.vas_score || 0);
-        } else {
-          setVasScore(0);
-        }
-
-        if (isHealthy) {
-          // Для здорового футболіста відразу відкриваємо вкладку чек-іну і очищуємо ЛФК
-          setActiveTab("checkin");
-          setExercises([]);
-          setQuests([]);
-        } else {
-          setActiveTab("plan");
-          // Load custom exercises crafted by doctor or fallback to automatic protocol
-          if (res.player.customRehabPlan && res.player.customRehabPlan.exercises?.length > 0) {
-            const customEx = res.player.customRehabPlan.exercises.map((e: any) => ({
-              id: e.exerciseId || e.id || `ex-${Math.random()}`,
-              name: e.name,
-              setsReps: e.setsReps,
-              targetArea: e.targetArea,
-              technique: e.technique,
-              completed: false,
-            }));
-            setExercises(customEx);
-          } else {
-            const phaseNum = (res.player.currentRtpPhase || 1) as RtpPhaseNumber;
-            const initialEx = getExercisesForInjuryAndPhase(primaryInjury?.location || "knee", phaseNum);
-            setExercises(initialEx);
-          }
-          setQuests(DEFAULT_RECOVERY_QUESTS);
-        }
+      } else if (res.success) {
+        // Refresh page to populate session server-side
+        window.location.href = `/rehab-portal?token=${token}`;
       }
+    });
+  };
+
+  // Handle Forced PIN change on first login
+  const handleChangePin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPin !== confirmPin) {
+      setChangePinError("Нові PIN-коди не співпадають");
+      return;
+    }
+    if (!/^\d{6}$/.test(newPin)) {
+      setChangePinError("PIN-код повинен складатися рівно з 6 цифр");
+      return;
+    }
+
+    setChangePinError(null);
+    startChangePin(async () => {
+      const res = await changePlayerPinAction({
+        newPin,
+        confirmPin,
+      });
+
+      if (res.error) {
+        setChangePinError(res.error);
+      } else if (res.success) {
+        setMustChangePin(false);
+      }
+    });
+  };
+
+  const handleLogout = () => {
+    startLogout(async () => {
+      await playerLogoutAction();
+      setAuthenticatedPlayer(null);
+      setPin("");
+      window.location.href = "/rehab-portal";
     });
   };
 
@@ -262,14 +329,11 @@ export default function RehabPortalClient({
         </div>
 
         <button
-          onClick={() => {
-            setIsSubmitted(false);
-            setAuthenticatedPlayer(null);
-            setPin("");
-          }}
+          onClick={handleLogout}
+          disabled={isLoggingOut}
           className="w-full py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition-colors"
         >
-          Завершити або вийти
+          {isLoggingOut ? "Вихід..." : "Завершити або вийти"}
         </button>
       </div>
     );
@@ -310,12 +374,80 @@ export default function RehabPortalClient({
           </div>
 
           <button
-            onClick={() => setAuthenticatedPlayer(null)}
+            onClick={handleLogout}
+            disabled={isLoggingOut}
             className="text-[11px] text-slate-500 hover:text-slate-300 font-medium"
           >
-            Вийти
+            {isLoggingOut ? "Вихід..." : "Вийти"}
           </button>
         </div>
+
+        {/* Примусова зміна PIN-коду при першому вході */}
+        {mustChangePin && (
+          <div className="p-4 rounded-2xl bg-amber-950/60 border border-amber-500/40 text-left space-y-3 shadow-xl">
+            <div className="flex items-center gap-2 text-amber-300 font-bold text-xs">
+              <span className="text-base">🛡️</span>
+              <span>Перший вхід: обов'язково встановіть свій постійний 6-значний PIN</span>
+            </div>
+            <p className="text-[11px] text-slate-300 leading-snug">
+              З міркувань безпеки замініть тимчасовий PIN, виданий лікарем, на власний 6-значний пароль.
+            </p>
+            <form onSubmit={handleChangePin} className="space-y-2.5">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] text-slate-400 block mb-1">
+                    Новий 6-значний PIN:
+                  </label>
+                  <input
+                    type="password"
+                    maxLength={6}
+                    pattern="\d*"
+                    inputMode="numeric"
+                    value={newPin}
+                    onChange={(e) => {
+                      setNewPin(e.target.value.replace(/\D/g, ""));
+                      setChangePinError(null);
+                    }}
+                    placeholder="••••••"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-2 text-center text-sm font-mono tracking-widest text-white focus:outline-none focus:border-amber-400"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-400 block mb-1">
+                    Підтвердження PIN:
+                  </label>
+                  <input
+                    type="password"
+                    maxLength={6}
+                    pattern="\d*"
+                    inputMode="numeric"
+                    value={confirmPin}
+                    onChange={(e) => {
+                      setConfirmPin(e.target.value.replace(/\D/g, ""));
+                      setChangePinError(null);
+                    }}
+                    placeholder="••••••"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-2 text-center text-sm font-mono tracking-widest text-white focus:outline-none focus:border-amber-400"
+                  />
+                </div>
+              </div>
+
+              {changePinError && (
+                <div className="p-2 rounded-lg bg-rose-500/20 text-rose-300 text-[11px] text-center font-medium">
+                  {changePinError}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={isChangingPin || newPin.length !== 6 || confirmPin.length !== 6}
+                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-bold text-xs uppercase tracking-wider transition-all disabled:opacity-50"
+              >
+                {isChangingPin ? "Збереження..." : "Встановити мій постійний PIN"}
+              </button>
+            </form>
+          </div>
+        )}
 
         {/* Doctor's Daily Instruction Memo */}
         {doctorInstruction?.instruction && (
@@ -1034,7 +1166,7 @@ export default function RehabPortalClient({
               ) : (
                 <div className="space-y-2 pt-2">
                   <div className="flex items-end justify-between gap-1.5 h-32 px-2 pb-2 border-b border-white/10">
-                    {pastCheckins.slice(-7).map((c, i) => {
+                    {pastCheckins.slice(-7).map((c: any, i: number) => {
                       const heightPct = Math.max(10, ((c.vas_score || 0) / 10) * 100);
                       const isHigh = c.vas_score >= 6;
                       const isMid = c.vas_score >= 3;
@@ -1083,7 +1215,7 @@ export default function RehabPortalClient({
     );
   }
 
-  // 3. Login Screen (Select player + PIN)
+  // 3. Login Screen (Personal Token + 6-digit PIN)
   return (
     <div className="max-w-md mx-auto p-6 rounded-3xl bg-slate-900/90 border border-sky-500/25 backdrop-blur-xl space-y-6 shadow-2xl shadow-sky-950/40">
       <div className="text-center space-y-2">
@@ -1096,48 +1228,53 @@ export default function RehabPortalClient({
         <p className="text-xs text-slate-400">
           ФК «Чорноморець» · Персональний кабінет відновлення
         </p>
+
+        {playerPreview && (
+          <div className="mt-3 p-3 rounded-2xl bg-sky-500/10 border border-sky-500/20">
+            <span className="text-[10px] text-sky-400 uppercase tracking-wider font-semibold block">
+              Авторизація для гравця:
+            </span>
+            <span className="text-sm font-bold text-white block mt-0.5">
+              {playerPreview.name}
+            </span>
+            <span className="text-[11px] text-slate-400 block">
+              {playerPreview.team} · {playerPreview.position}
+            </span>
+          </div>
+        )}
       </div>
 
       <form onSubmit={handleVerify} className="space-y-4">
-        <div className="space-y-1.5">
-          <label className="text-xs font-semibold text-slate-300 block">
-            Оберіть своє прізвище:
-          </label>
-          <select
-            value={selectedPlayerId}
-            onChange={(e) => {
-              setSelectedPlayerId(e.target.value);
-              setAuthError(null);
-            }}
-            className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-sky-400 transition-colors"
-          >
-            <option value="">— Оберіть зі списку —</option>
-            {injuredPlayers.map((p) => {
-              const statusTag = p.isInjured
-                ? `🩹 ${LOCATION_UA[p.location] || p.diagnosis || "Реабілітація"}`
-                : "🟢 Здоровий";
-
-              return (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({p.team} · {statusTag})
-                </option>
-              );
-            })}
-          </select>
-        </div>
+        {!tokenFromUrl && (
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-slate-300 block">
+              Персональний токен або посилання:
+            </label>
+            <input
+              type="text"
+              value={tokenInput}
+              onChange={(e) => {
+                setTokenInput(e.target.value.trim());
+                setAuthError(null);
+              }}
+              placeholder="Введіть персональний токен або скануйте QR"
+              className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-400 transition-colors font-mono"
+            />
+          </div>
+        )}
 
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
             <label className="text-xs font-semibold text-slate-300">
-              Ваш 4-значний PIN-код:
+              Ваш 6-значний PIN-код:
             </label>
             <span className="text-[10px] text-slate-500">
-              (За замовчуванням: ДДММ народження)
+              (6 цифр)
             </span>
           </div>
           <input
             type="password"
-            maxLength={4}
+            maxLength={6}
             pattern="\d*"
             inputMode="numeric"
             value={pin}
@@ -1145,7 +1282,7 @@ export default function RehabPortalClient({
               setPin(e.target.value.replace(/\D/g, ""));
               setAuthError(null);
             }}
-            placeholder="••••"
+            placeholder="••••••"
             className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-3 text-center text-xl font-mono tracking-widest text-white focus:outline-none focus:border-sky-400 transition-colors"
           />
         </div>
@@ -1158,7 +1295,7 @@ export default function RehabPortalClient({
 
         <button
           type="submit"
-          disabled={isVerifying || !selectedPlayerId || pin.length < 4}
+          disabled={isVerifying || pin.length !== 6 || (!tokenInput && !tokenFromUrl)}
           className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-bold text-xs uppercase tracking-wider transition-all shadow-lg shadow-sky-600/30 active:scale-95 disabled:opacity-50"
         >
           {isVerifying ? "Перевірка PIN-коду..." : "Увійти в кабінет →"}
@@ -1167,7 +1304,7 @@ export default function RehabPortalClient({
 
       <div className="pt-2 text-center border-t border-sky-500/10">
         <p className="text-[11px] text-slate-500">
-          Забули PIN? Зверніться до клубного лікаря на базі для скидання.
+          Забули PIN або не маєте персонального посилання? Зверніться до клубного лікаря на базі для скидання.
         </p>
       </div>
     </div>

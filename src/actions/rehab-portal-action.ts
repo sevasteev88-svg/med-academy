@@ -2,60 +2,425 @@
 
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
-import type { RehabCheckinData, PlayerPinRecord } from "@/types/rehab-portal";
+import type { RehabCheckinData, DoctorDailyInstruction, PlayerPinRecord } from "@/types/rehab-portal";
+import {
+  generateRandom6DigitPin,
+  generatePortalToken,
+  hashPin,
+  verifyPin,
+  setPlayerSessionCookie,
+  clearPlayerSessionCookie,
+  getPlayerSession,
+  getClientIp,
+} from "@/lib/player-auth";
+import {
+  checkRateLimit,
+  recordFailedAttempt,
+  resetAttempts,
+} from "@/lib/player-rate-limit";
+import { assertDoctor } from "@/lib/auth";
 
 /**
- * Перевірка PIN-коду гравця для доступу в реабілітаційний кабінет.
- * За замовчуванням (якщо PIN ще не заданий лікарем) — це день та місяць народження (ДДММ),
- * наприклад, для народженого 14 липня (14.07) PIN: "1407", або "0000".
+ * Отримує або ініціалізує portal_token для гравця (викликається сервером або лікарем).
  */
-export async function verifyPlayerPinAction(playerId: string, enteredPin: string) {
+export async function getOrGeneratePlayerPortalToken(playerId: string): Promise<string> {
   const supabase = await createClient();
+
+  // 1. Шукаємо збережений токен у логах або базі
+  const { data: player } = await supabase
+    .from("players")
+    .select("id, portal_token")
+    .eq("id", playerId)
+    .single();
+
+  if (player && player.portal_token) {
+    return player.portal_token;
+  }
+
+  // 2. Перевіряємо в injury_logs
+  const { data: tokenLogs } = await supabase
+    .from("injury_logs")
+    .select("note")
+    .like("note", `[PLAYER_PORTAL_TOKEN] %"player_id":"${playerId}"%`)
+    .order("date", { ascending: false })
+    .limit(1);
+
+  if (tokenLogs && tokenLogs.length > 0) {
+    try {
+      const raw = tokenLogs[0].note.replace("[PLAYER_PORTAL_TOKEN] ", "");
+      const parsed = JSON.parse(raw);
+      if (parsed.token) return parsed.token;
+    } catch {}
+  }
+
+  // 3. Генеруємо новий токен і зберігаємо
+  const newToken = generatePortalToken();
+
+  // Спробуємо оновити таблицю players (якщо колонка є)
+  try {
+    await supabase.from("players").update({ portal_token: newToken } as any).eq("id", playerId);
+  } catch {}
+
+  // Також резервуємо в injury_logs
+  await saveSystemLog(playerId, "note", `[PLAYER_PORTAL_TOKEN] ${JSON.stringify({ player_id: playerId, token: newToken, created_at: new Date().toISOString() })}`);
+
+  return newToken;
+}
+
+/**
+ * Допоміжна функція збереження логу до injury_logs
+ */
+async function saveSystemLog(playerId: string, category: string, note: string) {
+  const supabase = await createClient();
+  let targetInjuryId: string | null = null;
+  const { data: existingInj } = await supabase
+    .from("injuries")
+    .select("id")
+    .eq("player_id", playerId)
+    .order("date_of_injury", { ascending: false })
+    .limit(1);
+
+  if (existingInj && existingInj.length > 0) {
+    targetInjuryId = existingInj[0].id;
+  } else {
+    const { data: newInj } = await supabase
+      .from("injuries")
+      .insert({
+        player_id: playerId,
+        date_of_injury: new Date().toISOString().split("T")[0],
+        injury_type: "illness",
+        location: "other",
+        severity: "minor",
+        status: "closed",
+        description: "Системний профіль гравця",
+        vas_score: 0,
+      } as any)
+      .select("id")
+      .maybeSingle();
+
+    if (newInj) targetInjuryId = newInj.id;
+  }
+
+  return supabase.from("injury_logs").insert({
+    injury_id: targetInjuryId,
+    category,
+    date: new Date().toISOString().split("T")[0],
+    note,
+  });
+}
+
+/**
+ * Пошук гравця за персональним portal_token
+ */
+export async function getPlayerByPortalToken(token: string) {
+  if (!token || token.trim().length < 8) return null;
+  const cleanToken = token.trim();
+  const supabase = await createClient();
+
+  // Спершу пробуємо по колонці portal_token у таблиці players
+  try {
+    const { data: player } = await supabase
+      .from("players")
+      .select("id, first_name, last_name, position, teams(name)")
+      .eq("portal_token", cleanToken)
+      .maybeSingle();
+
+    if (player) {
+      return {
+        id: player.id,
+        name: `${player.last_name} ${player.first_name}`,
+        team: (player as any).teams?.name || "Академія",
+        position: player.position,
+      };
+    }
+  } catch {}
+
+  // Резервний пошук по injury_logs
+  const { data: logs } = await supabase
+    .from("injury_logs")
+    .select("note")
+    .like("note", `[PLAYER_PORTAL_TOKEN] %"token":"${cleanToken}"%`)
+    .limit(1);
+
+  if (logs && logs.length > 0) {
+    try {
+      const raw = logs[0].note.replace("[PLAYER_PORTAL_TOKEN] ", "");
+      const parsed = JSON.parse(raw);
+      if (parsed.player_id) {
+        const { data: player } = await supabase
+          .from("players")
+          .select("id, first_name, last_name, position, teams(name)")
+          .eq("id", parsed.player_id)
+          .single();
+
+        if (player) {
+          return {
+            id: player.id,
+            name: `${player.last_name} ${player.first_name}`,
+            team: (player as any).teams?.name || "Академія",
+            position: player.position,
+          };
+        }
+      }
+    } catch {}
+  }
+
+  return null;
+}
+
+/**
+ * Отримує статус безпеки PIN-коду гравця (хэш, must_change_pin)
+ */
+async function getPlayerAuthSecurityRecord(playerId: string): Promise<{
+  pinHash: string | null;
+  mustChangePin: boolean;
+}> {
+  const supabase = await createClient();
+
+  // 1. З таблиці players
+  try {
+    const { data: player } = await supabase
+      .from("players")
+      .select("pin_hash, must_change_pin")
+      .eq("id", playerId)
+      .maybeSingle();
+
+    if (player && (player as any).pin_hash) {
+      return {
+        pinHash: (player as any).pin_hash,
+        mustChangePin: Boolean((player as any).must_change_pin),
+      };
+    }
+  } catch {}
+
+  // 2. З логів (зашифровані bcrypt хэші)
+  const { data: hashLogs } = await supabase
+    .from("injury_logs")
+    .select("note")
+    .like("note", `[PLAYER_PIN_HASH] %"player_id":"${playerId}"%`)
+    .order("date", { ascending: false })
+    .limit(1);
+
+  if (hashLogs && hashLogs.length > 0) {
+    try {
+      const raw = hashLogs[0].note.replace("[PLAYER_PIN_HASH] ", "");
+      const parsed = JSON.parse(raw);
+      return {
+        pinHash: parsed.pin_hash || null,
+        mustChangePin: parsed.must_change_pin !== false,
+      };
+    } catch {}
+  }
+
+  return { pinHash: null, mustChangePin: true };
+}
+
+/**
+ * Безпечна автентифікація гравця за персональним токеном та 6-значним PIN.
+ * Включає:
+ * - Перевірку блокування по IP та гравцю (5 невдалих спроб -> блокування на 15 хв)
+ * - Bcrypt-порівняння на сервері
+ * - Встановлення підписаного httpOnly cookie сесії
+ * - Повідомлення на українській без уточнення деталей помилки
+ */
+export async function authenticatePlayerWithTokenAction({
+  token,
+  enteredPin,
+}: {
+  token: string;
+  enteredPin: string;
+}) {
+  const ip = await getClientIp();
+
+  // 1. Перевірка блокування за IP
+  const ipLimit = checkRateLimit(ip, true);
+  if (ipLimit.isLocked) {
+    return {
+      error: `Доступ тимчасово заблоковано через забагато невдалих спроб. Спробуйте через ${ipLimit.lockedUntilMinutes || 15} хв.`,
+    };
+  }
+
+  // 2. Валідація токена гравця
+  const playerInfo = await getPlayerByPortalToken(token);
+  if (!playerInfo) {
+    recordFailedAttempt(ip, true);
+    return {
+      error: "Невірні дані для входу. Перевірте посилання або зверніться до медичного штабу.",
+    };
+  }
+
+  const playerId = playerInfo.id;
+
+  // 3. Перевірка блокування за гравцем
+  const playerLimit = checkRateLimit(playerId, false);
+  if (playerLimit.isLocked) {
+    return {
+      error: `Доступ тимчасово заблоковано через забагато невдалих спроб. Спробуйте через ${playerLimit.lockedUntilMinutes || 15} хв.`,
+    };
+  }
+
+  // Валідація PIN формату: рівно 6 цифр
+  if (!/^\d{6}$/.test(enteredPin.trim())) {
+    recordFailedAttempt(ip, true);
+    recordFailedAttempt(playerId, false);
+    return {
+      error: "Невірні дані для входу. Перевірте посилання або зверніться до медичного штабу.",
+    };
+  }
+
+  // 4. Отримуємо збережений хэш PIN
+  const authRecord = await getPlayerAuthSecurityRecord(playerId);
+
+  if (!authRecord.pinHash) {
+    // PIN не встановлений (наприклад після скидання)
+    recordFailedAttempt(ip, true);
+    recordFailedAttempt(playerId, false);
+    return {
+      error: "Невірні дані для входу. Зверніться до клубного лікаря для генерації PIN.",
+    };
+  }
+
+  // 5. Перевіряємо bcrypt хэш
+  const isValid = await verifyPin(enteredPin.trim(), authRecord.pinHash);
+
+  if (!isValid) {
+    const resIp = recordFailedAttempt(ip, true);
+    const resPl = recordFailedAttempt(playerId, false);
+
+    if (resIp.isLocked || resPl.isLocked) {
+      return {
+        error: "Доступ тимчасово заблоковано на 15 хвилин через 5 невірних спроб.",
+      };
+    }
+
+    return {
+      error: "Невірні дані для входу. Перевірте посилання або зверніться до медичного штабу.",
+    };
+  }
+
+  // Успіх! Скидаємо лічильники спроб
+  resetAttempts(ip, true);
+  resetAttempts(playerId, false);
+
+  // 6. Встановлюємо httpOnly cookie сесії
+  await setPlayerSessionCookie({
+    playerId,
+    portalToken: token,
+    mustChangePin: authRecord.mustChangePin,
+  });
+
+  return {
+    success: true,
+    mustChangePin: authRecord.mustChangePin,
+  };
+}
+
+/**
+ * Примусова або добровільна зміна PIN-коду гравцем у власній сесії.
+ */
+export async function changePlayerPinAction({
+  currentPin,
+  newPin,
+  confirmPin,
+}: {
+  currentPin?: string;
+  newPin: string;
+  confirmPin: string;
+}) {
+  const session = await getPlayerSession();
+  if (!session) {
+    return { error: "Сесія закінчилася. Будь ласка, авторизуйтесь знову." };
+  }
+
+  if (newPin !== confirmPin) {
+    return { error: "Нові PIN-коди не співпадають" };
+  }
+
+  if (!/^\d{6}$/.test(newPin)) {
+    return { error: "Новий PIN-код повинен містити рівно 6 цифр" };
+  }
+
+  // Забороняємо тривіальні комбінації
+  const trivial = ["000000", "111111", "123456", "654321", "999999"];
+  if (trivial.includes(newPin)) {
+    return { error: "Оберіть надійніший PIN-код (уникайте однакових або послідовних цифр)" };
+  }
+
+  const authRecord = await getPlayerAuthSecurityRecord(session.playerId);
+
+  // Якщо це не примусова перша зміна, а звичайна зміна — вимагаємо старий PIN
+  if (!session.mustChangePin && currentPin) {
+    if (!authRecord.pinHash) {
+      return { error: "Помилка автентифікації" };
+    }
+    const isValid = await verifyPin(currentPin.trim(), authRecord.pinHash);
+    if (!isValid) {
+      return { error: "Поточний PIN-код вказано невірно" };
+    }
+  }
+
+  // Хэшуємо новий PIN
+  const newHash = await hashPin(newPin.trim());
+  const supabase = await createClient();
+
+  // Оновлюємо в базі
+  try {
+    await supabase.from("players").update({
+      pin_hash: newHash,
+      must_change_pin: false,
+      failed_attempts: 0,
+      locked_until: null,
+    } as any).eq("id", session.playerId);
+  } catch {}
+
+  // Зберігаємо хэш в injury_logs
+  await saveSystemLog(
+    session.playerId,
+    "note",
+    `[PLAYER_PIN_HASH] ${JSON.stringify({
+      player_id: session.playerId,
+      pin_hash: newHash,
+      must_change_pin: false,
+      updated_at: new Date().toISOString(),
+    })}`
+  );
+
+  // Оновлюємо сесію (mustChangePin тепер false)
+  await setPlayerSessionCookie({
+    playerId: session.playerId,
+    portalToken: session.portalToken,
+    mustChangePin: false,
+  });
+
+  revalidatePath("/rehab-portal");
+  return { success: true };
+}
+
+/**
+ * Отримання повних даних медичного кабінету авторизованого гравця.
+ * Суворо ізольовано: гравець отримує ЛИШЕ СВОЇ ДАНІ за поточною сесією.
+ */
+export async function getAuthorizedPlayerCabinetData() {
+  const session = await getPlayerSession();
+  if (!session) {
+    return { error: "Не авторизовано", unauthorized: true };
+  }
+
+  const supabase = await createClient();
+  const playerId = session.playerId;
 
   // 1. Отримуємо дані гравця
   const { data: player, error: playerErr } = await supabase
     .from("players")
-    .select("id, first_name, last_name, date_of_birth, position, teams(name)")
+    .select("id, first_name, last_name, position, teams(name)")
     .eq("id", playerId)
     .single();
 
   if (playerErr || !player) {
-    return { error: "Гравця не знайдено" };
+    return { error: "Гравця не знайдено", unauthorized: true };
   }
 
-  // 2. Перевіряємо кастомний PIN у логах
-  const { data: pinLogs } = await supabase
-    .from("injury_logs")
-    .select("note")
-    .like("note", `[PLAYER_PIN] %"player_id":"${playerId}"%`)
-    .order("date", { ascending: false })
-    .limit(1);
-
-  let validPin = "";
-  if (pinLogs && pinLogs.length > 0) {
-    try {
-      const raw = pinLogs[0].note.replace("[PLAYER_PIN] ", "");
-      const parsed: PlayerPinRecord = JSON.parse(raw);
-      validPin = parsed.pin;
-    } catch {}
-  }
-
-  // Якщо кастомного немає, формуємо дефолтний з дати народження (DDMM)
-  if (!validPin && player.date_of_birth) {
-    const parts = player.date_of_birth.split("-"); // YYYY-MM-DD
-    if (parts.length === 3) {
-      validPin = `${parts[2]}${parts[1]}`; // DDMM
-    }
-  }
-
-  // Запасний варіант
-  if (!validPin) validPin = "0000";
-
-  if (enteredPin.trim() !== validPin.trim()) {
-    return { error: "Невірний PIN-код. Зверніться до медичного штабу або спробуйте ДДММ народження." };
-  }
-
-  // 3. Отримуємо активні травми футболіста
+  // 2. Отримуємо активні травми футболіста
   const { data: injuries } = await supabase
     .from("injuries")
     .select("id, description, injury_type, location, vas_score, status, date_of_injury, expected_return_date")
@@ -63,7 +428,7 @@ export async function verifyPlayerPinAction(playerId: string, enteredPin: string
     .in("status", ["active", "rehabilitation"])
     .order("date_of_injury", { ascending: false });
 
-  // 4. Отримуємо останній етап RTP
+  // 3. Останній етап RTP
   let currentRtpPhase = 1;
   if (injuries && injuries.length > 0) {
     const { data: rtpLogs } = await supabase
@@ -83,7 +448,7 @@ export async function verifyPlayerPinAction(playerId: string, enteredPin: string
     }
   }
 
-  // 5. Отримуємо щоденне напуття/призначення від лікаря
+  // 4. Щоденне напуття/призначення від лікаря
   const { data: instructionLogs } = await supabase
     .from("injury_logs")
     .select("note")
@@ -99,7 +464,7 @@ export async function verifyPlayerPinAction(playerId: string, enteredPin: string
     } catch {}
   }
 
-  // 6. Отримуємо збережений персональний план ЛФК від лікаря (якщо є)
+  // 5. План ЛФК
   const { data: customPlanLogs } = await supabase
     .from("injury_logs")
     .select("note")
@@ -121,7 +486,7 @@ export async function verifyPlayerPinAction(playerId: string, enteredPin: string
     }
   }
 
-  // 7. Отримуємо останні чек-іни для побудови графіка динаміки (VAS & Сон)
+  // 6. Динаміка минулих чек-інів
   const { data: pastCheckinLogs } = await supabase
     .from("injury_logs")
     .select("note, date")
@@ -142,6 +507,7 @@ export async function verifyPlayerPinAction(playerId: string, enteredPin: string
 
   return {
     success: true,
+    mustChangePin: session.mustChangePin,
     player: {
       id: player.id,
       name: `${player.last_name} ${player.first_name}`,
@@ -157,12 +523,77 @@ export async function verifyPlayerPinAction(playerId: string, enteredPin: string
 }
 
 /**
- * Збереження звіту гравця про самопочуття та біль
+ * Вихід з кабінету гравця (очищення сесії)
  */
-export async function submitRehabCheckinAction(data: RehabCheckinData) {
+export async function playerLogoutAction() {
+  await clearPlayerSessionCookie();
+  return { success: true };
+}
+
+/**
+ * Скидання або генерація нового випадкового 6-значного PIN-коду лікарем.
+ * Тільки лікар (assertDoctor) має доступ.
+ * Повертає згенерований PIN ОДИН РАЗ лікарю (для показу у модальному вікні копіювання/друку).
+ * У базі зберігається ВИКЛЮЧНО bcrypt-хэш.
+ */
+export async function resetPlayerPinByDoctorAction(playerId: string) {
+  const auth = await assertDoctor();
+  if ("error" in auth) return { error: auth.error };
+
+  const randomPin = generateRandom6DigitPin();
+  const pinHash = await hashPin(randomPin);
+  const portalToken = await getOrGeneratePlayerPortalToken(playerId);
+
   const supabase = await createClient();
 
-  // Знаходимо цільову травму або прив'язуємо до існуючої / null
+  // Оновлюємо таблицю players
+  try {
+    await supabase.from("players").update({
+      pin_hash: pinHash,
+      must_change_pin: true,
+      failed_attempts: 0,
+      locked_until: null,
+      portal_token: portalToken,
+    } as any).eq("id", playerId);
+  } catch {}
+
+  // Зберігаємо хэш у injury_logs
+  await saveSystemLog(
+    playerId,
+    "note",
+    `[PLAYER_PIN_HASH] ${JSON.stringify({
+      player_id: playerId,
+      pin_hash: pinHash,
+      must_change_pin: true,
+      updated_at: new Date().toISOString(),
+    })}`
+  );
+
+  // Скидаємо блокування у пам'яті
+  resetAttempts(playerId, false);
+
+  revalidatePath(`/players/${playerId}`);
+  revalidatePath("/rehab-portal");
+
+  return {
+    success: true,
+    generatedPin: randomPin,
+    portalToken,
+  };
+}
+
+/**
+ * Збереження звіту гравця про самопочуття та біль (перевіряє сесію гравця)
+ */
+export async function submitRehabCheckinAction(data: RehabCheckinData) {
+  const session = await getPlayerSession();
+  if (!session || session.playerId !== data.player_id) {
+    return { error: "Немає авторизації для відправки звіту" };
+  }
+
+  const supabase = await createClient();
+
+  // Знаходимо цільову травму або створюємо зв'язок
   let targetInjuryId: string | null = (data.injury_id && data.injury_id.trim() !== "") ? data.injury_id.trim() : null;
 
   if (!targetInjuryId) {
@@ -176,8 +607,7 @@ export async function submitRehabCheckinAction(data: RehabCheckinData) {
     if (existingInj && existingInj.length > 0 && existingInj[0].id) {
       targetInjuryId = existingInj[0].id;
     } else {
-      // Створюємо системний базовий запис для здорового гравця, щоб зв'язати журнал
-      const { data: newInj, error: newInjErr } = await supabase
+      const { data: newInj } = await supabase
         .from("injuries")
         .insert({
           player_id: data.player_id,
@@ -194,9 +624,6 @@ export async function submitRehabCheckinAction(data: RehabCheckinData) {
 
       if (newInj && newInj.id) {
         targetInjuryId = newInj.id;
-      } else {
-        // Якщо таблиця injuries вимагає особливих прав або повертає null — targetInjuryId залишається null
-        targetInjuryId = null;
       }
     }
   }
@@ -204,34 +631,26 @@ export async function submitRehabCheckinAction(data: RehabCheckinData) {
   const payload: RehabCheckinData = {
     ...data,
     injury_id: targetInjuryId || "",
-    date: data.date || new Date().toISOString().split("T")[0],
-    time: data.time || new Date().toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" }),
   };
 
-  // Зберігаємо у журнал injury_logs (якщо targetInjuryId валідний або null, не порожній рядок "")
-  const logInsertData: any = {
-    category: "note",
+  const { error } = await supabase.from("injury_logs").insert({
+    injury_id: targetInjuryId,
+    category: "examination",
     date: payload.date,
     note: `[REHAB_CHECKIN] ${JSON.stringify(payload)}`,
-  };
-  if (targetInjuryId) {
-    logInsertData.injury_id = targetInjuryId;
+  });
+
+  if (error) {
+    return { error: error.message };
   }
 
-  const { error: logErr } = await supabase.from("injury_logs").insert(logInsertData);
-
-  if (logErr) {
-    return { error: `Помилка збереження рапорту: ${logErr.message}` };
-  }
-
-  // Допоміжна функція безпечного додавання в injury_logs
   const safeInsertLog = async (category: string, date: string, note: string) => {
     const logItem: any = { category, date, note };
     if (targetInjuryId) logItem.injury_id = targetInjuryId;
     return supabase.from("injury_logs").insert(logItem);
   };
 
-  // Якщо футболіст заповнив показники свого девайса (Oura / Apple Watch / WHOOP) — записуємо також у біометричний трекінг гравця
+  // Біометричний трекінг
   if (data.wearable_data) {
     const wearEntry = {
       id: `wear_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
@@ -250,7 +669,7 @@ export async function submitRehabCheckinAction(data: RehabCheckinData) {
     await safeInsertLog("procedure", payload.date, `[WEARABLE] ${JSON.stringify(wearEntry)}`);
   }
 
-  // Якщо футболіст відповів на пункти Хопкінса/Макліна (сон, втома, крепатура, стрес) — синхронізуємо в розділ /wellness
+  // Wellness
   if (data.muscle_soreness !== undefined || data.stress_level !== undefined) {
     const wellSurvey = {
       id: `well_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
@@ -270,7 +689,7 @@ export async function submitRehabCheckinAction(data: RehabCheckinData) {
     await safeInsertLog("examination", payload.date, `[WELLNESS] ${JSON.stringify(wellSurvey)}`);
   }
 
-  // Якщо футболіст вказав навантаження тренування (тривалість + RPE за шкалою Борга) — записуємо сесію для розрахунку ACWR
+  // Workload
   if (data.training_session && data.training_session.duration_minutes > 0) {
     const duration = Number(data.training_session.duration_minutes);
     const rpe = Number(data.training_session.rpe_score);
@@ -289,7 +708,6 @@ export async function submitRehabCheckinAction(data: RehabCheckinData) {
     await safeInsertLog("procedure", payload.date, `[WORKLOAD] ${JSON.stringify(sessionPayload)}`);
   }
 
-  // Оновлюємо поточний бал болю ВАШ у травмі
   if (data.vas_score !== undefined && targetInjuryId) {
     await supabase
       .from("injuries")
@@ -302,69 +720,8 @@ export async function submitRehabCheckinAction(data: RehabCheckinData) {
     revalidatePath(`/injuries/${targetInjuryId}`);
   }
   revalidatePath(`/players/${data.player_id}`);
-  revalidatePath("/");
+  revalidatePath("/rehab-portal");
 
-  return { success: true };
-}
-
-/**
- * Встановлення або зміна PIN-коду гравця лікарем
- */
-export async function setPlayerPinAction(playerId: string, newPin: string) {
-  const supabase = await createClient();
-
-  if (!/^\d{4}$/.test(newPin)) {
-    return { error: "PIN-код повинен складатися рівно з 4 цифр" };
-  }
-
-  const payload: PlayerPinRecord = {
-    player_id: playerId,
-    pin: newPin,
-    updated_at: new Date().toISOString(),
-  };
-
-  // Отримуємо або створюємо травму для зв'язку
-  let targetInjuryId: string | null = null;
-  const { data: existingInj } = await supabase
-    .from("injuries")
-    .select("id")
-    .eq("player_id", playerId)
-    .order("date_of_injury", { ascending: false })
-    .limit(1);
-
-  if (existingInj && existingInj.length > 0) {
-    targetInjuryId = existingInj[0].id;
-  } else {
-    const { data: newInj } = await supabase
-      .from("injuries")
-      .insert({
-        player_id: playerId,
-        date_of_injury: new Date().toISOString().split("T")[0],
-        injury_type: "illness",
-        location: "other",
-        severity: "minor",
-        status: "closed",
-        description: "Налаштування профілю гравця / PIN",
-        vas_score: 0,
-      } as any)
-      .select("id")
-      .single();
-
-    if (newInj) targetInjuryId = newInj.id;
-  }
-
-  const { error } = await supabase.from("injury_logs").insert({
-    injury_id: targetInjuryId,
-    category: "note",
-    date: new Date().toISOString().split("T")[0],
-    note: `[PLAYER_PIN] ${JSON.stringify(payload)}`,
-  });
-
-  if (error) {
-    return { error: error.message };
-  }
-
-  revalidatePath(`/players/${playerId}`);
   return { success: true };
 }
 
@@ -380,6 +737,9 @@ export async function saveDoctorInstructionAction({
   instruction: string;
   appointmentTime?: string;
 }) {
+  const auth = await assertDoctor();
+  if ("error" in auth) return { error: auth.error };
+
   const supabase = await createClient();
 
   const payload: DoctorDailyInstruction = {
@@ -389,46 +749,7 @@ export async function saveDoctorInstructionAction({
     updated_at: new Date().toISOString(),
   };
 
-  // Отримуємо або створюємо травму для зв'язку
-  let targetInjuryId: string | null = null;
-  const { data: existingInj } = await supabase
-    .from("injuries")
-    .select("id")
-    .eq("player_id", playerId)
-    .order("date_of_injury", { ascending: false })
-    .limit(1);
-
-  if (existingInj && existingInj.length > 0) {
-    targetInjuryId = existingInj[0].id;
-  } else {
-    const { data: newInj } = await supabase
-      .from("injuries")
-      .insert({
-        player_id: playerId,
-        date_of_injury: new Date().toISOString().split("T")[0],
-        injury_type: "illness",
-        location: "other",
-        severity: "minor",
-        status: "closed",
-        description: "Вказівка лікаря гравцю",
-        vas_score: 0,
-      } as any)
-      .select("id")
-      .single();
-
-    if (newInj) targetInjuryId = newInj.id;
-  }
-
-  const { error } = await supabase.from("injury_logs").insert({
-    injury_id: targetInjuryId,
-    category: "prescription",
-    date: new Date().toISOString().split("T")[0],
-    note: `[DOCTOR_INSTRUCTION] ${JSON.stringify(payload)}`,
-  });
-
-  if (error) {
-    return { error: error.message };
-  }
+  await saveSystemLog(playerId, "prescription", `[DOCTOR_INSTRUCTION] ${JSON.stringify(payload)}`);
 
   revalidatePath(`/players/${playerId}`);
   revalidatePath("/rehab-portal");

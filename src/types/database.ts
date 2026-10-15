@@ -151,6 +151,10 @@ export type Player = {
   dominant_leg: DominantSide;
   dominant_arm: DominantSide;
   sex: Sex | null;
+  portal_token?: string;
+  must_change_pin?: boolean;
+  failed_attempts?: number;
+  locked_until?: string | null;
   created_at: string;
 };
 

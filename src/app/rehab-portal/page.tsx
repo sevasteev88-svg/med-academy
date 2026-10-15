@@ -1,55 +1,33 @@
-import { createClient } from "@/utils/supabase/server";
-import Link from "next/link";
+import { getAuthorizedPlayerCabinetData, getPlayerByPortalToken } from "@/actions/rehab-portal-action";
 import RehabPortalClient from "@/components/portal/RehabPortalClient";
 
 export const metadata = {
   title: "Медичний Портал Гравця · ФК «Чорноморець»",
-  description: "Особистий кабінет травмованого футболіста для щоденного звіту про біль та відновлення",
+  description: "Особистий кабінет футболіста для щоденного звіту про біль, велнес та відновлення",
 };
 
-import PortalQrCodeModal from "@/components/portal/PortalQrCodeModal";
+export default async function RehabPortalPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ token?: string }>;
+}) {
+  const { token } = await searchParams;
 
-export default async function RehabPortalPage() {
-  const supabase = await createClient();
+  // 1. Перевіряємо чи є вже валідна сесія в httpOnly cookie
+  const sessionData = await getAuthorizedPlayerCabinetData();
 
-  // Отримуємо всіх гравців клубу (здорових та травмованих)
-  const { data: playersData } = await supabase
-    .from("players")
-    .select(`
-      id,
-      first_name,
-      last_name,
-      position,
-      teams (
-        name
-      ),
-      injuries (
-        id,
-        location,
-        description,
-        injury_type,
-        status,
-        date_of_injury
-      )
-    `)
-    .order("last_name", { ascending: true });
-
-  const allPlayers = (playersData || []).map((pl: any) => {
-    const activeInjuries = (pl.injuries || []).filter(
-      (i: any) => i.status === "active" || i.status === "rehabilitation"
-    );
-    const primaryInj = activeInjuries[0];
-
-    return {
-      id: pl.id,
-      name: `${pl.last_name} ${pl.first_name}`,
-      team: pl.teams?.name || "Академія",
-      position: pl.position,
-      diagnosis: primaryInj ? (primaryInj.description || primaryInj.injury_type || "Травма") : "Здоровий (Основна група)",
-      location: primaryInj ? primaryInj.location : "full_fit",
-      isInjured: Boolean(primaryInj),
-    };
-  });
+  // 2. Якщо сесії немає, але передано персональний token — перевіряємо його валідність
+  let playerPreview: { name: string; team: string; position: string } | null = null;
+  if (sessionData.unauthorized && token) {
+    const pl = await getPlayerByPortalToken(token);
+    if (pl) {
+      playerPreview = {
+        name: pl.name,
+        team: pl.team,
+        position: pl.position,
+      };
+    }
+  }
 
   return (
     <div className="min-h-screen text-slate-200 flex flex-col justify-between p-4 sm:p-6 md:p-8">
@@ -63,12 +41,15 @@ export default async function RehabPortalPage() {
             ФК Чорноморець · Кабінет гравця
           </span>
         </div>
-        <PortalQrCodeModal />
       </div>
 
       {/* Main Client Component */}
       <div className="flex-1 flex items-center justify-center">
-        <RehabPortalClient injuredPlayers={allPlayers} />
+        <RehabPortalClient
+          initialSessionData={sessionData.success ? sessionData : null}
+          tokenFromUrl={token || ""}
+          playerPreview={playerPreview}
+        />
       </div>
 
       {/* Footer */}

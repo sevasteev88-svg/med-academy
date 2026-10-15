@@ -103,7 +103,7 @@ export default function PortalQrCodeModal({
               <ol className="list-decimal list-inside space-y-0.5 text-[10px] text-slate-400 print:text-slate-700 leading-snug">
                 <li>Наведіть камеру смартфона на цей QR-код.</li>
                 <li>Перейдіть за посиланням у браузері.</li>
-                <li>Оберіть своє прізвище та введіть 4-значний PIN.</li>
+                <li>Введіть свій 6-значний PIN-код.</li>
               </ol>
             </div>
 

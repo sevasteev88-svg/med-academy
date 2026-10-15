@@ -2,12 +2,16 @@
 
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import { assertDoctor } from "@/lib/auth";
+import { generateRandom6DigitPin, generatePortalToken, hashPin } from "@/lib/player-auth";
 
 export type CreatePlayerState = {
   error?: string;
   success?: boolean;
+  generatedPin?: string;
+  portalToken?: string;
+  playerName?: string;
+  playerId?: string;
 };
 
 export async function createPlayerAction(
@@ -32,7 +36,12 @@ export async function createPlayerAction(
     return { error: "Заповніть всі обов'язкові поля" };
   }
 
-  const { error } = await supabase.from("players").insert({
+  // Генеруємо одноразовий випадковий 6-значний PIN і portal_token
+  const initialPin = generateRandom6DigitPin();
+  const pinHash = await hashPin(initialPin);
+  const portalToken = generatePortalToken();
+
+  const insertPayload: any = {
     team_id: teamId,
     first_name: firstName.trim(),
     last_name: lastName.trim(),
@@ -41,13 +50,91 @@ export async function createPlayerAction(
     position,
     dominant_leg: dominantLeg || "right",
     dominant_arm: dominantArm || "right",
-  });
+    portal_token: portalToken,
+    pin_hash: pinHash,
+    must_change_pin: true,
+    failed_attempts: 0,
+  };
+
+  const { data: newPlayer, error } = await supabase
+    .from("players")
+    .insert(insertPayload)
+    .select("id")
+    .single();
 
   if (error) {
-    return { error: error.message };
+    // Якщо колонок ще немає в схемі, пробуємо зберегти без pin_hash у таблиці players і пишемо в логи
+    const fallbackPayload = {
+      team_id: teamId,
+      first_name: firstName.trim(),
+      last_name: lastName.trim(),
+      date_of_birth: dateOfBirth,
+      sex: sex === "female" ? "female" : "male",
+      position,
+      dominant_leg: dominantLeg || "right",
+      dominant_arm: dominantArm || "right",
+    };
+
+    const { data: fallbackPlayer, error: fallbackErr } = await supabase
+      .from("players")
+      .insert(fallbackPayload)
+      .select("id")
+      .single();
+
+    if (fallbackErr || !fallbackPlayer) {
+      return { error: fallbackErr ? fallbackErr.message : error.message };
+    }
+
+    const playerId = fallbackPlayer.id;
+
+    // Зберігаємо portal_token та захешований pin_hash в logs
+    await supabase.from("injury_logs").insert({
+      category: "note",
+      date: new Date().toISOString().split("T")[0],
+      note: `[PLAYER_PORTAL_TOKEN] ${JSON.stringify({ player_id: playerId, token: portalToken, created_at: new Date().toISOString() })}`,
+    });
+
+    await supabase.from("injury_logs").insert({
+      category: "note",
+      date: new Date().toISOString().split("T")[0],
+      note: `[PLAYER_PIN_HASH] ${JSON.stringify({ player_id: playerId, pin_hash: pinHash, must_change_pin: true, updated_at: new Date().toISOString() })}`,
+    });
+
+    revalidatePath("/players");
+    revalidatePath("/");
+
+    return {
+      success: true,
+      generatedPin: initialPin,
+      portalToken,
+      playerName: `${lastName.trim()} ${firstName.trim()}`,
+      playerId,
+    };
   }
+
+  const playerId = newPlayer.id;
+
+  // Дублюємо portal_token та pin_hash у логи для надійності
+  await supabase.from("injury_logs").insert({
+    category: "note",
+    date: new Date().toISOString().split("T")[0],
+    note: `[PLAYER_PORTAL_TOKEN] ${JSON.stringify({ player_id: playerId, token: portalToken, created_at: new Date().toISOString() })}`,
+  });
+
+  await supabase.from("injury_logs").insert({
+    category: "note",
+    date: new Date().toISOString().split("T")[0],
+    note: `[PLAYER_PIN_HASH] ${JSON.stringify({ player_id: playerId, pin_hash: pinHash, must_change_pin: true, updated_at: new Date().toISOString() })}`,
+  });
 
   revalidatePath("/players");
   revalidatePath("/");
-  redirect("/players");
+
+  return {
+    success: true,
+    generatedPin: initialPin,
+    portalToken,
+    playerName: `${lastName.trim()} ${firstName.trim()}`,
+    playerId,
+  };
 }
