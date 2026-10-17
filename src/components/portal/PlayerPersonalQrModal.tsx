@@ -55,10 +55,10 @@ export default function PlayerPersonalQrModal({
       </button>
 
       {isOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 print:p-0 print:bg-white animate-fadeIn">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto print:p-0 print:bg-white animate-fadeIn">
           <div
             ref={printRef}
-            className="bg-slate-900 border border-sky-500/30 rounded-3xl max-w-sm w-full p-6 text-center space-y-4 shadow-2xl relative print:border-none print:shadow-none print:max-w-none print:w-full print:bg-white print:text-black"
+            className="bg-slate-900 border border-sky-500/30 rounded-3xl max-w-sm w-full p-5 sm:p-6 text-center space-y-3 shadow-2xl relative max-h-[90vh] overflow-y-auto my-auto print:border-none print:shadow-none print:max-w-none print:w-full print:bg-white print:text-black print:max-h-none print:overflow-visible"
           >
             <button
               onClick={() => setIsOpen(false)}
@@ -68,7 +68,7 @@ export default function PlayerPersonalQrModal({
             </button>
 
             <div className="flex items-center justify-center gap-2">
-              <div className="w-12 h-12 rounded-2xl bg-slate-950 border border-sky-500/30 flex items-center justify-center p-2 shadow-md print:bg-transparent print:border-slate-300">
+              <div className="w-10 h-10 rounded-2xl bg-slate-950 border border-sky-500/30 flex items-center justify-center p-1.5 shadow-md print:bg-transparent print:border-slate-300">
                 <img src="/logo-chr.png" alt="Чорноморець" className="w-full h-full object-contain" />
               </div>
             </div>
@@ -80,27 +80,27 @@ export default function PlayerPersonalQrModal({
               <p className="text-xs text-sky-400 print:text-blue-700 font-bold mt-0.5">
                 {playerName}
               </p>
-              <p className="text-[11px] text-slate-400 print:text-slate-600 mt-1 leading-snug">
+              <p className="text-[11px] text-slate-400 print:text-slate-600 mt-0.5 leading-snug">
                 {subtitle}
               </p>
             </div>
 
-            <div className="p-3 bg-white rounded-2xl shadow-xl border border-sky-500/20 inline-block mx-auto">
+            <div className="p-2.5 bg-white rounded-2xl shadow-xl border border-sky-500/20 inline-block mx-auto">
               {qrDataUrl ? (
                 <img
                   src={qrDataUrl}
                   alt={`QR Code для ${playerName}`}
-                  className="w-52 h-52 mx-auto rounded-lg"
+                  className="w-40 h-40 mx-auto rounded-lg"
                 />
               ) : (
-                <div className="w-52 h-52 flex items-center justify-center text-xs text-slate-400 font-mono">
+                <div className="w-40 h-40 flex items-center justify-center text-xs text-slate-400 font-mono">
                   Генерація коду...
                 </div>
               )}
             </div>
 
-            <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 text-[11px] text-slate-300 print:bg-slate-100 print:text-slate-800 print:border-slate-300 text-left space-y-1">
-              <div className="font-bold text-sky-300 print:text-blue-700">📌 Як підключитися з телефону:</div>
+            <div className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800 text-[11px] text-slate-300 print:bg-slate-100 print:text-slate-800 print:border-slate-300 text-left space-y-1">
+              <div className="font-bold text-sky-300 print:text-blue-700 text-[11px]">📌 Як підключитися з телефону:</div>
               <ol className="list-decimal list-inside space-y-0.5 text-[10px] text-slate-400 print:text-slate-700 leading-snug">
                 <li>Наведіть камеру смартфона на цей персональний QR-код.</li>
                 <li>Перейдіть за посиланням.</li>
@@ -108,18 +108,18 @@ export default function PlayerPersonalQrModal({
               </ol>
             </div>
 
-            <div className="pt-2 flex items-center gap-2 print:hidden">
+            <div className="pt-1 flex items-center gap-2 print:hidden">
               <button
                 type="button"
                 onClick={handleCopyLink}
-                className="flex-1 py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-semibold text-xs transition-all"
+                className="flex-1 py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-semibold text-xs transition-all active:scale-95 cursor-pointer"
               >
                 📋 Копіювати лінк
               </button>
               <button
                 type="button"
                 onClick={handlePrint}
-                className="flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold text-xs shadow-lg transition-all"
+                className="flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold text-xs shadow-lg transition-all active:scale-95 cursor-pointer"
               >
                 🖨️ Роздрукувати
               </button>

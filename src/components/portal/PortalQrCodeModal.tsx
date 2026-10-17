@@ -50,10 +50,10 @@ export default function PortalQrCodeModal({
 
       {/* Модальне вікно */}
       {isOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 print:p-0 print:bg-white animate-fadeIn">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto print:p-0 print:bg-white animate-fadeIn">
           <div
             ref={printRef}
-            className="bg-slate-900 border border-sky-500/30 rounded-3xl max-w-sm w-full p-6 text-center space-y-5 shadow-2xl relative print:border-none print:shadow-none print:max-w-none print:w-full print:bg-white print:text-black"
+            className="bg-slate-900 border border-sky-500/30 rounded-3xl max-w-sm w-full p-5 sm:p-6 text-center space-y-4 shadow-2xl relative max-h-[90vh] overflow-y-auto my-auto print:border-none print:shadow-none print:max-w-none print:w-full print:bg-white print:text-black print:max-h-none print:overflow-visible"
           >
             {/* Кнопка закриття */}
             <button
