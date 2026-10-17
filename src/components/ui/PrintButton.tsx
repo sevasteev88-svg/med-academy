@@ -1,22 +1,36 @@
 "use client";
 
 import React from "react";
+import { logPdfExportAction } from "@/actions/audit-actions";
 
 interface PrintButtonProps {
   label?: string;
   variant?: "primary" | "secondary";
   className?: string;
+  entity?: string;
+  entityId?: string;
+  playerId?: string;
 }
 
 export default function PrintButton({
   label = "📥 Завантажити PDF",
   variant = "secondary",
   className = "",
+  entity = "report",
+  entityId,
+  playerId,
 }: PrintButtonProps) {
   const handlePrint = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     e.stopPropagation();
     try {
+      logPdfExportAction({
+        entity,
+        entityId,
+        playerId,
+        title: label,
+      }).catch(() => {});
+
       if (typeof window !== "undefined") {
         window.print();
       }

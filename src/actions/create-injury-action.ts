@@ -3,6 +3,7 @@
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
 import { assertDoctor } from "@/lib/auth";
+import { logAudit } from "@/lib/audit";
 import type {
   InjuryLocation,
   InjuryMechanism,
@@ -57,6 +58,19 @@ async function insertInjury(input: CreateInjuryInput) {
     .single();
 
   if (error) return { error: error.message };
+
+  await logAudit({
+    action: "create_injury",
+    entity: "injury",
+    entityId: data?.id,
+    playerId: input.playerId,
+    meta: {
+      location: input.location,
+      side: input.side,
+    },
+    userId: auth.user.id,
+    clubId: auth.user.clubId,
+  });
 
   revalidatePath("/injuries", "page");
   revalidatePath("/players/[id]", "page");

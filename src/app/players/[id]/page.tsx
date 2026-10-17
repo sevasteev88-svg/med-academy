@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
+import { logAudit } from "@/lib/audit";
 import PeriodSelector from "@/components/players/PeriodSelector";
 import AnthropometrySection from "@/components/players/AnthropometrySection";
 import PreSeasonScreeningCard from "@/components/players/PreSeasonScreeningCard";
@@ -36,6 +37,14 @@ function calcDaysMissed(inj: any): number { if(inj.actual_return_date)return Mat
 export default async function PlayerDetailPage({ params, searchParams }: { params: Promise<{id:string}>; searchParams: Promise<{from?:string;to?:string}> }) {
   const { id } = await params; const { from, to } = await searchParams;
   const supabase = await createClient();
+
+  // Логуємо перегляд картки гравця (Audit Log)
+  await logAudit({
+    action: "view_player",
+    entity: "player",
+    entityId: id,
+    playerId: id,
+  });
 
   let injuryQuery = supabase.from("injuries").select("*").eq("player_id", id).order("date_of_injury", { ascending: false });
   if (from) injuryQuery = injuryQuery.gte("date_of_injury", from);
@@ -293,7 +302,7 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
               >
                 ✏️ Редагувати
               </Link>
-              <PrintButton label="PDF Паспорт" />
+              <PrintButton label="PDF Паспорт" entity="player" entityId={id} playerId={id} />
             </div>
             <DeleteButton onDelete={handleDelete} itemName="гравця" />
           </div>

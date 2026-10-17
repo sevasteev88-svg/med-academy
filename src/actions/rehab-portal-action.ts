@@ -20,6 +20,7 @@ import {
   resetAttempts,
 } from "@/lib/player-rate-limit";
 import { assertDoctor, DEFAULT_CLUB_ID } from "@/lib/auth";
+import { logAudit } from "@/lib/audit";
 
 /**
  * Отримує або ініціалізує portal_token для гравця (викликається сервером або лікарем).
@@ -583,6 +584,18 @@ export async function resetPlayerPinByDoctorAction(playerId: string) {
 
   // Скидаємо блокування у пам'яті
   resetAttempts(playerId, false);
+
+  await logAudit({
+    action: "reset_pin",
+    entity: "auth",
+    entityId: playerId,
+    playerId,
+    meta: {
+      reason: "doctor_reset",
+    },
+    userId: auth.user.id,
+    clubId: auth.user.clubId,
+  });
 
   revalidatePath(`/players/${playerId}`);
   revalidatePath("/rehab-portal");

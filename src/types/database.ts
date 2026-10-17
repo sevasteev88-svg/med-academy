@@ -365,3 +365,39 @@ export type CoachPlayerAvailability = {
   expected_return_date: string | null;
   wellness_readiness: "optimal" | "warning" | "risk";
 };
+
+// ─── audit_log ────────────────────────────────────────────────────────
+export type AuditAction =
+  | "view_player"
+  | "create_injury"
+  | "update_injury"
+  | "delete_injury"
+  | "add_examination"
+  | "save_screening"
+  | "prescribe_treatment"
+  | "reset_pin"
+  | "export_pdf"
+  | "ai_call";
+
+export type AuditEntity =
+  | "player"
+  | "injury"
+  | "examination"
+  | "screening"
+  | "pharmacy"
+  | "auth"
+  | "report"
+  | "ai";
+
+export type AuditLogEntry = {
+  id: string;
+  club_id: string;
+  user_id: string;
+  action: AuditAction | string;
+  entity: AuditEntity | string;
+  entity_id: string | null;
+  player_id: string | null;
+  at: string;
+  meta: Record<string, unknown>;
+};
+

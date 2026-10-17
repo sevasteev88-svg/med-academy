@@ -3,6 +3,7 @@
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
 import { assertDoctor } from "@/lib/auth";
+import { logAudit } from "@/lib/audit";
 import type { PreSeasonScreening } from "@/types/screening";
 
 export async function saveScreeningAction(screeningData: Omit<PreSeasonScreening, "id" | "created_at">) {
@@ -62,6 +63,18 @@ export async function saveScreeningAction(screeningData: Omit<PreSeasonScreening
   } as any);
 
   if (error) return { error: error.message };
+
+  await logAudit({
+    action: "save_screening",
+    entity: "screening",
+    entityId: record.id,
+    playerId: record.player_id,
+    meta: {
+      date: record.date,
+    },
+    userId: auth.user.id,
+    clubId: auth.user.clubId,
+  });
 
   revalidatePath(`/players/${record.player_id}`);
   revalidatePath("/players");

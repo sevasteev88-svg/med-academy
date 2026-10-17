@@ -2,6 +2,7 @@
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
 import { assertDoctor } from "@/lib/auth";
+import { logAudit } from "@/lib/audit";
 
 export type AddExamState = { error?: string; success?: boolean };
 
@@ -60,7 +61,25 @@ export async function addExaminationAction(
     injuryUpdate.next_exam_date = nextExamDate;
   }
 
-  await supabase.from("injuries").update(injuryUpdate).eq("id", injuryId);
+  const { data: updatedInjury } = await supabase
+    .from("injuries")
+    .update(injuryUpdate)
+    .eq("id", injuryId)
+    .select("player_id")
+    .single();
+
+  await logAudit({
+    action: "add_examination",
+    entity: "examination",
+    entityId: injuryId,
+    playerId: updatedInjury?.player_id,
+    meta: {
+      date,
+      new_status: newStatus || null,
+    },
+    userId: auth.user.id,
+    clubId: auth.user.clubId,
+  });
 
   revalidatePath(`/injuries/${injuryId}`);
   revalidatePath("/injuries");

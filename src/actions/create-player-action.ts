@@ -4,6 +4,7 @@ import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
 import { assertDoctor } from "@/lib/auth";
 import { generateRandom6DigitPin, generatePortalToken, hashPin } from "@/lib/player-auth";
+import { logAudit } from "@/lib/audit";
 
 export type CreatePlayerState = {
   error?: string;
@@ -131,6 +132,18 @@ export async function createPlayerAction(
     category: "note",
     date: new Date().toISOString().split("T")[0],
     note: `[PLAYER_PIN_HASH] ${JSON.stringify({ player_id: playerId, pin_hash: pinHash, must_change_pin: true, updated_at: new Date().toISOString() })}`,
+  });
+
+  await logAudit({
+    action: "reset_pin",
+    entity: "auth",
+    entityId: playerId,
+    playerId,
+    meta: {
+      reason: "initial_creation",
+    },
+    userId: auth.user.id,
+    clubId: auth.user.clubId,
   });
 
   revalidatePath("/players");

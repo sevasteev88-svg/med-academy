@@ -3,6 +3,7 @@ import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { assertDoctor } from "@/lib/auth";
+import { logAudit } from "@/lib/audit";
 
 export type UpdateInjuryState = { error?: string };
 
@@ -25,6 +26,12 @@ export async function updateInjuryAction(_prev: UpdateInjuryState, formData: For
     return { error: "Заповніть всі обов'язкові поля" };
   }
 
+  const { data: existingInjury } = await supabase
+    .from("injuries")
+    .select("player_id")
+    .eq("id", injuryId)
+    .single();
+
   const { error } = await supabase.from("injuries").update({
     injury_type: injuryType, location, side, severity,
     mechanism: mechanism || "non_contact", date_of_injury: dateOfInjury,
@@ -33,6 +40,20 @@ export async function updateInjuryAction(_prev: UpdateInjuryState, formData: For
   }).eq("id", injuryId);
 
   if (error) return { error: error.message };
+
+  await logAudit({
+    action: "update_injury",
+    entity: "injury",
+    entityId: injuryId,
+    playerId: existingInjury?.player_id,
+    meta: {
+      location,
+      side,
+    },
+    userId: auth.user.id,
+    clubId: auth.user.clubId,
+  });
+
   revalidatePath(`/injuries/${injuryId}`);
   revalidatePath("/");
   revalidatePath("/players");

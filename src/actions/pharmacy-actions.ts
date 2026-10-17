@@ -3,6 +3,7 @@
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
 import { assertDoctor } from "@/lib/auth";
+import { logAudit } from "@/lib/audit";
 import type { PharmacyItem, MedicalTreatmentEntry } from "@/types/pharmacy";
 import { DEFAULT_PHARMACY_ITEMS } from "@/lib/default-pharmacy-stock";
 
@@ -160,6 +161,21 @@ export async function prescribeTreatmentWithStockAction(
   } as any);
 
   if (treatmentError) return { error: treatmentError.message };
+
+  await logAudit({
+    action: "prescribe_treatment",
+    entity: "pharmacy",
+    entityId: entry.id,
+    playerId: treatmentData.player_id,
+    meta: {
+      date: treatmentData.date,
+      category: treatmentData.category,
+      has_stock_item: Boolean(pharmacyItemId),
+      units: quantityToDeduct,
+    },
+    userId: auth.user.id,
+    clubId: auth.user.clubId,
+  });
 
   if (treatmentData.injury_id) {
     revalidatePath(`/injuries/${treatmentData.injury_id}`);

@@ -3,6 +3,7 @@
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
 import { assertDoctor } from "@/lib/auth";
+import { logAudit } from "@/lib/audit";
 import type { MedicalTreatmentEntry } from "@/types/pharmacy";
 
 export async function saveMedicalTreatmentAction(
@@ -29,6 +30,19 @@ export async function saveMedicalTreatmentAction(
   } as any);
 
   if (error) return { error: error.message };
+
+  await logAudit({
+    action: "prescribe_treatment",
+    entity: "pharmacy",
+    entityId: entry.id,
+    playerId: input.player_id,
+    meta: {
+      date: input.date,
+      category: input.category,
+    },
+    userId: auth.user.id,
+    clubId: auth.user.clubId,
+  });
 
   if (input.injury_id) revalidatePath(`/injuries/${input.injury_id}`);
   revalidatePath(`/players/${input.player_id}`);
