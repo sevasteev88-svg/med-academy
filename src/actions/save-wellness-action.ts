@@ -52,7 +52,7 @@ export async function saveWellnessSurveyAction(input: SaveWellnessInput) {
   // 1. Спробуємо зберегти в спеціальну таблицю wellness_surveys (якщо вона створена в базі)
   const { error: directErr } = await supabase
     .from("wellness_surveys")
-    .upsert(payload, { onConflict: "player_id, date" } as any);
+    .upsert({ ...payload, club_id: auth.user.clubId }, { onConflict: "player_id, date" } as any);
 
   // 2. Якщо таблиці wellness_surveys немає або виникла помилка схеми —
   // надійно зберігаємо в існуючу таблицю injury_logs під категорією 'note' із маркером [WELLNESS]
@@ -60,6 +60,7 @@ export async function saveWellnessSurveyAction(input: SaveWellnessInput) {
     // Зберігаємо у відкриту універсальну структуру логів
     const logNote = `[WELLNESS] ${JSON.stringify(payload)}`;
     await supabase.from("injury_logs").insert({
+      club_id: auth.user.clubId,
       injury_id: null as any,
       date: input.date,
       category: "note",

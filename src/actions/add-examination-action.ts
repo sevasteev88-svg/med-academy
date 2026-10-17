@@ -33,6 +33,7 @@ export async function addExaminationAction(
 
   // 1. Зберігаємо структурований огляд
   const { error: examErr } = await supabase.from("injury_examinations").insert({
+    club_id: auth.user.clubId,
     injury_id: injuryId,
     date,
     vas_score: vasScore,

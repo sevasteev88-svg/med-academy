@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/utils/supabase/server";
+import { createAdminClient } from "@/utils/supabase/admin";
 import { revalidatePath } from "next/cache";
 import type { RehabCheckinData, DoctorDailyInstruction, PlayerPinRecord } from "@/types/rehab-portal";
 import {
@@ -18,13 +19,13 @@ import {
   recordFailedAttempt,
   resetAttempts,
 } from "@/lib/player-rate-limit";
-import { assertDoctor } from "@/lib/auth";
+import { assertDoctor, DEFAULT_CLUB_ID } from "@/lib/auth";
 
 /**
  * Отримує або ініціалізує portal_token для гравця (викликається сервером або лікарем).
  */
 export async function getOrGeneratePlayerPortalToken(playerId: string): Promise<string> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   // 1. Шукаємо збережений токен у логах або базі
   const { data: player } = await supabase
@@ -71,7 +72,16 @@ export async function getOrGeneratePlayerPortalToken(playerId: string): Promise<
  * Допоміжна функція збереження логу до injury_logs
  */
 async function saveSystemLog(playerId: string, category: string, note: string) {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
+
+  const { data: pl } = await supabase
+    .from("players")
+    .select("club_id")
+    .eq("id", playerId)
+    .maybeSingle();
+
+  const clubId = (pl as any)?.club_id || DEFAULT_CLUB_ID;
+
   let targetInjuryId: string | null = null;
   const { data: existingInj } = await supabase
     .from("injuries")
@@ -86,6 +96,7 @@ async function saveSystemLog(playerId: string, category: string, note: string) {
     const { data: newInj } = await supabase
       .from("injuries")
       .insert({
+        club_id: clubId,
         player_id: playerId,
         date_of_injury: new Date().toISOString().split("T")[0],
         injury_type: "illness",
@@ -102,6 +113,7 @@ async function saveSystemLog(playerId: string, category: string, note: string) {
   }
 
   return supabase.from("injury_logs").insert({
+    club_id: clubId,
     injury_id: targetInjuryId,
     category,
     date: new Date().toISOString().split("T")[0],
@@ -110,12 +122,12 @@ async function saveSystemLog(playerId: string, category: string, note: string) {
 }
 
 /**
- * Пошук гравця за персональним portal_token
+ * Пошук гравця за персональним portal_token (використовує адмін-клієнт без відкриття anon RLS)
  */
 export async function getPlayerByPortalToken(token: string) {
   if (!token || token.trim().length < 8) return null;
   const cleanToken = token.trim();
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   // Спершу пробуємо по колонці portal_token у таблиці players
   try {
@@ -175,7 +187,7 @@ async function getPlayerAuthSecurityRecord(playerId: string): Promise<{
   pinHash: string | null;
   mustChangePin: boolean;
 }> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   // 1. З таблиці players
   try {
@@ -361,7 +373,7 @@ export async function changePlayerPinAction({
 
   // Хэшуємо новий PIN
   const newHash = await hashPin(newPin.trim());
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   // Оновлюємо в базі
   try {
@@ -406,7 +418,7 @@ export async function getAuthorizedPlayerCabinetData() {
     return { error: "Не авторизовано", unauthorized: true };
   }
 
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const playerId = session.playerId;
 
   // 1. Отримуємо дані гравця
@@ -591,7 +603,15 @@ export async function submitRehabCheckinAction(data: RehabCheckinData) {
     return { error: "Немає авторизації для відправки звіту" };
   }
 
-  const supabase = await createClient();
+  const supabase = createAdminClient();
+
+  const { data: pl } = await supabase
+    .from("players")
+    .select("club_id")
+    .eq("id", data.player_id)
+    .maybeSingle();
+
+  const clubId = (pl as any)?.club_id || DEFAULT_CLUB_ID;
 
   // Знаходимо цільову травму або створюємо зв'язок
   let targetInjuryId: string | null = (data.injury_id && data.injury_id.trim() !== "") ? data.injury_id.trim() : null;
@@ -610,6 +630,7 @@ export async function submitRehabCheckinAction(data: RehabCheckinData) {
       const { data: newInj } = await supabase
         .from("injuries")
         .insert({
+          club_id: clubId,
           player_id: data.player_id,
           date_of_injury: data.date || new Date().toISOString().split("T")[0],
           injury_type: "illness",
@@ -634,6 +655,7 @@ export async function submitRehabCheckinAction(data: RehabCheckinData) {
   };
 
   const { error } = await supabase.from("injury_logs").insert({
+    club_id: clubId,
     injury_id: targetInjuryId,
     category: "examination",
     date: payload.date,
@@ -645,7 +667,7 @@ export async function submitRehabCheckinAction(data: RehabCheckinData) {
   }
 
   const safeInsertLog = async (category: string, date: string, note: string) => {
-    const logItem: any = { category, date, note };
+    const logItem: any = { club_id: clubId, category, date, note };
     if (targetInjuryId) logItem.injury_id = targetInjuryId;
     return supabase.from("injury_logs").insert(logItem);
   };

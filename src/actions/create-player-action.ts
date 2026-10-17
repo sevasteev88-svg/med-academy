@@ -42,6 +42,7 @@ export async function createPlayerAction(
   const portalToken = generatePortalToken();
 
   const insertPayload: any = {
+    club_id: auth.user.clubId,
     team_id: teamId,
     first_name: firstName.trim(),
     last_name: lastName.trim(),
@@ -65,6 +66,7 @@ export async function createPlayerAction(
   if (error) {
     // Якщо колонок ще немає в схемі, пробуємо зберегти без pin_hash у таблиці players і пишемо в логи
     const fallbackPayload = {
+      club_id: auth.user.clubId,
       team_id: teamId,
       first_name: firstName.trim(),
       last_name: lastName.trim(),
@@ -89,12 +91,14 @@ export async function createPlayerAction(
 
     // Зберігаємо portal_token та захешований pin_hash в logs
     await supabase.from("injury_logs").insert({
+      club_id: auth.user.clubId,
       category: "note",
       date: new Date().toISOString().split("T")[0],
       note: `[PLAYER_PORTAL_TOKEN] ${JSON.stringify({ player_id: playerId, token: portalToken, created_at: new Date().toISOString() })}`,
     });
 
     await supabase.from("injury_logs").insert({
+      club_id: auth.user.clubId,
       category: "note",
       date: new Date().toISOString().split("T")[0],
       note: `[PLAYER_PIN_HASH] ${JSON.stringify({ player_id: playerId, pin_hash: pinHash, must_change_pin: true, updated_at: new Date().toISOString() })}`,
@@ -116,12 +120,14 @@ export async function createPlayerAction(
 
   // Дублюємо portal_token та pin_hash у логи для надійності
   await supabase.from("injury_logs").insert({
+    club_id: auth.user.clubId,
     category: "note",
     date: new Date().toISOString().split("T")[0],
     note: `[PLAYER_PORTAL_TOKEN] ${JSON.stringify({ player_id: playerId, token: portalToken, created_at: new Date().toISOString() })}`,
   });
 
   await supabase.from("injury_logs").insert({
+    club_id: auth.user.clubId,
     category: "note",
     date: new Date().toISOString().split("T")[0],
     note: `[PLAYER_PIN_HASH] ${JSON.stringify({ player_id: playerId, pin_hash: pinHash, must_change_pin: true, updated_at: new Date().toISOString() })}`,

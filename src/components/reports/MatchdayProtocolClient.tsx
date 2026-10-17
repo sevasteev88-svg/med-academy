@@ -13,8 +13,13 @@ type Player = {
   position: string;
   date_of_birth: string;
   team_name: string;
-  injuries: any[];
-  isScreened: boolean;
+  injuries?: any[];
+  isScreened?: boolean;
+  availability_status?: "available" | "restricted" | "unavailable";
+  max_minutes?: number;
+  restriction_notes?: string;
+  days_missed?: number | null;
+  expected_return_date?: string | null;
 };
 
 type Props = {
@@ -32,10 +37,16 @@ export default function MatchdayProtocolClient({ players, teams }: Props) {
 
   const teamPlayers = players.filter((p) => p.team_name === selectedTeam);
 
-  // Available vs Unavailable
-  const available = teamPlayers.filter((p) => playerStatus(p) === "ok");
-  const modified = teamPlayers.filter((p) => playerStatus(p) === "warn");
-  const injured = teamPlayers.filter((p) => playerStatus(p) === "danger");
+  // Available vs Unavailable (підтримка як coach_player_availability_view, так і класичного розрахунку)
+  const available = teamPlayers.filter((p) =>
+    p.availability_status ? p.availability_status === "available" : playerStatus(p) === "ok"
+  );
+  const modified = teamPlayers.filter((p) =>
+    p.availability_status ? p.availability_status === "restricted" : playerStatus(p) === "warn"
+  );
+  const injured = teamPlayers.filter((p) =>
+    p.availability_status ? p.availability_status === "unavailable" : playerStatus(p) === "danger"
+  );
 
   // Roster 23 players limit
   const matchRoster = [...available, ...modified].slice(0, 23);
@@ -243,7 +254,7 @@ export default function MatchdayProtocolClient({ players, teams }: Props) {
               <thead className="bg-red-50 text-red-900 uppercase font-mono text-[10px]">
                 <tr>
                   <th className="py-2 px-3 border border-slate-300">Футболіст</th>
-                  <th className="py-2 px-3 border border-slate-300">Діагноз / Локалізація</th>
+                  <th className="py-2 px-3 border border-slate-300">Медичний статус / Обмеження</th>
                   <th className="py-2 px-2 border border-slate-300 text-center">Днів у лазареті</th>
                   <th className="py-2 px-3 border border-slate-300">Очікуваний термін повернення</th>
                 </tr>
@@ -251,29 +262,38 @@ export default function MatchdayProtocolClient({ players, teams }: Props) {
               <tbody className="divide-y divide-slate-200">
                 {injured.map((player) => {
                   const inj = (player.injuries || []).find(
-                    (i) => i.status === "active" || i.status === "rehabilitation"
+                    (i: any) => i.status === "active" || i.status === "rehabilitation"
                   );
+                  const statusNote =
+                    player.restriction_notes ||
+                    (inj
+                      ? "Лазарет / медичне відновлення"
+                      : "Не допущений за медичними показниками");
+
+                  const days =
+                    player.days_missed != null
+                      ? player.days_missed
+                      : inj?.date_of_injury
+                      ? daysSince(inj.date_of_injury)
+                      : "—";
+
+                  const returnDate =
+                    player.expected_return_date || inj?.expected_return_date;
+
                   return (
                     <tr key={player.id}>
                       <td className="py-1.5 px-3 border border-slate-300 font-bold text-slate-900">
                         {player.last_name} {player.first_name}
                       </td>
                       <td className="py-1.5 px-3 border border-slate-300 text-slate-800">
-                        {inj ? (
-                          <span>
-                            {INJURY_TYPE_UA[inj.injury_type] ?? inj.injury_type} (
-                            {LOCATION_UA[inj.location] ?? inj.location})
-                          </span>
-                        ) : (
-                          "Травма ОРА"
-                        )}
+                        {statusNote}
                       </td>
                       <td className="py-1.5 px-2 border border-slate-300 text-center font-mono text-red-700 font-bold">
-                        {inj ? daysSince(inj.date_of_injury) : "—"} дн.
+                        {days !== "—" ? `${days} дн.` : "—"}
                       </td>
                       <td className="py-1.5 px-3 border border-slate-300 font-mono text-slate-700">
-                        {inj?.expected_return_date
-                          ? new Date(inj.expected_return_date).toLocaleDateString("uk-UA")
+                        {returnDate
+                          ? new Date(returnDate).toLocaleDateString("uk-UA")
                           : "В процесі реабілітації"}
                       </td>
                     </tr>

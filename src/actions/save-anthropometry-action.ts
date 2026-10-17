@@ -50,6 +50,7 @@ export async function saveAnthropometryWithPhv(input: SaveAnthropometryInput) {
 
   // 3. Зберігаємо вимір
   const insertData: Record<string, unknown> = {
+    club_id: auth.user.clubId,
     player_id: input.playerId,
     date: input.date,
     height: input.height,
@@ -148,6 +149,7 @@ export async function saveAnthropometryWithPhv(input: SaveAnthropometryInput) {
   const { data: maturation, error: matErr } = await supabase
     .from("maturation_assessments")
     .insert({
+      club_id: auth.user.clubId,
       player_id: input.playerId,
       anthropometry_log_id: anthro.id,
       age_at_measurement: phv.ageAtMeasurement,

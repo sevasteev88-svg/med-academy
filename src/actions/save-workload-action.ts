@@ -41,12 +41,13 @@ export async function saveWorkloadAction(input: SaveWorkloadInput) {
   // Спробуємо записати в таблицю workload_sessions
   const { error: directErr } = await supabase
     .from("workload_sessions")
-    .insert(payload as any);
+    .insert({ ...payload, club_id: auth.user.clubId } as any);
 
   // Якщо таблиці немає в базі - записуємо в injury_logs з маркером [WORKLOAD]
   if (directErr) {
     const logNote = `[WORKLOAD] ${JSON.stringify(payload)}`;
     await supabase.from("injury_logs").insert({
+      club_id: auth.user.clubId,
       injury_id: null as any,
       date: input.date,
       category: "note",

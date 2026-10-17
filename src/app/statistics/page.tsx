@@ -53,6 +53,9 @@ export default async function StatisticsPage() {
   // ── Рецидиви (заглушка поки немає даних) ──
   const reinjuryCount = injuries.filter((i: any) => (i.mlgr_reinjury ?? 0) > 0).length;
 
+  // ── Травми для аналізу RTP прогнозу vs факту ──
+  const closedClassified = injuries.filter((i: any) => i.status === "closed" && (i.rtp_min_days != null || i.is_classified));
+
   // ── Дані для анатомічної теплової карти ──
   const injuryPoints: InjuryPoint[] = injuries.map((i: any) => ({
     id: i.id,

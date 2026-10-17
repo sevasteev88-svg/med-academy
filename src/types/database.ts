@@ -122,9 +122,39 @@ export type Sex = "male" | "female";
 //  ROW TYPES — відповідають колонкам таблиць
 // ════════════════════════════════════════════════════════════════════
 
+// ─── Ролі користувачів та мультиклубність ───────────────────────────
+export type UserRole = "doctor" | "coach" | "admin";
+
+export type ClubSettings = {
+  default_locale?: "uk" | "en" | "ru";
+  supported_locales?: string[];
+  primary_color?: string;
+  [key: string]: unknown;
+};
+
+// ─── clubs ────────────────────────────────────────────────────────────
+export type Club = {
+  id: string;
+  name: string;
+  logo_url: string | null;
+  settings: ClubSettings;
+  created_at: string;
+  updated_at: string;
+};
+
+// ─── club_members ─────────────────────────────────────────────────────
+export type ClubMember = {
+  id: string;
+  user_id: string;
+  club_id: string;
+  role: UserRole;
+  created_at: string;
+};
+
 // ─── teams ────────────────────────────────────────────────────────────
 export type Team = {
   id: string;
+  club_id: string;
   name: string;
   category: TeamCategory;
   sort_order: number;
@@ -136,13 +166,14 @@ export type Profile = {
   id: string;
   email: string;
   full_name: string | null;
-  role: string; // "doctor" | "coach" — поки text у базі
+  role: UserRole | string;
   created_at: string;
 };
 
 // ─── players ──────────────────────────────────────────────────────────
 export type Player = {
   id: string;
+  club_id: string;
   team_id: string;
   first_name: string;
   last_name: string;
@@ -161,6 +192,7 @@ export type Player = {
 // ─── anthropometry_logs ──────────────────────────────────────────────
 export type AnthropometryLog = {
   id: string;
+  club_id: string;
   player_id: string;
   date: string;
   height: number;        // numeric
@@ -174,6 +206,7 @@ export type AnthropometryLog = {
 // ─── maturation_assessments ──────────────────────────────────────────
 export type MaturationAssessment = {
   id: string;
+  club_id: string;
   player_id: string;
   anthropometry_log_id: string;
   age_at_measurement: number;
@@ -198,6 +231,7 @@ export type MaturationAssessment = {
 // ─── injuries ─────────────────────────────────────────────────────────
 export type Injury = {
   id: string;
+  club_id: string;
   player_id: string;
   injury_type: InjuryType;
   location: InjuryLocation;
@@ -252,6 +286,7 @@ export type Injury = {
 // ─── injury_examinations ─────────────────────────────────────────────
 export type InjuryExamination = {
   id: string;
+  club_id: string;
   injury_id: string;
   date: string;
   vas_score: number;
@@ -268,6 +303,7 @@ export type InjuryExamination = {
 // ─── injury_logs ──────────────────────────────────────────────────────
 export type InjuryLog = {
   id: string;
+  club_id: string;
   injury_id: string;
   date: string;
   note: string;
@@ -278,6 +314,7 @@ export type InjuryLog = {
 // ─── rehab_phases ─────────────────────────────────────────────────────
 export type RehabPhase = {
   id: string;
+  club_id: string;
   injury_id: string;
   name: string;
   sort_order: number;
@@ -300,4 +337,31 @@ export type InjuryWithPlayer = Injury & {
   players: (Pick<Player, "id" | "first_name" | "last_name" | "position"> & {
     teams: Pick<Team, "name"> | null;
   }) | null;
+};
+
+// ════════════════════════════════════════════════════════════════════
+//  ПРЕДСТАВЛЕННЯ (VIEWS)
+// ════════════════════════════════════════════════════════════════════
+
+/**
+ * Відповідає public.coach_player_availability_view
+ * Безпечне представлення для тренера без діагнозів та клінічних деталей
+ */
+export type CoachPlayerAvailability = {
+  club_id: string;
+  team_id: string;
+  team_name: string;
+  team_category: TeamCategory;
+  team_sort_order: number;
+  player_id: string;
+  first_name: string;
+  last_name: string;
+  position: PlayerPosition;
+  date_of_birth: string;
+  availability_status: "available" | "restricted" | "unavailable";
+  max_minutes: number;
+  restriction_notes: string;
+  days_missed: number | null;
+  expected_return_date: string | null;
+  wellness_readiness: "optimal" | "warning" | "risk";
 };

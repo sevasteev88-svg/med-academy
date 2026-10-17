@@ -10,7 +10,10 @@ export async function createRehabPhasesFromTemplate(injuryId: string) {
 
   const supabase = await createClient();
   const phases = REHAB_TEMPLATE.map((name, i) => ({
-    injury_id: injuryId, name, sort_order: i,
+    club_id: auth.user.clubId,
+    injury_id: injuryId,
+    name,
+    sort_order: i,
     status: i === 0 ? "in_progress" : "planned",
     started_at: i === 0 ? new Date().toISOString().split("T")[0] : null,
   }));
@@ -26,7 +29,11 @@ export async function addCustomRehabPhase(injuryId: string, name: string, afterO
 
   const supabase = await createClient();
   const { error } = await supabase.from("rehab_phases").insert({
-    injury_id: injuryId, name: name.trim(), sort_order: afterOrder + 1, status: "planned",
+    club_id: auth.user.clubId,
+    injury_id: injuryId,
+    name: name.trim(),
+    sort_order: afterOrder + 1,
+    status: "planned",
   });
   if (error) return { error: error.message };
   revalidatePath(`/injuries/${injuryId}`);

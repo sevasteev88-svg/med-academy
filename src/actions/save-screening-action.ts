@@ -34,6 +34,7 @@ export async function saveScreeningAction(screeningData: Omit<PreSeasonScreening
     const { data: newInjury, error: createInjErr } = await supabase
       .from("injuries")
       .insert({
+        club_id: auth.user.clubId,
         player_id: record.player_id,
         date_of_injury: record.date,
         injury_type: "illness",
@@ -53,6 +54,7 @@ export async function saveScreeningAction(screeningData: Omit<PreSeasonScreening
 
   // Зберігаємо у відкриту категорію логів
   const { error } = await supabase.from("injury_logs").insert({
+    club_id: auth.user.clubId,
     injury_id: targetInjuryId,
     date: record.date,
     category: "examination",

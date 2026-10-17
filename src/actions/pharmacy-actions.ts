@@ -54,6 +54,7 @@ export async function updatePharmacyItemAction(updatedItem: PharmacyItem) {
   const payload = `[PHARMACY_STOCK_UPDATE] ${JSON.stringify(newStock)}`;
 
   const { error } = await supabase.from("injury_logs").insert({
+    club_id: auth.user.clubId,
     injury_id: null as any,
     date: new Date().toISOString().split("T")[0],
     category: "treatment",
@@ -93,6 +94,7 @@ export async function adjustPharmacyStockCountAction(
   const payload = `[PHARMACY_STOCK_UPDATE] ${JSON.stringify(newStock)}`;
 
   const { error } = await supabase.from("injury_logs").insert({
+    club_id: auth.user.clubId,
     injury_id: null as any,
     date: new Date().toISOString().split("T")[0],
     category: "treatment",
@@ -129,6 +131,7 @@ export async function prescribeTreatmentWithStockAction(
       const newStock = currentStock.map((i) => (i.id === pharmacyItemId ? updatedItem : i));
 
       await supabase.from("injury_logs").insert({
+        club_id: auth.user.clubId,
         injury_id: null as any,
         date: treatmentData.date,
         category: "treatment",
@@ -149,6 +152,7 @@ export async function prescribeTreatmentWithStockAction(
   const payload = `[TREATMENT] ${JSON.stringify(entry)}`;
 
   const { error: treatmentError } = await supabase.from("injury_logs").insert({
+    club_id: auth.user.clubId,
     injury_id: treatmentData.injury_id || (null as any),
     date: treatmentData.date,
     category: "treatment",

@@ -16,7 +16,11 @@ export async function addInjuryLogAction(_prev: AddLogState, formData: FormData)
   const category = (formData.get("category") as string) || "note";
   if (!injuryId || !note) return { error: "Введіть текст запису" };
   const { error } = await supabase.from("injury_logs").insert({
-    injury_id: injuryId, note, date: date || new Date().toISOString().split("T")[0], category,
+    club_id: auth.user.clubId,
+    injury_id: injuryId,
+    note,
+    date: date || new Date().toISOString().split("T")[0],
+    category,
   });
   if (error) return { error: error.message };
   revalidatePath(`/injuries/${injuryId}`);

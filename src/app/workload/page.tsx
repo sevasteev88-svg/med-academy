@@ -144,7 +144,13 @@ export default async function WorkloadPage({
 
         <Suspense fallback={<div className="text-center py-12 text-slate-500 text-sm">Завантаження даних навантаження...</div>}>
           <WorkloadClient
-            players={players || []}
+            players={(players || []).map((p: any) => ({
+              id: p.id,
+              first_name: p.first_name,
+              last_name: p.last_name,
+              position: p.position,
+              teams: Array.isArray(p.teams) ? p.teams[0] ?? null : p.teams ?? null,
+            }))}
             summaries={summaries}
             recentEntries={enrichedEntries}
             defaultPlayerId={playerId}

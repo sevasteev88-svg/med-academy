@@ -72,6 +72,7 @@ export async function saveHydrationAction(input: SaveHydrationInput) {
     const { data: newInj } = await supabase
       .from("injuries")
       .insert({
+        club_id: auth.user.clubId,
         player_id: input.playerId,
         date_of_injury: record.date,
         injury_type: "illness",
@@ -88,6 +89,7 @@ export async function saveHydrationAction(input: SaveHydrationInput) {
   }
 
   const { error } = await supabase.from("injury_logs").insert({
+    club_id: auth.user.clubId,
     injury_id: targetInjuryId,
     date: record.date,
     category: "examination",

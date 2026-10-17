@@ -38,6 +38,7 @@ async function insertInjury(input: CreateInjuryInput) {
   const { data, error } = await supabase
     .from("injuries")
     .insert({
+      club_id: auth.user.clubId,
       player_id: input.playerId,
       injury_type: input.injuryType,
       location: input.location,
