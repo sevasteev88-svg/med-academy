@@ -3,23 +3,33 @@
 import { assertAuth } from "@/lib/auth";
 
 type TelegramSendInput = {
-  botToken?: string;
-  chatId?: string;
   text: string;
 };
 
+/**
+ * Server Action для надсилання агрегованих медичних звітів у Telegram (п. 1.5.4, 1.5.6).
+ *
+ * Вимоги безпеки:
+ * 1. Ключі та Chat ID беруться виключно із серверних змінних середовища (.env.local),
+ *    без можливості передачі або заміни з клієнтського браузера.
+ * 2. Доступно лише для авторизованого медичного/адміністративного персоналу.
+ */
 export async function sendTelegramDigestAction(input: TelegramSendInput) {
   const auth = await assertAuth();
   if ("error" in auth) return { error: auth.error };
 
-  const token = input.botToken || process.env.TELEGRAM_BOT_TOKEN;
-  const chat = input.chatId || process.env.TELEGRAM_CHAT_ID;
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chat = process.env.TELEGRAM_CHAT_ID;
 
   if (!token || !chat) {
     return {
       error:
-        "Відсутні TELEGRAM_BOT_TOKEN або TELEGRAM_CHAT_ID. Введіть їх у формі налаштувань або додайте в .env.local",
+        "TELEGRAM_BOT_TOKEN або TELEGRAM_CHAT_ID не налаштовані у серверних змінних середовища (.env.local). Додайте їх на сервері.",
     };
+  }
+
+  if (!input.text || !input.text.trim()) {
+    return { error: "Текст повідомлення порожній" };
   }
 
   try {

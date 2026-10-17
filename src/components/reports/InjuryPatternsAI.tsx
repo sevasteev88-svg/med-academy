@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState } from "react";
 import {
@@ -173,9 +173,11 @@ export default function InjuryPatternsAI({
             <MarkdownRenderer content={analysis} />
           </div>
 
-          <p className="text-[11px] text-slate-600 text-center">
-            Аналіз згенеровано AI (Claude). Кореляції потребують клінічної інтерпретації.
-          </p>
+          <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-center">
+            <p className="text-xs font-semibold text-amber-300">
+              ⚠️ Згенеровано ШІ. Не є медичним висновком, перевіряє лікар.
+            </p>
+          </div>
         </div>
       )}
     </div>

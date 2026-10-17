@@ -79,7 +79,7 @@ export default function CoachBriefingClient({ teams, players }: CoachBriefingPro
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Помилка зв'язку з Gemini");
+      if (!res.ok) throw new Error(data.error || "Помилка зв'язку з сервером ШІ");
       setAiSummary(data.answer);
     } catch (err: any) {
       setAiSummary(`⚠️ Помилка формування брифінгу: ${err.message}`);
@@ -112,7 +112,7 @@ export default function CoachBriefingClient({ teams, players }: CoachBriefingPro
               disabled={aiLoading}
               className="px-4 py-2.5 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-[0_0_15px_rgba(56,189,248,0.3)] transition-all flex items-center gap-2 active:scale-95 disabled:opacity-50"
             >
-              <span>🧠</span> {aiLoading ? "Аналіз Gemini..." : "ШІ-Зведення (Gemini)"}
+              <span>🧠</span> {aiLoading ? "Аналіз ШІ..." : "ШІ-Зведення (Claude)"}
             </button>
             <button
               type="button"
@@ -198,7 +198,7 @@ export default function CoachBriefingClient({ teams, players }: CoachBriefingPro
                   <h3 className="text-sm font-bold text-white tracking-wide flex items-center gap-2">
                     Оперативне ШІ-Зведення для Головного Тренера
                     <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/30">
-                      Gemini 2.5 Flash
+                      Claude Sonnet
                     </span>
                   </h3>
                   <p className="text-[11px] text-slate-400">
@@ -234,12 +234,19 @@ export default function CoachBriefingClient({ teams, players }: CoachBriefingPro
               <div className="py-6 flex items-center justify-center gap-3">
                 <div className="w-5 h-5 border-2 border-sky-400 border-t-transparent rounded-full animate-spin" />
                 <span className="text-xs text-slate-300 font-mono">
-                  Gemini формує тактико-медичний рапорт...
+                  ШІ формує тактико-медичний рапорт...
                 </span>
               </div>
             ) : (
-              <div className="whitespace-pre-wrap text-xs text-slate-200 leading-relaxed font-sans">
-                {aiSummary}
+              <div className="space-y-3">
+                <div className="whitespace-pre-wrap text-xs text-slate-200 leading-relaxed font-sans">
+                  {aiSummary}
+                </div>
+                <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-center">
+                  <p className="text-[11px] font-semibold text-amber-300">
+                    ⚠️ Згенеровано ШІ. Не є медичним висновком, перевіряє лікар.
+                  </p>
+                </div>
               </div>
             )}
           </div>

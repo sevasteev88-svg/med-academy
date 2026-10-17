@@ -64,7 +64,7 @@ export default function PlayerSportsIntelligenceCard({
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Помилка зв'язку з Gemini");
+      if (!res.ok) throw new Error(data.error || "Помилка зв'язку з сервером ШІ");
 
       setMessages((prev) => [
         ...prev,
@@ -114,7 +114,7 @@ export default function PlayerSportsIntelligenceCard({
                 ШІ-Спортивний Консультант
               </h3>
               <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/30 font-semibold uppercase">
-                Gemini 2.5 Flash
+                Claude Sonnet
               </span>
             </div>
             <p className="text-xs text-slate-400">
@@ -217,7 +217,7 @@ export default function PlayerSportsIntelligenceCard({
             <div className="w-5 h-5 border-2 border-sky-400 border-t-transparent rounded-full animate-spin" />
             <div className="space-y-1">
               <p className="text-xs font-semibold text-sky-200">
-                Gemini аналізує біометрію, матурацію та історію травм...
+                ШІ аналізує біометрію, матурацію та історію травм...
               </p>
               <p className="text-[10px] text-slate-400 font-mono">
                 Генерація науково обґрунтованої клінічної відповіді
@@ -265,6 +265,12 @@ export default function PlayerSportsIntelligenceCard({
                 <div className="whitespace-pre-wrap font-sans text-xs space-y-2">
                   {m.text}
                 </div>
+
+                {m.role === "assistant" && (
+                  <div className="mt-3 pt-2 border-t border-sky-500/15 text-[10px] text-amber-300/90 font-medium">
+                    ⚠️ Згенеровано ШІ. Не є медичним висновком, перевіряє лікар.
+                  </div>
+                )}
               </div>
             ))}
           </div>

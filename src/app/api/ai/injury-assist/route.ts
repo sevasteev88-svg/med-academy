@@ -2,18 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 import { logAudit } from "@/lib/audit";
 import { hasConsent } from "@/lib/consents";
+import { callAI, createAnonymizer, AI_DISCLAIMER } from "@/lib/ai";
 
 /**
  * POST /api/ai/injury-assist
  *
- * Приймає дані гравця + травми → Claude аналізує →
- * повертає прогноз відновлення, протокол реабілітації, ризики рецидиву.
- *
- * Доступ лише для авторизованих користувачів.
+ * Приймає дані гравця + травми → знеособлює дані → Claude аналізує →
+ * повертає прогноз відновлення та протокол з регідрацією імені для лікаря.
  */
-
 export async function POST(request: NextRequest) {
-  // Перевірка авторизації — не пускаємо анонімні запити до платного API
+  // Перевірка авторизації
   const supabase = await createClient();
   const {
     data: { user },
@@ -22,18 +20,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Не авторизовано" }, { status: 401 });
   }
 
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
-  const geminiKey = process.env.GEMINI_API_KEY;
-
-  if (!anthropicKey && !geminiKey) {
-    return NextResponse.json({
-      error: "API ключ для AI не налаштований. Додайте GEMINI_API_KEY або ANTHROPIC_API_KEY у файл .env.local",
-    }, { status: 500 });
-  }
-
   try {
     const data = await request.json();
     const targetPlayerId = data?.playerId || data?.player?.id;
+
+    // Перевірка згоди батьків для неповнолітніх (п. 1.5.3)
     if (targetPlayerId) {
       const allowed = await hasConsent(targetPlayerId, "ai_processing");
       if (!allowed) {
@@ -43,105 +34,63 @@ export async function POST(request: NextRequest) {
         );
       }
     }
-    const prompt = buildPrompt(data);
 
-    // 1. Якщо є GEMINI_API_KEY — використовуємо Gemini 2.5 Flash
-    if (geminiKey) {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: {
-              temperature: 0.3,
-              maxOutputTokens: 8192,
-            },
-          }),
-        }
-      );
+    // Знеособлення даних перед викликом зовнішньої моделі (п. 1.5.2)
+    const anonymizer = createAnonymizer();
+    const playerPseudo = anonymizer.registerPlayer(data.playerName || "Гравець");
 
-      if (!response.ok) {
-        const err = await response.text();
-        console.error("Gemini API error:", err);
-        return NextResponse.json({ error: "Помилка Gemini API" }, { status: 502 });
-      }
+    const anonymizedData = {
+      ...data,
+      playerPseudonym: playerPseudo,
+      teamName: "Академія",
+    };
 
-      const result = await response.json();
-      const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+    const prompt = buildPrompt(anonymizedData);
+    const system =
+      "Ти — провідний лікар спортивної медицини юнацької футбольної академії. Відповідай українською мовою згідно з протоколами FIFA/Aspetar. Це рекомендація AI — фінальне рішення за лікарем.";
 
-      await logAudit({
-        action: "ai_call",
-        entity: "ai",
-        entityId: "injury-assist",
-        playerId: data?.player?.id,
-        meta: {
-          model: "gemini-2.5-flash",
-          endpoint: "/api/ai/injury-assist",
-        },
-        userId: user.id,
-      });
+    // Єдиний модуль callAI на базі Claude API (п. 1.5.1)
+    const aiResult = await callAI({
+      prompt,
+      system,
+      maxTokens: 3000,
+      temperature: 0.3,
+    });
 
-      return NextResponse.json({ recommendation: text });
-    }
+    // Регідрація (відновлення) реального імені для інтерфейсу лікаря
+    const restoredText = anonymizer.restoreText(aiResult.text);
 
-    // 2. Якщо є ANTHROPIC_API_KEY
-    if (anthropicKey) {
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": anthropicKey,
-          "anthropic-version": "2023-06-01",
-        },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 3000,
-          messages: [{ role: "user", content: prompt }],
-        }),
-      });
+    await logAudit({
+      action: "ai_call",
+      entity: "ai",
+      entityId: "injury-assist",
+      playerId: targetPlayerId,
+      meta: {
+        model: aiResult.model,
+        endpoint: "/api/ai/injury-assist",
+      },
+      userId: user.id,
+    });
 
-      if (!response.ok) {
-        const err = await response.text();
-        console.error("Claude API error:", err);
-        return NextResponse.json({ error: "Помилка Claude API" }, { status: 502 });
-      }
-
-      const result = await response.json();
-      const text = result.content
-        ?.filter((b: any) => b.type === "text")
-        .map((b: any) => b.text)
-        .join("\n");
-
-      await logAudit({
-        action: "ai_call",
-        entity: "ai",
-        entityId: "injury-assist",
-        playerId: data?.player?.id,
-        meta: {
-          model: "claude-sonnet-4-20250514",
-          endpoint: "/api/ai/injury-assist",
-        },
-        userId: user.id,
-      });
-
-      return NextResponse.json({ recommendation: text });
-    }
-
-    return NextResponse.json({ error: "Немає доступного провайдера AI" }, { status: 500 });
-  } catch (err) {
+    return NextResponse.json({
+      recommendation: restoredText,
+      disclaimer: AI_DISCLAIMER,
+    });
+  } catch (err: any) {
     console.error("Injury assist error:", err);
-    return NextResponse.json({ error: "Внутрішня помилка" }, { status: 500 });
+    return NextResponse.json(
+      { error: err.message || "Помилка формування рекомендацій ШІ" },
+      { status: 500 }
+    );
   }
 }
 
 function buildPrompt(data: any): string {
-  return `Ти — AI-асистент спортивного лікаря ФК «Чорноморець» (юнацька академія).
+  return `Ти — AI-асистент спортивного лікаря юнацької футбольної академії.
 Лікар щойно зафіксував травму. Проаналізуй профіль гравця і дай рекомендації.
 
 ## Профіль гравця:
-- Ім'я: ${data.playerName}
+- Код гравця: ${data.playerPseudonym}
 - Вік: ${data.age} років
 - Стать: ${data.sex === "male" ? "хлопець" : "дівчина"}
 - Позиція: ${data.position}
@@ -198,7 +147,7 @@ function formatPreviousInjuries(injuries: any[] | undefined): string {
   return injuries
     .map(
       (i) =>
-        `- ${i.injuryType} ${i.location} ${i.side}, ${i.severity}, ${i.dateOfInjury}, пропущено ${i.daysMissed ?? "?"} дн., статус: ${i.status}`
+        `- ${i.injuryType} ${i.location} ${i.side}, ${i.severity}, дата: ${i.dateOfInjury}, пропущено ${i.daysMissed ?? "?"} дн., статус: ${i.status}`
     )
     .join("\n");
 }

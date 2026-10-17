@@ -76,35 +76,23 @@ export default function AvailabilityClient({ teams }: Props) {
   const totalWarn = allPlayers.filter((p) => playerStatus(p) === "warn").length;
   const totalDanger = allPlayers.filter((p) => playerStatus(p) === "danger").length;
 
-  // Формування тексту рапорту для Telegram
+  // Формування тексту рапорту для Telegram (ТІЛЬКИ агрегати, п. 1.5.4)
   const todayStr = new Date().toLocaleDateString("uk-UA", {
     day: "numeric",
     month: "long",
     year: "numeric",
   });
-  const injuredList = allPlayers
-    .filter((p) => playerStatus(p) === "danger" || playerStatus(p) === "warn")
-    .map((p) => {
-      const inj = (p.injuries ?? []).find((i) => i.status === "active" || i.status === "rehabilitation");
-      const icon = playerStatus(p) === "danger" ? "🔴" : "🟡";
-      const diag = inj ? `${INJURY_TYPE_UA[inj.injury_type] ?? inj.injury_type} (${LOCATION_UA[inj.location] ?? inj.location})` : "Травма";
-      const vas = inj?.vas_score != null ? `ВАШ ${inj.vas_score}/10` : "";
-      return `${icon} *${p.last_name} ${p.first_name}* — ${diag} ${vas}`;
-    })
-    .join("\n");
 
-  const telegramDigestText = `🏥 *МЕДИЧНИЙ ЗВІТ ФК «ЧОРНОМОРЕЦЬ»*
+  const telegramDigestText = `🏥 *РАПОРТ ДОСТУПНОСТІ СКЛАДУ*
 📅 *${todayStr}*
 
-📊 *Статус доступності складу:*
-🟢 Доступні: *${totalOk}*
-🟡 Обмежені/реабілітація: *${totalWarn}*
-🔴 Травмовані/недоступні: *${totalDanger}*
-👥 Всього гравців: *${allPlayers.length}*
+📊 *Загальна статистика обойми:*
+🟢 Готові до тренувань: *${totalOk}*
+🟡 Обмежене навантаження / модифікація: *${totalWarn}*
+🔴 Травмовані (лазарет): *${totalDanger}*
+👥 Всього гравців в обоймі: *${allPlayers.length}*
 
-${injuredList ? `📋 *Гравці в лазареті / модифіковані:*\n${injuredList}` : "✅ Всі гравці в строю без травм!"}
-
-🔗 _Згенеровано медичною системою ФК Чорноморець_`;
+🔒 _Персональні картки та індивідуальні плани доступні виключно у закритій медичній системі._`;
 
   // Фільтрація команд
   const filteredTeams = teams

@@ -176,10 +176,11 @@ export default function InjuryAIAssistant({
             <MarkdownRenderer content={recommendation} />
           </div>
 
-          <p className="text-[11px] text-slate-600 text-center">
-            Рекомендації згенеровано AI (Claude) на основі профілю гравця.
-            Фінальне клінічне рішення — за лікарем.
-          </p>
+          <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-center">
+            <p className="text-xs font-semibold text-amber-300">
+              ⚠️ Згенеровано ШІ. Не є медичним висновком, перевіряє лікар.
+            </p>
+          </div>
         </div>
       )}
     </div>

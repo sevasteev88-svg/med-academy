@@ -82,6 +82,7 @@ export default async function InjuryPatternsPage() {
 
     return {
       id: inj.id,
+      playerId: inj.players.id,
       firstName: inj.players.first_name,
       lastName: inj.players.last_name,
       position: inj.players.position,
@@ -106,6 +107,7 @@ export default async function InjuryPatternsPage() {
 
   // Матурація (унікальні гравці)
   const maturation = Array.from(maturationMap.values()).map((m: any) => ({
+    playerId: m.player_id,
     firstName: m.players.first_name,
     lastName: m.players.last_name,
     teamName: m.players.teams.name,
@@ -126,6 +128,7 @@ export default async function InjuryPatternsPage() {
   const recurrences = Array.from(playerInjuries.entries())
     .filter(([, injs]) => injs.length > 1)
     .map(([, injs]) => ({
+      playerId: injs[0].playerId,
       firstName: injs[0].firstName,
       lastName: injs[0].lastName,
       teamName: injs[0].teamName,

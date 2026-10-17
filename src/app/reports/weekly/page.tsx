@@ -16,7 +16,7 @@ export default async function WeeklyReportPage() {
   const { data: teams } = await supabase.from("teams").select("id, name, category, sort_order, players ( id, first_name, last_name, position, injuries ( id, status, vas_score ) )").order("sort_order", { ascending: true });
   const { data: newInjuries } = await supabase.from("injuries").select("*, players!inner ( first_name, last_name, teams!inner ( name ) )").gte("date_of_injury", weekAgoStr).order("date_of_injury", { ascending: false });
   const { data: closedInjuries } = await supabase.from("injuries").select("*, players!inner ( first_name, last_name, teams!inner ( name ) )").eq("status", "closed").gte("actual_return_date", weekAgoStr).order("actual_return_date", { ascending: false });
-  const { data: activeInjuries } = await supabase.from("injuries").select("*, players!inner ( first_name, last_name, teams!inner ( name ) )").in("status", ["active", "rehabilitation"]).order("vas_score", { ascending: false });
+  const { data: activeInjuries } = await supabase.from("injuries").select("*, players!inner ( id, first_name, last_name, teams!inner ( name ) )").in("status", ["active", "rehabilitation"]).order("vas_score", { ascending: false });
   const { data: weekExams } = await supabase.from("injury_examinations").select("id").gte("date", weekAgoStr);
   const { data: weekLogs } = await supabase.from("injury_logs").select("id").gte("date", weekAgoStr);
 
@@ -57,7 +57,7 @@ export default async function WeeklyReportPage() {
         <p className="text-xs text-slate-500 mt-1">ФК «Чорноморець» · Медичний штаб · {weekStart} — {reportDate}</p>
       </div>
 
-      {/* ШІ Генератор тижневого звіту (Gemini) */}
+      {/* ШІ Генератор тижневого звіту (Claude) */}
       <div className="print:hidden">
         <WeeklyReportAI data={aiData} />
       </div>

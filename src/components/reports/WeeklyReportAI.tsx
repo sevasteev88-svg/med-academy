@@ -46,7 +46,7 @@ export default function WeeklyReportAI({ data }: { data: ReportData }) {
       }
 
       if (!json.report) {
-        setError("AI не повернув текст звіту. Перевірте GEMINI_API_KEY або ANTHROPIC_API_KEY у налаштуваннях.");
+        setError("ШІ не повернув текст звіту. Перевірте ANTHROPIC_API_KEY у налаштуваннях сервера.");
         return;
       }
 
@@ -57,6 +57,23 @@ export default function WeeklyReportAI({ data }: { data: ReportData }) {
       setLoading(false);
     }
   }
+
+  const todayStr = new Date().toLocaleDateString("uk-UA", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+
+  const telegramDigest = `🏥 *ТИЖНЕВИЙ РАПОРТ ДОСТУПНОСТІ СКЛАДУ*
+📅 *${todayStr}*
+
+📊 *Статус обойми академії:*
+🟢 Готові до тренувань/матчів: *${data.availablePlayers ?? 0}*
+🟡 Обмежене навантаження / реабілітація: *${data.rehabInjuries?.length ?? 0}*
+🔴 Травмовані (лазарет): *${data.activeInjuries?.length ?? 0}*
+👥 Всього гравців: *${data.totalPlayers ?? 0}*
+
+🔒 _Повний клінічний звіт та плани відновлення доступні у закритій медичній системі._`;
 
   async function copyToClipboard() {
     if (!report) return;
@@ -89,10 +106,10 @@ export default function WeeklyReportAI({ data }: { data: ReportData }) {
           {loading ? (
             <span className="flex items-center justify-center gap-3">
               <Spinner />
-              Claude аналізує дані…
+              ШІ аналізує дані…
             </span>
           ) : (
-            "🤖 Згенерувати тижневий звіт"
+            "🤖 Згенерувати тижневий звіт (Claude)"
           )}
         </button>
       )}
@@ -121,7 +138,7 @@ export default function WeeklyReportAI({ data }: { data: ReportData }) {
             >
               {copied ? "✓ Скопійовано" : "📋 Копіювати"}
             </button>
-            <TelegramDigestModal defaultMessage={report} />
+            <TelegramDigestModal defaultMessage={telegramDigest} />
           </div>
 
           {/* Рендер Markdown */}
@@ -129,11 +146,15 @@ export default function WeeklyReportAI({ data }: { data: ReportData }) {
             <MarkdownRenderer content={report} />
           </div>
 
-          {/* Дисклеймер */}
-          <p className="text-[11px] text-slate-600 text-center">
-            Звіт згенеровано AI (Claude) на основі даних системи.
-            Перевірте інформацію перед відправкою тренерському штабу.
-          </p>
+          {/* Дисклеймер (п. 1.5.5) */}
+          <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-center space-y-1">
+            <p className="text-xs font-bold text-amber-300">
+              ⚠️ Згенеровано ШІ. Не є медичним висновком, перевіряє лікар.
+            </p>
+            <p className="text-[11px] text-slate-400">
+              Клінічні рекомендації носять дорадчий характер та потребують верифікації лікарем.
+            </p>
+          </div>
         </div>
       )}
     </div>
