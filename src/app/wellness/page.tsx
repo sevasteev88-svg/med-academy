@@ -13,6 +13,7 @@ export default async function WellnessPage({
   const { data: players } = await supabase
     .from("players")
     .select("id, first_name, last_name, position, teams ( name )")
+    .is("archived_at", null)
     .order("last_name", { ascending: true });
 
   const playerList = (players as any) ?? [];

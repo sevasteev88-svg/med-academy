@@ -19,6 +19,7 @@ export default async function NewInjuryPage({ searchParams }: Props) {
     const { data: players } = await supabase
       .from("players")
       .select("id, first_name, last_name, team_id, teams(name)")
+      .is("archived_at", null)
       .order("last_name");
 
     return (

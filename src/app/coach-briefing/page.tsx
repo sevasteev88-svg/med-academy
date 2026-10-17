@@ -53,7 +53,8 @@ export default async function CoachBriefingPage() {
           id,
           status
         )
-      `);
+      `)
+      .is("archived_at", null);
 
     briefingPlayers = (playersData ?? []).map((p: any) => {
       const activeInjuries = (p.injuries ?? []).filter(

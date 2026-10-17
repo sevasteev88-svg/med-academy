@@ -204,6 +204,8 @@ export type Player = {
   locked_until?: string | null;
   assent_acknowledged?: boolean;
   assent_acknowledged_at?: string | null;
+  archived_at?: string | null;
+  archive_reason?: string | null;
   created_at: string;
 };
 

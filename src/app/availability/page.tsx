@@ -16,6 +16,7 @@ export default async function AvailabilityPage() {
         first_name,
         last_name,
         position,
+        archived_at,
         injuries (
           id,
           status,
@@ -36,6 +37,11 @@ export default async function AvailabilityPage() {
     `)
     .order("sort_order", { ascending: true });
 
-  return <AvailabilityClient teams={(teams as any) ?? []} />;
-}
+  // 1.6 Приховуємо архівних гравців із моніторингу доступності
+  const activeTeams = (teams ?? []).map((t: any) => ({
+    ...t,
+    players: (t.players ?? []).filter((p: any) => !p.archived_at),
+  }));
 
+  return <AvailabilityClient teams={activeTeams as any} />;
+}

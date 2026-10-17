@@ -23,9 +23,9 @@ import type { WearableBiometricsEntry } from "@/types/wearables";
 import type { RehabCheckinData } from "@/types/rehab-portal";
 import type { LsiAssessmentRecord } from "@/types/lsi";
 import type { PlayerCustomRehabPlan } from "@/types/exercise-library";
-import DeleteButton from "@/components/ui/DeleteButton";
 import PrintButton from "@/components/ui/PrintButton";
-import { deletePlayerAction } from "@/actions/delete-player-action";
+import PlayerArchiveControl from "@/components/players/PlayerArchiveControl";
+import { getCurrentUser } from "@/lib/auth";
 import { POSITION_LABELS, POSITION_FULL, DOMINANT_UA, LOCATION_UA, SEVERITY_UA, INJURY_TYPE_UA, STATUS_UA } from "@/lib/constants";
 import PlayerConsentsCard from "@/components/consents/PlayerConsentsCard";
 import {
@@ -218,7 +218,8 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
   for (const inj of injuryList) { const d = calcDaysMissed(inj); daysByType[inj.injury_type] = (daysByType[inj.injury_type]??0)+d; daysByLocation[inj.location] = (daysByLocation[inj.location]??0)+d; }
   const activeInjuries = injuryList.filter(i => i.status === "active" || i.status === "rehabilitation");
   const periodLabel = from ? `${from}${to ? ` — ${to}` : " — сьогодні"}` : "За весь час";
-  const handleDelete = deletePlayerAction.bind(null, id);
+  const currentUser = await getCurrentUser();
+  const isAdminUser = currentUser?.role === "admin";
 
   const initials = `${player.last_name?.[0] ?? ""}${player.first_name?.[0] ?? ""}`;
 
@@ -328,7 +329,17 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
               </Link>
               <PrintButton label="PDF Паспорт" entity="player" entityId={id} playerId={id} />
             </div>
-            <DeleteButton onDelete={handleDelete} itemName="гравця" />
+            <PlayerArchiveControl
+              playerId={id}
+              playerLastName={player.last_name}
+              playerFirstName={player.first_name}
+              isArchived={Boolean(player.archived_at)}
+              archivedAt={player.archived_at}
+              archiveReason={player.archive_reason}
+              hasOpenInjuries={activeInjuries.length > 0}
+              openInjuriesCount={activeInjuries.length}
+              isAdmin={isAdminUser}
+            />
           </div>
         </Card>
 

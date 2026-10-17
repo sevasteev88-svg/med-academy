@@ -23,10 +23,11 @@ export default async function WorkloadPage({
   const { playerId } = await searchParams;
   const supabase = await createClient();
 
-  // 1. Fetch players
+  // 1. Fetch players (1.6 виключаємо архівних гравців)
   const { data: players } = await supabase
     .from("players")
     .select("id, first_name, last_name, position, teams(name)")
+    .is("archived_at", null)
     .order("last_name");
 
   // 2. Fetch recent workload sessions

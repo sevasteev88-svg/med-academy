@@ -15,6 +15,7 @@ export default async function KioskWellnessPage() {
   const { data: players } = await supabase
     .from("players")
     .select("id, first_name, last_name, position, teams(name)")
+    .is("archived_at", null)
     .order("last_name");
 
   const today = new Date().toISOString().split("T")[0];

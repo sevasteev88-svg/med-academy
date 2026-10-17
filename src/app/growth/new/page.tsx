@@ -11,6 +11,7 @@ export default async function NewMeasurementPage({
   const { data: players } = await supabase
     .from("players")
     .select("id, first_name, last_name, sex, date_of_birth")
+    .is("archived_at", null)
     .order("last_name");
 
   return (

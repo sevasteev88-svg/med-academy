@@ -8,7 +8,7 @@ import {
   CONSENT_SCOPE_META,
   type ConsentCellStatus,
   type PlayerConsentSummary,
-} from "@/lib/consents";
+} from "@/lib/consent-constants";
 import {
   sendBulkConsentRequestsAction,
   publishNewConsentDocumentVersionAction,

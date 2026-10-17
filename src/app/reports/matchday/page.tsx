@@ -57,6 +57,7 @@ export default async function MatchdayProtocolPage() {
           last_name,
           position,
           date_of_birth,
+          archived_at,
           injuries (
             id,
             status,
@@ -68,7 +69,9 @@ export default async function MatchdayProtocolPage() {
       .order("sort_order", { ascending: true });
 
     flattenedPlayers = (fallbackData || []).flatMap((t) =>
-      (t.players || []).map((p: any) => {
+      (t.players || [])
+        .filter((p: any) => !p.archived_at)
+        .map((p: any) => {
         const activeInjuries = (p.injuries || []).filter(
           (i: any) => i.status === "active" || i.status === "rehabilitation"
         );

@@ -8,7 +8,7 @@ import {
   CONSENT_SCOPE_META,
   GUARDIAN_RELATION_UA,
   type PlayerConsentSummary,
-} from "@/lib/consents";
+} from "@/lib/consent-constants";
 import {
   saveGuardianAction,
   deleteGuardianAction,

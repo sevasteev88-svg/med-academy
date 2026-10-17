@@ -16,6 +16,7 @@ export default async function HydrationPage() {
     supabase
       .from("players")
       .select("id, first_name, last_name, position, teams(name)")
+      .is("archived_at", null)
       .order("last_name"),
     supabase
       .from("injury_logs")

@@ -6,7 +6,7 @@ import {
   ALL_CONSENT_SCOPES,
   CONSENT_SCOPE_META,
   GUARDIAN_RELATION_UA,
-} from "@/lib/consents";
+} from "@/lib/consent-constants";
 import {
   requestConsentOtpAction,
   submitConsentWithOtpAction,

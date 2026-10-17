@@ -21,6 +21,7 @@ export default function PlayerFilters({ teams }: Props) {
   const currentQuery = searchParams.get("q") ?? "";
   const currentTeam = searchParams.get("team") ?? "all";
   const currentStatus = searchParams.get("status") ?? "all";
+  const currentView = searchParams.get("view") === "archived" ? "archived" : "active";
 
   function updateParams(newParams: Record<string, string | null>) {
     const params = new URLSearchParams(searchParams.toString());
@@ -44,6 +45,40 @@ export default function PlayerFilters({ teams }: Props) {
 
   return (
     <div className="space-y-3">
+      {/* 1.6 Перемикач режиму: Активний склад / Архів */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-1 border-b border-white/5">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => updateParams({ view: null })}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+              currentView === "active"
+                ? "bg-sky-600 text-white shadow-sm shadow-sky-600/30"
+                : "bg-slate-900/60 text-slate-400 hover:text-white hover:bg-slate-800/60 border border-white/5"
+            }`}
+          >
+            <span>👥</span> Активний склад
+          </button>
+          <button
+            type="button"
+            onClick={() => updateParams({ view: "archived" })}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+              currentView === "archived"
+                ? "bg-amber-600 text-white shadow-sm shadow-amber-600/30"
+                : "bg-slate-900/60 text-slate-400 hover:text-white hover:bg-slate-800/60 border border-white/5"
+            }`}
+          >
+            <span>📦</span> Архів
+          </button>
+        </div>
+
+        {currentView === "archived" && (
+          <span className="text-[11px] font-mono text-amber-300/90 bg-amber-500/10 px-2.5 py-1 rounded-lg border border-amber-500/20 flex items-center gap-1">
+            <span>ℹ️</span> Відображаються лише архівні футболісти
+          </span>
+        )}
+      </div>
+
       {/* Верхній рядок: Пошук за прізвищем */}
       <div className="relative">
         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">🔍</span>

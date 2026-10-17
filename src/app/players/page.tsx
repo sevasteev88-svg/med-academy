@@ -4,6 +4,7 @@ import Image from "next/image";
 import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
 import PlayerFilters from "@/components/players/PlayerFilters";
+import QuickRestoreButton from "@/components/players/QuickRestoreButton";
 import { POSITION_LABELS, TEAM_CATEGORY_UA, LOCATION_UA, INJURY_TYPE_UA } from "@/lib/constants";
 import { playerStatus } from "@/lib/player-status";
 
@@ -26,9 +27,10 @@ function growthZone(player: any): "yellow" | "red" | null {
 export default async function PlayersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; team?: string; status?: string }>;
+  searchParams: Promise<{ q?: string; team?: string; status?: string; view?: string }>;
 }) {
-  const { q, team: selectedTeam, status: selectedStatus } = await searchParams;
+  const { q, team: selectedTeam, status: selectedStatus, view } = await searchParams;
+  const isArchiveView = view === "archived";
   const supabase = await createClient();
 
   const [teamsRes, photosRes] = await Promise.all([
@@ -37,7 +39,7 @@ export default async function PlayersPage({
       .select(`
         id, name, category, sort_order,
         players (
-          id, first_name, last_name, date_of_birth, position,
+          id, first_name, last_name, date_of_birth, position, archived_at, archive_reason,
           injuries ( id, status, vas_score, location, injury_type ),
           maturation_assessments ( risk_zone, growth_phase, created_at )
         )
@@ -80,6 +82,14 @@ export default async function PlayersPage({
       })
       .map((team: any) => {
         let players = team.players ?? [];
+
+        // 0. Фільтр за архівом: за замовчуванням архівні приховані, у режимі архіву — тільки архівні
+        players = players.filter((p: any) => {
+          if (isArchiveView) {
+            return Boolean(p.archived_at);
+          }
+          return !p.archived_at;
+        });
 
         // 1. Пошук по імені / прізвищу
         if (searchQuery) {
@@ -134,7 +144,7 @@ export default async function PlayersPage({
                 <span>⚽</span> {team.name}
               </h3>
               <span className="text-xs font-mono text-slate-400 bg-slate-900/60 px-2.5 py-0.5 rounded-full border border-slate-800">
-                {(team.players ?? []).length} гравців
+                {(team.players ?? []).length} {isArchiveView ? "в архіві" : "гравців"}
               </span>
             </div>
 
@@ -153,58 +163,70 @@ export default async function PlayersPage({
                   );
 
                   return (
-                    <Link key={player.id} href={`/players/${player.id}`} className="group block">
-                      <Card interactive accent={status === "ok" ? null : status} className="p-3.5 space-y-2.5">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex items-center gap-3 min-w-0">
-                            {/* Аватар з фото або ініціалами */}
-                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-slate-800 to-slate-900 border border-sky-500/20 group-hover:border-sky-400/50 flex items-center justify-center font-bold font-mono text-xs text-sky-300 shrink-0 shadow-inner overflow-hidden relative">
-                              {photo ? (
-                                <Image
-                                  src={photo}
-                                  alt={player.last_name}
-                                  fill
-                                  sizes="48px"
-                                  className="object-cover"
-                                />
+                    <div key={player.id} className="group block">
+                      <Card
+                        interactive
+                        accent={isArchiveView ? null : (status === "ok" ? null : status)}
+                        className={`p-3.5 space-y-2.5 ${isArchiveView ? "opacity-90 border-amber-500/20 bg-slate-900/50" : ""}`}
+                      >
+                        <Link href={`/players/${player.id}`} className="block">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-center gap-3 min-w-0">
+                              {/* Аватар з фото або ініціалами */}
+                              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-slate-800 to-slate-900 border border-sky-500/20 group-hover:border-sky-400/50 flex items-center justify-center font-bold font-mono text-xs text-sky-300 shrink-0 shadow-inner overflow-hidden relative">
+                                {photo ? (
+                                  <Image
+                                    src={photo}
+                                    alt={player.last_name}
+                                    fill
+                                    sizes="48px"
+                                    className="object-cover"
+                                  />
+                                ) : (
+                                  <span>{initials}</span>
+                                )}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="font-bold text-white text-sm truncate group-hover:text-sky-300 transition-colors">
+                                  {player.last_name} {player.first_name}
+                                </div>
+                                <div className="flex items-center gap-1.5 text-xs text-slate-400 mt-0.5">
+                                  {player.position && (
+                                    <span className="font-mono text-sky-300 px-1.5 py-0.2 rounded bg-sky-500/10 text-[10px] font-semibold border border-sky-500/20">
+                                      {POSITION_LABELS[player.position] ?? player.position}
+                                    </span>
+                                  )}
+                                  <span>·</span>
+                                  <span>{calcAge(player.date_of_birth)} р.</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex flex-col items-end gap-1.5 shrink-0">
+                              {isArchiveView ? (
+                                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                                  📦 В архіві
+                                </span>
                               ) : (
-                                <span>{initials}</span>
+                                <Badge variant={status}>{statusLabel(status)}</Badge>
+                              )}
+                              {gZone && !isArchiveView && (
+                                <span
+                                  className={`text-[9px] font-bold font-mono px-1.5 py-0.5 rounded border ${
+                                    gZone === "red"
+                                      ? "bg-rose-500/15 text-rose-300 border-rose-500/30 shadow-sm"
+                                      : "bg-amber-500/15 text-amber-300 border-amber-500/30 shadow-sm"
+                                  }`}
+                                >
+                                  PHV {gZone}
+                                </span>
                               )}
                             </div>
-                            <div className="min-w-0">
-                              <div className="font-bold text-white text-sm truncate group-hover:text-sky-300 transition-colors">
-                                {player.last_name} {player.first_name}
-                              </div>
-                              <div className="flex items-center gap-1.5 text-xs text-slate-400 mt-0.5">
-                                {player.position && (
-                                  <span className="font-mono text-sky-300 px-1.5 py-0.2 rounded bg-sky-500/10 text-[10px] font-semibold border border-sky-500/20">
-                                    {POSITION_LABELS[player.position] ?? player.position}
-                                  </span>
-                                )}
-                                <span>·</span>
-                                <span>{calcAge(player.date_of_birth)} р.</span>
-                              </div>
-                            </div>
                           </div>
+                        </Link>
 
-                          <div className="flex flex-col items-end gap-1.5 shrink-0">
-                            <Badge variant={status}>{statusLabel(status)}</Badge>
-                            {gZone && (
-                              <span
-                                className={`text-[9px] font-bold font-mono px-1.5 py-0.5 rounded border ${
-                                  gZone === "red"
-                                    ? "bg-rose-500/15 text-rose-300 border-rose-500/30 shadow-sm"
-                                    : "bg-amber-500/15 text-amber-300 border-amber-500/30 shadow-sm"
-                                }`}
-                              >
-                                PHV {gZone}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Інформація про активну травму / біль ВАШ */}
-                        {activeInj && (
+                        {/* Інформація про активну травму / біль ВАШ (для активних гравців) */}
+                        {!isArchiveView && activeInj && (
                           <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-slate-400">
                             <span className="truncate pr-2">
                               🩹 {INJURY_TYPE_UA[activeInj.injury_type] ?? activeInj.injury_type} (
@@ -223,8 +245,27 @@ export default async function PlayersPage({
                             )}
                           </div>
                         )}
+
+                        {/* 1.6 Блок інформації про архів та кнопка «Відновити» (для архівних гравців) */}
+                        {isArchiveView && (
+                          <div className="pt-2 border-t border-amber-500/15 flex items-center justify-between gap-2 text-[11px]">
+                            <div className="min-w-0 truncate text-slate-400">
+                              <span className="text-amber-300/90 font-medium">Причина:</span>{" "}
+                              <span className="text-slate-300">{player.archive_reason || "Не вказана"}</span>
+                              {player.archived_at && (
+                                <span className="text-[10px] text-slate-500 block truncate">
+                                  з {new Date(player.archived_at).toLocaleDateString("uk-UA")}
+                                </span>
+                              )}
+                            </div>
+                            <QuickRestoreButton
+                              playerId={player.id}
+                              playerName={`${player.last_name} ${player.first_name}`}
+                            />
+                          </div>
+                        )}
                       </Card>
-                    </Link>
+                    </div>
                   );
                 })}
             </div>
@@ -241,12 +282,16 @@ export default async function PlayersPage({
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-sky-500/15">
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xl">👥</span>
-              <h1 className="text-2xl font-black text-white tracking-tight">Реєстр футболістів</h1>
+              <span className="text-xl">{isArchiveView ? "📦" : "👥"}</span>
+              <h1 className="text-2xl font-black text-white tracking-tight">
+                {isArchiveView ? "Архів футболістів" : "Реєстр футболістів"}
+              </h1>
             </div>
             <p className="text-xs text-slate-400 mt-1">
-              База гравців Академії та молодіжного складу ФК «Чорноморець»
-              {(searchQuery || (selectedTeam && selectedTeam !== "all") || (selectedStatus && selectedStatus !== "all")) && (
+              {isArchiveView
+                ? "Архівовані гравці ФК «Чорноморець» (історію збережено, приховані з оперативних звітів)"
+                : "База активних гравців Академії та молодіжного складу ФК «Чорноморець»"}
+              {(searchQuery || (selectedTeam && selectedTeam !== "all") || (selectedStatus && selectedStatus !== "all") || isArchiveView) && (
                 <span className="text-sky-400 ml-1">· Знайдено: {totalFiltered}</span>
               )}
             </p>
@@ -270,12 +315,16 @@ export default async function PlayersPage({
 
         {totalFiltered === 0 && (
           <Card className="text-center py-12">
-            <span className="text-3xl block mb-2">🔍</span>
+            <span className="text-3xl block mb-2">{isArchiveView ? "📦" : "🔍"}</span>
             <p className="text-sm font-semibold text-slate-300">
-              За вибраними параметрами гравців не знайдено
+              {isArchiveView
+                ? "В архіві немає гравців за вказаними параметрами"
+                : "За вибраними параметрами гравців не знайдено"}
             </p>
             <p className="text-xs text-slate-500 mt-1">
-              Спробуйте скинути фільтри або змінити пошуковий запит
+              {isArchiveView
+                ? "Усі гравці наразі перебувають в активному складі"
+                : "Спробуйте скинути фільтри або змінити пошуковий запит"}
             </p>
           </Card>
         )}
@@ -283,4 +332,3 @@ export default async function PlayersPage({
     </div>
   );
 }
-
