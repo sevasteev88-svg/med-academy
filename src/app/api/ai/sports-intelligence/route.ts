@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
+import { logAudit } from "@/lib/audit";
 
 export async function POST(request: NextRequest) {
   // Авторизація
@@ -115,6 +116,19 @@ ${(conversationHistory || []).map((m: any) => `${m.role === "user" ? "Питан
     const answer =
       result.candidates?.[0]?.content?.parts?.[0]?.text ||
       "Не вдалося згенерувати відповідь. Будь ласка, спробуйте ще раз.";
+
+    await logAudit({
+      action: "ai_call",
+      entity: "ai",
+      entityId: "sports-intelligence",
+      playerId: playerContext?.id || null,
+      meta: {
+        model: "gemini-2.5-flash",
+        mode: mode || "general",
+        endpoint: "/api/ai/sports-intelligence",
+      },
+      userId: user.id,
+    });
 
     return NextResponse.json({ answer });
   } catch (err: any) {

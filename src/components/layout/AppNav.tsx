@@ -42,6 +42,11 @@ const COACH_NAV: NavItem[] = [
   { href: "/reports/matchday", label: "Заявка на матч", icon: "📜" },
 ];
 
+const ADMIN_NAV: NavItem[] = [
+  ...DOCTOR_NAV,
+  { href: "/admin/audit", label: "Журнал дій", icon: "🛡️" },
+];
+
 export default function AppNav({
   role,
   userName,
@@ -54,7 +59,7 @@ export default function AppNav({
   const pathname = usePathname();
   const [isPending, startTransition] = useTransition();
 
-  const navItems = role === "coach" ? COACH_NAV : DOCTOR_NAV;
+  const navItems = role === "admin" ? ADMIN_NAV : role === "coach" ? COACH_NAV : DOCTOR_NAV;
 
   function isActive(href: string): boolean {
     if (href === "/") return pathname === "/";
@@ -110,14 +115,16 @@ export default function AppNav({
         <div className="flex flex-col items-center gap-2 pt-2 border-t border-sky-500/10 shrink-0 w-full">
           <div className="group relative">
             <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold border ${
-              role === "doctor"
+              role === "admin"
+                ? "bg-purple-500/15 text-purple-400 border-purple-500/30"
+                : role === "doctor"
                 ? "bg-sky-500/15 text-sky-400 border-sky-500/30"
                 : "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
             }`}>
-              {role === "doctor" ? "🩺" : "⚽"}
+              {role === "admin" ? "🛡️" : role === "doctor" ? "🩺" : "⚽"}
             </div>
             <span className="absolute left-full ml-3 px-2.5 py-1.5 bg-slate-900/95 backdrop-blur-md text-white text-xs font-semibold rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-all shadow-xl border border-sky-500/20 z-50">
-              {userName} · {role === "doctor" ? "Лікар" : "Тренер"}
+              {userName} · {role === "admin" ? "Адміністратор" : role === "doctor" ? "Лікар" : "Тренер"}
             </span>
           </div>
           <button onClick={handleLogout} disabled={isPending}

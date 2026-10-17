@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
+import { logAudit } from "@/lib/audit";
 
 /**
  * POST /api/ai/injury-assist
@@ -58,6 +59,19 @@ export async function POST(request: NextRequest) {
 
       const result = await response.json();
       const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+      await logAudit({
+        action: "ai_call",
+        entity: "ai",
+        entityId: "injury-assist",
+        playerId: data?.player?.id,
+        meta: {
+          model: "gemini-2.5-flash",
+          endpoint: "/api/ai/injury-assist",
+        },
+        userId: user.id,
+      });
+
       return NextResponse.json({ recommendation: text });
     }
 
@@ -88,6 +102,18 @@ export async function POST(request: NextRequest) {
         ?.filter((b: any) => b.type === "text")
         .map((b: any) => b.text)
         .join("\n");
+
+      await logAudit({
+        action: "ai_call",
+        entity: "ai",
+        entityId: "injury-assist",
+        playerId: data?.player?.id,
+        meta: {
+          model: "claude-sonnet-4-20250514",
+          endpoint: "/api/ai/injury-assist",
+        },
+        userId: user.id,
+      });
 
       return NextResponse.json({ recommendation: text });
     }
