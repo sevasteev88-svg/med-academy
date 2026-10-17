@@ -192,13 +192,13 @@ export default function PlayerRehabCheckinHistory({
                   <div className="flex items-center justify-between text-[11px]">
                     <span className="font-mono text-slate-400">{chk.date} · {chk.time || "Ранок"}</span>
                     <span className={`font-mono font-bold px-2 py-0.5 rounded-lg border text-[10px] ${
-                      chk.vas_score >= 7
+                      chk.vas_score != null && chk.vas_score >= 7
                         ? "bg-rose-500/20 text-rose-300 border-rose-500/30"
-                        : chk.vas_score >= 4
+                        : chk.vas_score != null && chk.vas_score >= 4
                         ? "bg-amber-500/20 text-amber-300 border-amber-500/30"
                         : "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
                     }`}>
-                      Біль ВАШ: {chk.vas_score}/10
+                      Біль ВАШ: {chk.vas_score != null ? `${chk.vas_score}/10` : "—"}
                     </span>
                   </div>
 

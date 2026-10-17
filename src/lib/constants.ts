@@ -16,7 +16,10 @@ export const LOG_CATEGORY_UA: Record<string, string> = { examination: "Огля�
 export const LOG_CATEGORY_ICONS: Record<string, string> = { examination: "🩺", investigation: "📋", prescription: "💊", procedure: "⚕️", note: "📝" };
 export const REHAB_TEMPLATE = [ "Спокій / іммобілізація", "Ізометричні вправи", "Концентричні вправи", "Ексцентричні вправи", "Бігова робота", "Робота з м'ячем", "Загальна група" ];
 
-// ── Общие форматтеры (DRY) ───────────────────────────────────────────────────
+export const VAS_ALERT_THRESHOLD = 7;
+export const URGENT_CASE_WARNING =
+  "Ця форма не для термінових випадків. Якщо сильний біль, онімінння, швидкий набряк або не можеш спиратись на ногу, одразу скажи тренеру або лікарю.";
+
 export function daysSince(dateStr: string): number {
   if (!dateStr) return 0;
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);

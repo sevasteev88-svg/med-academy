@@ -21,18 +21,19 @@ export interface RehabCheckinData {
   player_id: string;
   date: string;
   time: string;
-  vas_score: number; // 0-10
-  swelling: "none" | "mild" | "moderate" | "severe";
-  stiffness_minutes: number; // 0, 15, 30, 60
-  exercises_completed: "full" | "partial" | "none";
+  vas_score?: number | null; // 0-10
+  swelling?: "none" | "mild" | "moderate" | "severe" | null;
+  stiffness_minutes?: number | null; // 0, 15, 30, 60
+  exercises_completed?: "full" | "partial" | "none";
   completed_exercise_ids?: string[];
   completed_quests?: string[];
-  psychological_readiness?: number; // 1-10 (I-PRRS)
-  sleep_quality: number; // 1-5
-  fatigue_level: number; // 1-5
-  muscle_soreness?: number; // 1-5 (Hooper-Mackinnon DOMS)
+  psychological_readiness?: number | null; // 1-10 (I-PRRS)
+  sleep_quality: number; // 1-5 (5 = найкраще)
+  freshness_level: number; // 1-5 (1 = виснажений, 5 = свіжий; єдине узгоджене спрямування)
+  fatigue_level?: number; // 1-5 (legacy Hooper-Mackinnon для зворотної сумісності: 6 - freshness_level)
+  muscle_soreness: number; // 1-5 (1 = сильний біль, 5 = м'язи свіжі)
   soreness_location?: string; // hamstrings, quads, calves, groin, back, etc.
-  stress_level?: number; // 1-5 (Hooper-Mackinnon Stress)
+  stress_level: number; // 1-5 (1 = тривога/стрес, 5 = спокійний)
   player_comment?: string;
   wearable_data?: {
     device_type: "oura" | "apple_watch" | "whoop" | "garmin";

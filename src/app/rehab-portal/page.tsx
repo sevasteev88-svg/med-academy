@@ -1,9 +1,10 @@
+import { redirect } from "next/navigation";
 import { getAuthorizedPlayerCabinetData, getPlayerByPortalToken } from "@/actions/rehab-portal-action";
 import RehabPortalClient from "@/components/portal/RehabPortalClient";
 
 export const metadata = {
-  title: "Медичний Портал Гравця · ФК «Чорноморець»",
-  description: "Особистий кабінет футболіста для щоденного звіту про біль, велнес та відновлення",
+  title: "Щоденне самопочуття · ФК «Чорноморець»",
+  description: "Особистий кабінет футболіста для щоденної оцінки самопочуття, сну та відновлення",
 };
 
 export default async function RehabPortalPage({
@@ -15,6 +16,11 @@ export default async function RehabPortalPage({
 
   // 1. Перевіряємо чи є вже валідна сесія в httpOnly cookie
   const sessionData = await getAuthorizedPlayerCabinetData();
+
+  // Якщо сесія вже активна і токен є в URL — прибираємо токен з адресного рядка чистим редиректом
+  if (sessionData.success && token) {
+    redirect("/rehab-portal");
+  }
 
   // 2. Якщо сесії немає, але передано персональний token — перевіряємо його валідність
   let playerPreview: { name: string; team: string; position: string } | null = null;

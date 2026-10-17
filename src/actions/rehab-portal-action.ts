@@ -499,7 +499,7 @@ export async function getAuthorizedPlayerCabinetData() {
     }
   }
 
-  // 6. Динаміка минулих чек-інів
+  // 6. Динаміка минулих чек-інів з міграцією старих шкал (1-5, де 5 = найкраще)
   const { data: pastCheckinLogs } = await supabase
     .from("injury_logs")
     .select("note, date")
@@ -511,12 +511,91 @@ export async function getAuthorizedPlayerCabinetData() {
     .map((l) => {
       try {
         const raw = l.note.replace("[REHAB_CHECKIN] ", "");
-        return JSON.parse(raw);
+        const parsed = JSON.parse(raw);
+        if (!parsed) return null;
+
+        // Міграція шкали втоми: якщо є стара fatigue_level (де 1 свіжий, 5 виснажений), перетворюємо на freshness_level (де 5 свіжий)
+        const freshness =
+          parsed.freshness_level !== undefined
+            ? Number(parsed.freshness_level)
+            : parsed.fatigue_level !== undefined
+            ? 6 - Number(parsed.fatigue_level)
+            : 4;
+
+        const totalScore =
+          Number(parsed.sleep_quality || 0) +
+          freshness +
+          Number(parsed.muscle_soreness || 0) +
+          Number(parsed.stress_level || 0);
+
+        return {
+          ...parsed,
+          freshness_level: freshness,
+          total_score: totalScore,
+        };
       } catch {
         return null;
       }
     })
     .filter(Boolean);
+
+  // 7. Призначення та нутрицевтики лікаря для формування квестів відновлення
+  const { data: nutritionLogs } = await supabase
+    .from("injury_logs")
+    .select("note")
+    .like("note", `[NUTRITION] %"player_id":"${playerId}"%`)
+    .order("date", { ascending: false })
+    .limit(1);
+
+  const prescribedSupplements: Array<{ id: string; name: string; dosage?: string }> = [];
+  if (nutritionLogs && nutritionLogs.length > 0) {
+    try {
+      const raw = nutritionLogs[0].note.replace("[NUTRITION] ", "");
+      const nut = JSON.parse(raw);
+      if (nut.supplements_collagen_vit_c) {
+        prescribedSupplements.push({
+          id: "collagen",
+          name: "Колаген + вітамін С",
+          dosage: "За 45 хв до заняття для сухожилків",
+        });
+      }
+      if (nut.supplements_creatine) {
+        prescribedSupplements.push({
+          id: "creatine",
+          name: "Креатин моногідрат",
+          dosage: "5г для відновлення фосфокреатину",
+        });
+      }
+      if (nut.supplements_omega3) {
+        prescribedSupplements.push({
+          id: "omega3",
+          name: "Омега-3",
+          dosage: "Для контролю запалення",
+        });
+      }
+      if (nut.supplements_whey_protein) {
+        prescribedSupplements.push({
+          id: "protein",
+          name: "Сироватковий протеїн",
+          dosage: "Після тренування",
+        });
+      }
+      if (nut.supplements_iron) {
+        prescribedSupplements.push({
+          id: "iron",
+          name: "Препарат заліза",
+          dosage: "Згідно з аналізом феритину",
+        });
+      }
+      if (nut.supplements_custom && nut.supplements_custom.trim()) {
+        prescribedSupplements.push({
+          id: "custom",
+          name: nut.supplements_custom.trim(),
+          dosage: "Призначено лікарем",
+        });
+      }
+    } catch {}
+  }
 
   return {
     success: true,
@@ -531,6 +610,7 @@ export async function getAuthorizedPlayerCabinetData() {
       doctorInstruction,
       customRehabPlan,
       pastCheckins,
+      prescribedSupplements,
     },
   };
 }
@@ -704,19 +784,28 @@ export async function submitRehabCheckinAction(data: RehabCheckinData) {
     await safeInsertLog("procedure", payload.date, `[WEARABLE] ${JSON.stringify(wearEntry)}`);
   }
 
-  // Wellness
-  if (data.muscle_soreness !== undefined || data.stress_level !== undefined) {
+  // Щоденне самопочуття (Wellness) — єдине спрямування (1-5, де 5 = найкраще)
+  if (data.muscle_soreness !== undefined || data.stress_level !== undefined || data.freshness_level !== undefined) {
+    const freshness = data.freshness_level ?? (data.fatigue_level ? 6 - data.fatigue_level : 4);
+    const legacyFatigue = data.fatigue_level ?? (6 - freshness);
+    const totalScore =
+      Number(data.sleep_quality || 0) +
+      Number(freshness) +
+      Number(data.muscle_soreness || 0) +
+      Number(data.stress_level || 0);
+
     const wellSurvey = {
       id: `well_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       player_id: data.player_id,
       date: payload.date,
       sleep_quality: data.sleep_quality,
-      fatigue_level: data.fatigue_level,
+      freshness_level: freshness,
+      fatigue_level: legacyFatigue,
       muscle_soreness: data.muscle_soreness ?? 4,
       stress_level: data.stress_level ?? 4,
       soreness_location: data.soreness_location || null,
-      total_score: Number(data.sleep_quality) + Number(data.fatigue_level) + Number(data.muscle_soreness ?? 4) + Number(data.stress_level ?? 4),
-      readiness_status: (Number(data.sleep_quality) + Number(data.fatigue_level) + Number(data.muscle_soreness ?? 4) + Number(data.stress_level ?? 4)) >= 16 ? "optimal" : (Number(data.sleep_quality) + Number(data.fatigue_level) + Number(data.muscle_soreness ?? 4) + Number(data.stress_level ?? 4)) >= 12 ? "warning" : "risk",
+      total_score: totalScore,
+      readiness_status: totalScore >= 16 ? "optimal" : totalScore >= 12 ? "warning" : "risk",
       notes: data.player_comment || null,
       created_at: new Date().toISOString(),
     };
@@ -743,7 +832,7 @@ export async function submitRehabCheckinAction(data: RehabCheckinData) {
     await safeInsertLog("procedure", payload.date, `[WORKLOAD] ${JSON.stringify(sessionPayload)}`);
   }
 
-  if (data.vas_score !== undefined && targetInjuryId) {
+  if (data.vas_score !== undefined && data.vas_score !== null && targetInjuryId) {
     await supabase
       .from("injuries")
       .update({ vas_score: data.vas_score })

@@ -4,43 +4,94 @@ import type { RtpPhaseNumber } from "@/types/rtp";
 export const DEFAULT_RECOVERY_QUESTS: DailyRecoveryQuest[] = [
   {
     id: "cryo",
-    title: "Кріотерапія / Лід",
-    description: "15 хв компресу з льодом на зону травми після навантаження",
+    title: "Охолодження / Кріо",
+    description: "Холодовий компрес на зону пошкодження після навантаження",
     icon: "🧊",
     completed: false,
   },
   {
     id: "hydration",
     title: "Контроль гідратації",
-    description: "Випити мінімум 2.5 л води або ізотоніка за день",
+    description: "Пити достатню кількість води протягом дня",
     icon: "💧",
-    completed: false,
-  },
-  {
-    id: "nutrition",
-    title: "Білок та мікроелементи",
-    description: "1.8–2.0 г білка на кг ваги + колаген/вітамін C для зв'язок",
-    icon: "🥩",
     completed: false,
   },
   {
     id: "sleep",
     title: "Відновлювальний сон",
-    description: "Не менше 8.5 годин сну у темній прохолодній кімнаті",
+    description: "Повноцінний сон для фізичного та нервового відновлення",
     icon: "😴",
     completed: false,
   },
 ];
 
+export function buildRecoveryQuests(options?: {
+  hasInjury?: boolean;
+  prescriptions?: Array<{ id: string; name: string; dosage?: string }>;
+}): DailyRecoveryQuest[] {
+  const quests: DailyRecoveryQuest[] = [];
+
+  if (options?.hasInjury) {
+    quests.push({
+      id: "cryo",
+      title: "Охолодження / Кріо",
+      description: "Холодовий компрес на зону пошкодження після навантаження",
+      icon: "🧊",
+      completed: false,
+    });
+  }
+
+  quests.push(
+    {
+      id: "hydration",
+      title: "Контроль гідратації",
+      description: "Пити достатню кількість води протягом дня",
+      icon: "💧",
+      completed: false,
+    },
+    {
+      id: "sleep",
+      title: "Відновлювальний сон",
+      description: "Повноцінний сон для фізичного та нервового відновлення",
+      icon: "😴",
+      completed: false,
+    }
+  );
+
+  // Тільки те, що лікар призначив конкретному гравцю:
+  if (options?.prescriptions && options.prescriptions.length > 0) {
+    for (const p of options.prescriptions) {
+      quests.push({
+        id: `rx-${p.id}`,
+        title: `${p.name} · Призначено лікарем`,
+        description: p.dosage || "Прийом згідно з індивідуальною схемою лікаря",
+        icon: "💊",
+        completed: false,
+      });
+    }
+  }
+
+  return quests;
+}
+
 export function getExercisesForInjuryAndPhase(
-  location: string,
-  phase: RtpPhaseNumber
+  location?: string | null,
+  phase?: RtpPhaseNumber,
+  diagnosis?: string | null
 ): RehabExerciseItem[] {
-  const loc = (location || "").toLowerCase();
+  const loc = (location || "").toLowerCase().trim();
+  const diag = (diagnosis || "").toLowerCase().trim();
+
+  // Якщо діагноз чи зона не задані (або "other" без уточнення діагнозу) — не показуємо вправи за замовчуванням
+  if ((!loc || loc === "other") && !diag) {
+    return [];
+  }
+
+  const effectivePhase = phase || 1;
 
   // 1. Коліно (Knee / ACL / MCL / Meniscus)
   if (loc.includes("knee") || loc.includes("колін")) {
-    if (phase <= 2) {
+    if (effectivePhase <= 2) {
       return [
         {
           id: "knee-1",
@@ -100,7 +151,7 @@ export function getExercisesForInjuryAndPhase(
 
   // 2. Задня поверхня стегна (Thigh / Hamstring)
   if (loc.includes("thigh") || loc.includes("стегн") || loc.includes("hamstring")) {
-    if (phase <= 2) {
+    if (effectivePhase <= 2) {
       return [
         {
           id: "ham-1",
@@ -205,28 +256,33 @@ export function getExercisesForInjuryAndPhase(
     ];
   }
 
-  // 5. Загальний функціональний комплекс (хребет / плече / інше)
-  return [
-    {
-      id: "gen-1",
-      name: "Активація кора (Dead Bug)",
-      setsReps: "3 підходи × 10 повторень на кожен бік",
-      targetArea: "Глибокі м'язи черевного пресу та попереку",
-      technique: "Поперек щільно притиснутий до підлоги, почергове опускання різнойменних руки та ноги.",
-    },
-    {
-      id: "gen-2",
-      name: "Бічна планка з відведенням стегна (Side Plank with Abduction)",
-      setsReps: "3 підходи × 20 сек",
-      targetArea: "Середній сідничний м'яз та косі м'язи живота",
-      technique: "Пряма лінія від плеча до п'ят, верхня нога піднята на 20°.",
-    },
-    {
-      id: "gen-3",
-      name: "Сідничний міст на одній нозі (Single Leg Glute Bridge)",
-      setsReps: "3 підходи × 10 повторень",
-      targetArea: "Велика сіднична та біомеханічний тазовий ланцюг",
-      technique: "Підйом тазу однією ногою, утримання 2 сек угорі, плавне опускання.",
-    },
-  ];
+  // 5. Хребет / Кор (хребет / спина / поперек)
+  if (loc.includes("spine") || loc.includes("хребет") || loc.includes("спин") || loc.includes("поперек") || diag.includes("хребет") || diag.includes("спин")) {
+    return [
+      {
+        id: "gen-1",
+        name: "Активація кора (Dead Bug)",
+        setsReps: "3 підходи × 10 повторень на кожен бік",
+        targetArea: "Глибокі м'язи черевного пресу та попереку",
+        technique: "Поперек щільно притиснутий до підлоги, почергове опускання різнойменних руки та ноги.",
+      },
+      {
+        id: "gen-2",
+        name: "Бічна планка з відведенням стегна (Side Plank with Abduction)",
+        setsReps: "3 підходи × 20 сек",
+        targetArea: "Середній сідничний м'яз та косі м'язи живота",
+        technique: "Пряма лінія від плеча до п'ят, верхня нога піднята на 20°.",
+      },
+      {
+        id: "gen-3",
+        name: "Сідничний міст на одній нозі (Single Leg Glute Bridge)",
+        setsReps: "3 підходи × 10 повторень",
+        targetArea: "Велика сіднична та біомеханічний тазовий ланцюг",
+        technique: "Підйом тазу однією ногою, утримання 2 сек угорі, плавне опускання.",
+      },
+    ];
+  }
+
+  // Якщо локалізація чи діагноз не визначені або не входять до каталогу вправ
+  return [];
 }
