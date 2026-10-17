@@ -28,6 +28,8 @@ const DOCTOR_NAV: NavItem[] = [
   { href: "/reports/matchday", label: "Заявка на матч", icon: "📜" },
   { href: "/reports/patterns", label: "Патерни", icon: "🔍" },
   { href: "/growth", label: "Ріст", icon: "📈" },
+  { href: "/consents", label: "Згоди батьків", icon: "✍️" },
+  { href: "/privacy", label: "Конфіденційність", icon: "🔒" },
 ];
 
 const COACH_NAV: NavItem[] = [
@@ -70,8 +72,8 @@ export default function AppNav({
     startTransition(async () => { await logoutAction(); });
   }
 
-  // Гравець у кабінеті не повинен бачити панель лікаря/тренера і переходити по ній
-  if (pathname.startsWith("/rehab-portal")) {
+  // Гравець у кабінеті або батьки за одноразовим посиланням згоди не повинні бачити панель лікаря/тренера
+  if (pathname.startsWith("/rehab-portal") || pathname.startsWith("/consent/")) {
     return null;
   }
 

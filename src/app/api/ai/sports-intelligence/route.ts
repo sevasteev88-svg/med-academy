@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 import { logAudit } from "@/lib/audit";
+import { hasConsent } from "@/lib/consents";
 
 export async function POST(request: NextRequest) {
   // Авторизація
@@ -24,6 +25,16 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { mode, playerContext, squadContext, userQuery, conversationHistory } = body;
+
+    if (playerContext?.id) {
+      const allowed = await hasConsent(playerContext.id, "ai_processing");
+      if (!allowed) {
+        return NextResponse.json(
+          { error: "Потрібна згода батьків (область: ШІ-аналіз даних)." },
+          { status: 403 }
+        );
+      }
+    }
 
     let systemInstruction = `Ти — провідний спортивний лікар та фахівець з фізпідготовки (Sports Scientist & Medical Director) академії ФК "Чорноморець" (Одеса).
 Твоє завдання — надавати високопрофесійні, науково обґрунтовані та прикладні рекомендації для медичного штабу, головного тренера та тренерів з фізпідготовки.

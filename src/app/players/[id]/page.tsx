@@ -27,6 +27,12 @@ import DeleteButton from "@/components/ui/DeleteButton";
 import PrintButton from "@/components/ui/PrintButton";
 import { deletePlayerAction } from "@/actions/delete-player-action";
 import { POSITION_LABELS, POSITION_FULL, DOMINANT_UA, LOCATION_UA, SEVERITY_UA, INJURY_TYPE_UA, STATUS_UA } from "@/lib/constants";
+import PlayerConsentsCard from "@/components/consents/PlayerConsentsCard";
+import {
+  hasConsent,
+  getPlayerConsentSummary,
+  getActiveConsentDocuments,
+} from "@/lib/consents";
 
 function calcAge(dob: string) { return Math.floor((Date.now() - new Date(dob).getTime()) / (365.25 * 86400000)); }
 function daysSince(d: string) { return Math.floor((Date.now() - new Date(d).getTime()) / 86400000); }
@@ -216,6 +222,23 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
 
   const initials = `${player.last_name?.[0] ?? ""}${player.first_name?.[0] ?? ""}`;
 
+  // Перевіряємо згоди виключно через єдину функцію hasConsent(playerId, scope) (п. 6)
+  const [
+    consentSummary,
+    activeDocuments,
+    hasPhotoConsent,
+    hasWearablesConsent,
+    hasAiConsent,
+    hasSupplementsConsent,
+  ] = await Promise.all([
+    getPlayerConsentSummary(id, player.date_of_birth, player.club_id),
+    getActiveConsentDocuments(player.club_id),
+    hasConsent(id, "photo"),
+    hasConsent(id, "wearables"),
+    hasConsent(id, "ai_processing"),
+    hasConsent(id, "supplements"),
+  ]);
+
   return (
     <div className="min-h-screen text-slate-200 p-4 md:p-8">
       <div className="max-w-5xl mx-auto space-y-6">
@@ -239,6 +262,7 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
                 playerName={`${player.last_name} ${player.first_name}`}
                 initialPhotoUrl={currentPhotoUrl}
                 initials={initials}
+                requiresParentalConsent={!hasPhotoConsent}
               />
 
               <div>
@@ -308,6 +332,16 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
           </div>
         </Card>
 
+        {/* 1.4 Згоди законних представників (батьків) та гравця */}
+        <PlayerConsentsCard
+          playerId={id}
+          playerName={`${player.last_name} ${player.first_name}`}
+          teamName={player.teams?.name || "Команда"}
+          dateOfBirth={player.date_of_birth}
+          initialSummary={consentSummary}
+          activeDocuments={activeDocuments}
+        />
+
         {/* Секції паспорта здоров'я */}
         <AnthropometrySection playerId={id} measurements={measurements} maturation={maturation} dateOfBirth={player.date_of_birth} />
 
@@ -315,9 +349,11 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
           playerId={id}
           playerName={`${player.last_name} ${player.first_name}`}
           initialEntries={wearableLogs}
+          requiresParentalConsent={!hasWearablesConsent}
         />
 
         <PlayerSportsIntelligenceCard
+          requiresParentalConsent={!hasAiConsent}
           playerContext={{
             id,
             name: `${player.last_name} ${player.first_name}`,
@@ -352,7 +388,12 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
         
         <PreSeasonScreeningCard playerId={id} playerName={`${player.last_name} ${player.first_name}`} initialScreenings={screenings} />
         
-        <DentalNutritionCard playerId={id} playerName={`${player.last_name} ${player.first_name}`} initialProfile={latestNutrition} />
+        <DentalNutritionCard
+          playerId={id}
+          playerName={`${player.last_name} ${player.first_name}`}
+          initialProfile={latestNutrition}
+          requiresParentalConsent={!hasSupplementsConsent}
+        />
 
         <PlayerRehabCheckinHistory
           playerId={id}

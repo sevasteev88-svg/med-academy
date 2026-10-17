@@ -129,6 +129,22 @@ export type ClubSettings = {
   default_locale?: "uk" | "en" | "ru";
   supported_locales?: string[];
   primary_color?: string;
+  /** Політика при відкликанні згоди: видалення або знеособлення даних */
+  consent_revocation_policy?: "delete" | "anonymize";
+  /** Конфігурація адаптера відправки повідомлень (SMS, Telegram, Email) */
+  messaging?: {
+    mode?: "stub" | "live";
+    sms_provider?: "turbosms" | "twilio" | "stub";
+    sms_api_key?: string;
+    sms_sender?: string;
+    telegram_bot_token?: string;
+    email_provider?: "resend" | "smtp" | "stub";
+    email_api_key?: string;
+    email_from?: string;
+  };
+  privacy_contact_email?: string;
+  club_legal_name?: string;
+  club_address?: string;
   [key: string]: unknown;
 };
 
@@ -186,6 +202,8 @@ export type Player = {
   must_change_pin?: boolean;
   failed_attempts?: number;
   locked_until?: string | null;
+  assent_acknowledged?: boolean;
+  assent_acknowledged_at?: string | null;
   created_at: string;
 };
 
@@ -377,7 +395,11 @@ export type AuditAction =
   | "prescribe_treatment"
   | "reset_pin"
   | "export_pdf"
-  | "ai_call";
+  | "ai_call"
+  | "send_consent_request"
+  | "grant_consent"
+  | "revoke_consent"
+  | "upload_consent_scan";
 
 export type AuditEntity =
   | "player"
@@ -387,12 +409,13 @@ export type AuditEntity =
   | "pharmacy"
   | "auth"
   | "report"
-  | "ai";
+  | "ai"
+  | "consent";
 
 export type AuditLogEntry = {
   id: string;
   club_id: string;
-  user_id: string;
+  user_id: string | null;
   action: AuditAction | string;
   entity: AuditEntity | string;
   entity_id: string | null;
@@ -400,4 +423,98 @@ export type AuditLogEntry = {
   at: string;
   meta: Record<string, unknown>;
 };
+
+// ─── 1.4 Згоди батьків та політика конфіденційності ──────────────────
+
+export type ConsentScope =
+  | "data_processing"
+  | "ai_processing"
+  | "wearables"
+  | "supplements"
+  | "gps"
+  | "photo";
+
+export type ConsentMethod =
+  | "link_otp"
+  | "paper"
+  | "e_signature"
+  | "adult_self";
+
+export type ConsentChannel = "sms" | "telegram" | "email" | "manual";
+
+export type GuardianRelation = "mother" | "father" | "guardian" | "other" | string;
+
+export type Guardian = {
+  id: string;
+  club_id: string;
+  player_id: string;
+  full_name: string;
+  relation: GuardianRelation;
+  phone: string;
+  email: string | null;
+  telegram_chat_id: string | null;
+  is_primary: boolean;
+  created_at?: string;
+};
+
+export type ConsentDocument = {
+  id: string;
+  club_id: string;
+  scope: ConsentScope;
+  version: string;
+  title: string;
+  body_markdown: string;
+  effective_from: string;
+  is_active: boolean;
+  created_at?: string;
+};
+
+export type ConsentEvidence = {
+  ip?: string;
+  user_agent?: string;
+  otp_verified?: boolean;
+  otp_verified_at?: string;
+  signer_full_name: string;
+  signer_relation?: string;
+  document_version?: string;
+  document_number?: string;
+  player_assent?: boolean;
+  revoked_reason?: string;
+  retention_policy_applied?: "delete" | "anonymize";
+};
+
+export type Consent = {
+  id: string;
+  club_id: string;
+  player_id: string;
+  guardian_id: string | null;
+  scope: ConsentScope;
+  document_id: string;
+  method: ConsentMethod;
+  granted_at: string;
+  revoked_at: string | null;
+  evidence: ConsentEvidence;
+  scan_path: string | null;
+  collected_by: string | null;
+  player_assent?: boolean;
+  player_assent_at?: string | null;
+  retention_status?: "active" | "marked_for_deletion" | "marked_for_anonymization" | null;
+};
+
+export type ConsentRequest = {
+  id: string;
+  club_id?: string;
+  player_id: string;
+  guardian_id: string | null;
+  token_hash: string;
+  scopes: ConsentScope[];
+  channel: ConsentChannel;
+  sent_at: string;
+  expires_at: string;
+  used_at: string | null;
+  otp_hash: string | null;
+  otp_expires_at?: string | null;
+  otp_attempts: number;
+};
+
 

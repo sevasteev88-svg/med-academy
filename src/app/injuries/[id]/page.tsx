@@ -18,6 +18,7 @@ import Scat6ConcussionAssessment from "@/components/injuries/Scat6ConcussionAsse
 import type { ConcussionAssessment } from "@/types/concussion";
 import LsiSymmetryAssessmentCard from "@/components/injuries/LsiSymmetryAssessmentCard";
 import type { LsiAssessmentRecord } from "@/types/lsi";
+import { hasConsent } from "@/lib/consents";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -183,6 +184,8 @@ export default async function InjuryDetailPage({ params }: Props) {
     : null;
   const rtpOverdue = rtpDays != null && rtpDays <= 0 && !isClosed;
 
+  const hasAiConsent = await hasConsent(injury.player_id, "ai_processing");
+
   return (
     <div className="min-h-screen bg-transparent text-slate-100 p-4 sm:p-6 md:p-8">
       <div className="max-w-5xl mx-auto space-y-6">
@@ -310,6 +313,8 @@ export default async function InjuryDetailPage({ params }: Props) {
           teamName={teamName}
           position={player?.position ?? "—"}
           age={player?.date_of_birth ? Math.floor((Date.now() - new Date(player.date_of_birth).getTime()) / (365.25 * 86400000)) : 19}
+          playerId={injury.player_id}
+          requiresParentalConsent={!hasAiConsent}
         />
 
         {/* Чек-лист критеріїв повернення в гру (RTP Clearance) */}

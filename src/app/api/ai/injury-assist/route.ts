@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 import { logAudit } from "@/lib/audit";
+import { hasConsent } from "@/lib/consents";
 
 /**
  * POST /api/ai/injury-assist
@@ -32,6 +33,16 @@ export async function POST(request: NextRequest) {
 
   try {
     const data = await request.json();
+    const targetPlayerId = data?.playerId || data?.player?.id;
+    if (targetPlayerId) {
+      const allowed = await hasConsent(targetPlayerId, "ai_processing");
+      if (!allowed) {
+        return NextResponse.json(
+          { error: "Потрібна згода батьків (область: ШІ-аналіз даних)." },
+          { status: 403 }
+        );
+      }
+    }
     const prompt = buildPrompt(data);
 
     // 1. Якщо є GEMINI_API_KEY — використовуємо Gemini 2.5 Flash

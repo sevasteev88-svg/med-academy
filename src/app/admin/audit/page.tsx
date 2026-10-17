@@ -54,14 +54,17 @@ export default async function AuditLogPage() {
   const userMap = new Map<string, { id: string; name: string; email: string }>();
 
   const enrichedLogs = (rawLogs || []).map((log: AuditLogEntry) => {
-    const profile = profileMap.get(log.user_id);
-    const userName = profile?.name || (log.user_id === user.id ? user.fullName : "Користувач");
-    const userEmail = log.user_id === user.id ? user.email : "";
+    const uid = log.user_id;
+    const profile = uid ? profileMap.get(uid) : undefined;
+    const userName =
+      profile?.name ||
+      (uid && uid === user.id ? user.fullName : uid ? "Користувач" : "Батьки / Публічне посилання (OTP)");
+    const userEmail = uid && uid === user.id ? user.email : "";
     const playerName = log.player_id ? playerMap.get(log.player_id) || "Невідомий гравець" : undefined;
 
-    if (!userMap.has(log.user_id)) {
-      userMap.set(log.user_id, {
-        id: log.user_id,
+    if (uid && !userMap.has(uid)) {
+      userMap.set(uid, {
+        id: uid,
         name: userName,
         email: userEmail,
       });

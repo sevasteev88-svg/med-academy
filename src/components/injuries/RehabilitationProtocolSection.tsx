@@ -19,6 +19,8 @@ type Props = {
   teamName: string;
   position: string;
   age: number;
+  playerId?: string;
+  requiresParentalConsent?: boolean;
 };
 
 export default function RehabilitationProtocolSection({
@@ -37,6 +39,8 @@ export default function RehabilitationProtocolSection({
   teamName,
   position,
   age,
+  playerId,
+  requiresParentalConsent = false,
 }: Props) {
   const [activeTab, setActiveTab] = useState<"clinical" | "ai">("clinical");
   const [selectedPhase, setSelectedPhase] = useState<number>(1);
@@ -58,6 +62,10 @@ export default function RehabilitationProtocolSection({
   const currentPhase = protocol.phases.find((p) => p.phaseNumber === selectedPhase) || protocol.phases[0];
 
   async function fetchAiRecommendation() {
+    if (requiresParentalConsent) {
+      setAiError("Потрібна згода батьків (область: ШІ-аналіз даних).");
+      return;
+    }
     setAiLoading(true);
     setAiError(null);
     try {
@@ -65,6 +73,7 @@ export default function RehabilitationProtocolSection({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          playerId,
           playerName,
           age,
           sex: "male",
@@ -272,6 +281,12 @@ export default function RehabilitationProtocolSection({
           {/* ══════════ ВКЛАДКА 2: AI АСИСТЕНТ ══════════ */}
           {activeTab === "ai" && (
             <div className="space-y-3">
+              {requiresParentalConsent && (
+                <div className="p-3 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-semibold flex items-center gap-2">
+                  <span>🔒</span>
+                  <span>Потрібна згода батьків (область «ШІ-аналіз даних» відсутня, відкликана або застаріла).</span>
+                </div>
+              )}
               {!aiRecommendation && (
                 <div className="text-center py-4 space-y-3">
                   <p className="text-xs text-slate-400 max-w-md mx-auto">
@@ -282,7 +297,7 @@ export default function RehabilitationProtocolSection({
                   <button
                     type="button"
                     onClick={fetchAiRecommendation}
-                    disabled={aiLoading}
+                    disabled={aiLoading || requiresParentalConsent}
                     className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold text-xs shadow-lg shadow-purple-900/30 transition-all disabled:opacity-50"
                   >
                     {aiLoading ? "AI аналізує травму..." : "✨ Згенерувати рекомендації через AI"}

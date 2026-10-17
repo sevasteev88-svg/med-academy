@@ -1,4 +1,5 @@
 import { createClient } from "@/utils/supabase/server";
+import { createAdminClient } from "@/utils/supabase/admin";
 import { getCurrentUser } from "@/lib/auth";
 import type { AuditAction, AuditEntity } from "@/types/database";
 
@@ -17,8 +18,12 @@ export type LogAuditParams = {
   /**
    * Опційне перевизначення контексту користувача, якщо він уже отриманий
    */
-  userId?: string;
+  userId?: string | null;
   clubId?: string;
+  /**
+   * Дозволяє запис аудиту для публічних операцій (наприклад, підписання чи відкликання згоди батьками за токеном)
+   */
+  allowPublic?: boolean;
 };
 
 /**
@@ -31,17 +36,16 @@ export async function logAudit(params: LogAuditParams): Promise<{ success: boole
     let userId = params.userId;
     let clubId = params.clubId;
 
-    if (!userId || !clubId) {
+    if (!userId && !params.allowPublic) {
       const user = await getCurrentUser();
       if (!user) {
-        // Якщо користувач не авторизований (наприклад, анонімний виклик), аудит не записується
         return { success: false, error: "Unauthenticated" };
       }
-      userId = userId || user.id;
+      userId = user.id;
       clubId = clubId || user.clubId;
     }
 
-    const supabase = await createClient();
+    const supabase = params.allowPublic ? createAdminClient() : await createClient();
 
     // Очищаємо можливі небезпечні медичні ключі в meta перед збереженням
     const sanitizedMeta = { ...(params.meta || {}) };
@@ -60,6 +64,10 @@ export async function logAudit(params: LogAuditParams): Promise<{ success: boole
       "pin",
       "pin_hash",
       "password",
+      "otp",
+      "otp_hash",
+      "token",
+      "token_hash",
     ];
 
     for (const key of forbiddenKeys) {

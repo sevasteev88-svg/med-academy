@@ -27,6 +27,10 @@ const ACTION_LABELS: Record<string, { label: string; variant: "ok" | "warn" | "d
   reset_pin: { label: "🔑 Скидання PIN гравця", variant: "warn" },
   export_pdf: { label: "📥 Експорт PDF", variant: "ok" },
   ai_call: { label: "🤖 Запит до ШІ", variant: "info" },
+  send_consent_request: { label: "📲 Запит на згоду батьків", variant: "info" },
+  grant_consent: { label: "✅ Надання згоди", variant: "ok" },
+  revoke_consent: { label: "🚫 Відкликання згоди", variant: "danger" },
+  upload_consent_scan: { label: "📄 Завантаження скану згоди", variant: "info" },
 };
 
 export default function AuditLogViewerClient({

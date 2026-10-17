@@ -3,6 +3,7 @@
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
 import { assertDoctor } from "@/lib/auth";
+import { hasConsent } from "@/lib/consents";
 import type { PlayerPhoto } from "@/types/photo";
 
 export async function savePlayerPhotoAction(input: {
@@ -11,6 +12,11 @@ export async function savePlayerPhotoAction(input: {
 }) {
   const auth = await assertDoctor();
   if ("error" in auth) return { error: auth.error };
+
+  const allowed = await hasConsent(input.playerId, "photo");
+  if (!allowed) {
+    return { error: "Потрібна згода батьків (область: Фото профілю)." };
+  }
 
   const supabase = await createClient();
 

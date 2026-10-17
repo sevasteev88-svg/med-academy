@@ -3,6 +3,7 @@
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
 import { assertDoctor } from "@/lib/auth";
+import { hasConsent } from "@/lib/consents";
 import type { NutritionProfile } from "@/types/nutrition";
 
 export async function saveNutritionAction(
@@ -10,6 +11,24 @@ export async function saveNutritionAction(
 ) {
   const auth = await assertDoctor();
   if ("error" in auth) return { error: auth.error };
+
+  const hasAnySupplements =
+    input.supplements_creatine ||
+    input.supplements_omega3 ||
+    input.supplements_collagen_vit_c ||
+    input.supplements_whey_protein ||
+    input.supplements_iron ||
+    Boolean(input.supplements_custom?.trim());
+
+  if (hasAnySupplements) {
+    const allowed = await hasConsent(input.player_id, "supplements");
+    if (!allowed) {
+      return {
+        error:
+          "Потрібна згода батьків (область: Спортивні добавки та нутриціологія).",
+      };
+    }
+  }
 
   const supabase = await createClient();
 

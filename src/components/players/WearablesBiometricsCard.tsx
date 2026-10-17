@@ -13,12 +13,14 @@ type Props = {
   playerId: string;
   playerName: string;
   initialEntries: WearableBiometricsEntry[];
+  requiresParentalConsent?: boolean;
 };
 
 export default function WearablesBiometricsCard({
   playerId,
   playerName,
   initialEntries,
+  requiresParentalConsent = false,
 }: Props) {
   const [entries, setEntries] = useState<WearableBiometricsEntry[]>(initialEntries);
   const [isOpen, setIsOpen] = useState(false);
@@ -132,21 +134,31 @@ export default function WearablesBiometricsCard({
           <button
             type="button"
             onClick={() => setSyncModalOpen(true)}
-            disabled={isPending}
+            disabled={isPending || requiresParentalConsent}
             className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white shadow-[0_0_15px_rgba(14,165,233,0.3)] text-xs font-bold transition-all flex items-center gap-1.5 disabled:opacity-50"
           >
-            <span>🔄</span>
+            <span>{requiresParentalConsent ? "🔒" : "🔄"}</span>
             <span>{isPending ? "Синхронізація..." : "Синхронізувати"}</span>
           </button>
           <button
             type="button"
             onClick={() => setIsOpen(!isOpen)}
-            className="px-3 py-2 rounded-xl bg-slate-800/80 hover:bg-slate-800 text-slate-300 border border-slate-700/60 text-xs font-semibold transition-all"
+            disabled={requiresParentalConsent}
+            className="px-3 py-2 rounded-xl bg-slate-800/80 hover:bg-slate-800 text-slate-300 border border-slate-700/60 text-xs font-semibold transition-all disabled:opacity-50"
           >
             {isOpen ? "Скасувати" : "+ Вручну"}
           </button>
         </div>
       </div>
+
+      {requiresParentalConsent && (
+        <div className="p-3.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 font-semibold">
+            <span>🔒</span>
+            <span>Потрібна згода батьків (область «Носимі пристрої / Wearables» відсутня, відкликана або застаріла).</span>
+          </div>
+        </div>
+      )}
 
       {/* Сповіщення про успішний імпорт або помилку */}
       {successMsg && (

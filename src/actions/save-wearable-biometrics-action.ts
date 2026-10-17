@@ -3,6 +3,7 @@
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
 import { assertDoctor } from "@/lib/auth";
+import { hasConsent } from "@/lib/consents";
 import type { WearableBiometricsEntry, WearableDeviceType } from "@/types/wearables";
 
 export async function saveWearableBiometricsAction(input: {
@@ -22,6 +23,11 @@ export async function saveWearableBiometricsAction(input: {
 }) {
   const auth = await assertDoctor();
   if ("error" in auth) return { error: auth.error };
+
+  const allowed = await hasConsent(input.playerId, "wearables");
+  if (!allowed) {
+    return { error: "Потрібна згода батьків (область: Носимі пристрої / Wearables)." };
+  }
 
   const supabase = await createClient();
 

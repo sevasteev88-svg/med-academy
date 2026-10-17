@@ -27,8 +27,10 @@ interface Message {
 
 export default function PlayerSportsIntelligenceCard({
   playerContext,
+  requiresParentalConsent = false,
 }: {
   playerContext: PlayerContextData;
+  requiresParentalConsent?: boolean;
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputQuery, setInputQuery] = useState("");
@@ -37,6 +39,7 @@ export default function PlayerSportsIntelligenceCard({
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
 
   const callAi = async (mode: "player-assessment" | "chat", query?: string) => {
+    if (requiresParentalConsent) return;
     setLoading(true);
     const userText = query || "Комплексна 360° оцінка готовності";
     
@@ -147,11 +150,20 @@ export default function PlayerSportsIntelligenceCard({
 
       {/* Body */}
       <div className="pt-4 space-y-4 relative z-10">
+        {requiresParentalConsent && (
+          <div className="p-3.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 font-semibold">
+              <span>🔒</span>
+              <span>Потрібна згода батьків (область «ШІ-аналіз даних» відсутня, відкликана або застаріла).</span>
+            </div>
+          </div>
+        )}
+
         {/* Quick action buttons */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
           <button
             onClick={() => callAi("player-assessment")}
-            disabled={loading}
+            disabled={loading || requiresParentalConsent}
             className="p-3 rounded-xl border border-sky-500/25 bg-slate-800/40 hover:bg-sky-950/40 hover:border-sky-400 text-left transition-all group disabled:opacity-50"
           >
             <div className="flex items-center gap-2 text-sky-300 font-semibold text-xs mb-1">
@@ -169,7 +181,7 @@ export default function PlayerSportsIntelligenceCard({
                 "Зроби глибокий аналіз останніх показників HRV, сну та пульсу спокою (RHR) цього футболіста. Як вони співвідносяться з тренувальним навантаженням?"
               )
             }
-            disabled={loading}
+            disabled={loading || requiresParentalConsent}
             className="p-3 rounded-xl border border-indigo-500/25 bg-slate-800/40 hover:bg-indigo-950/40 hover:border-indigo-400 text-left transition-all group disabled:opacity-50"
           >
             <div className="flex items-center gap-2 text-indigo-300 font-semibold text-xs mb-1">
@@ -187,7 +199,7 @@ export default function PlayerSportsIntelligenceCard({
                 "Склади персональний протокол прехабу (розминки та активації) перед сьогоднішнім тренуванням з урахуванням історії травм та зон росту."
               )
             }
-            disabled={loading}
+            disabled={loading || requiresParentalConsent}
             className="p-3 rounded-xl border border-emerald-500/25 bg-slate-800/40 hover:bg-emerald-950/40 hover:border-emerald-400 text-left transition-all group disabled:opacity-50"
           >
             <div className="flex items-center gap-2 text-emerald-300 font-semibold text-xs mb-1">

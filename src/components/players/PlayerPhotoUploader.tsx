@@ -9,6 +9,7 @@ type Props = {
   playerName: string;
   initialPhotoUrl?: string | null;
   initials: string;
+  requiresParentalConsent?: boolean;
 };
 
 export default function PlayerPhotoUploader({
@@ -16,11 +17,20 @@ export default function PlayerPhotoUploader({
   playerName,
   initialPhotoUrl,
   initials,
+  requiresParentalConsent = false,
 }: Props) {
   const [photoUrl, setPhotoUrl] = useState<string | null>(initialPhotoUrl || null);
   const [isPending, startTransition] = useTransition();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleAvatarClick = () => {
+    if (requiresParentalConsent) {
+      setErrorMsg("Потрібна згода батьків (область: Фото профілю).");
+      return;
+    }
+    fileInputRef.current?.click();
+  };
 
   // Стискаємо та масштабуємо фото на клієнті в Canvas до 400x400 (WebP/JPEG якість 0.85)
   // Це забезпечує ідеальну швидкість завантаження та компактність у базі даних
@@ -95,11 +105,15 @@ export default function PlayerPhotoUploader({
       />
 
       <div
-        onClick={() => fileInputRef.current?.click()}
-        title="Натисніть, щоб завантажити або змінити фото гравця"
+        onClick={handleAvatarClick}
+        title={
+          requiresParentalConsent
+            ? "Потрібна згода батьків (область: Фото)"
+            : "Натисніть, щоб завантажити або змінити фото гравця"
+        }
         className="w-16 h-16 md:w-20 md:h-20 rounded-2xl bg-gradient-to-br from-slate-800 via-slate-900 to-sky-950 border-2 border-sky-500/30 flex items-center justify-center font-black font-mono text-xl md:text-2xl text-sky-300 shadow-xl shadow-sky-500/10 overflow-hidden cursor-pointer relative hover:border-sky-400 transition-all group"
       >
-        {photoUrl ? (
+        {photoUrl && !requiresParentalConsent ? (
           <Image
             src={photoUrl}
             alt={playerName}
@@ -113,9 +127,9 @@ export default function PlayerPhotoUploader({
 
         {/* Напівпрозорий оверлей при наведенні для камери */}
         <div className="absolute inset-0 bg-slate-950/70 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white backdrop-blur-xs">
-          <span className="text-sm">📷</span>
-          <span className="text-[8px] font-bold text-sky-300 uppercase tracking-wider mt-0.5">
-            {photoUrl ? "Змінити" : "Додати"}
+          <span className="text-sm">{requiresParentalConsent ? "🔒" : "📷"}</span>
+          <span className="text-[8px] font-bold text-sky-300 uppercase tracking-wider mt-0.5 text-center px-1">
+            {requiresParentalConsent ? "Згода батьків" : photoUrl ? "Змінити" : "Додати"}
           </span>
         </div>
 
@@ -127,11 +141,11 @@ export default function PlayerPhotoUploader({
       </div>
 
       <div
-        onClick={() => fileInputRef.current?.click()}
+        onClick={handleAvatarClick}
         className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-slate-900 border-2 border-sky-500/40 hover:border-sky-400 flex items-center justify-center text-[10px] text-sky-300 cursor-pointer shadow-md transition-all hover:scale-110"
-        title="Завантажити фото"
+        title={requiresParentalConsent ? "Потрібна згода батьків" : "Завантажити фото"}
       >
-        📷
+        {requiresParentalConsent ? "🔒" : "📷"}
       </div>
 
       {errorMsg && (

@@ -11,12 +11,14 @@ type Props = {
   playerId: string;
   playerName: string;
   initialProfile: NutritionProfile | null;
+  requiresParentalConsent?: boolean;
 };
 
 export default function DentalNutritionCard({
   playerId,
   playerName,
   initialProfile,
+  requiresParentalConsent = false,
 }: Props) {
   const [profile, setProfile] = useState<NutritionProfile | null>(initialProfile);
   const [isOpen, setIsOpen] = useState(false);
@@ -31,10 +33,10 @@ export default function DentalNutritionCard({
   const [dentalNotes, setDentalNotes] = useState(profile?.dental_focus_notes ?? "");
   const [mouthguard, setMouthguard] = useState(profile?.uses_mouthguard ?? false);
 
-  const [creatine, setCreatine] = useState(profile?.supplements_creatine ?? true);
-  const [omega3, setOmega3] = useState(profile?.supplements_omega3 ?? true);
-  const [collagen, setCollagen] = useState(profile?.supplements_collagen_vit_c ?? true);
-  const [protein, setProtein] = useState(profile?.supplements_whey_protein ?? true);
+  const [creatine, setCreatine] = useState(profile?.supplements_creatine ?? !requiresParentalConsent);
+  const [omega3, setOmega3] = useState(profile?.supplements_omega3 ?? !requiresParentalConsent);
+  const [collagen, setCollagen] = useState(profile?.supplements_collagen_vit_c ?? !requiresParentalConsent);
+  const [protein, setProtein] = useState(profile?.supplements_whey_protein ?? !requiresParentalConsent);
   const [iron, setIron] = useState(profile?.supplements_iron ?? false);
   const [customSupp, setCustomSupp] = useState(profile?.supplements_custom ?? "");
   const [diet, setDiet] = useState<NutritionProfile["dietary_type"]>(profile?.dietary_type ?? "standard");
@@ -53,12 +55,12 @@ export default function DentalNutritionCard({
         last_dental_check_date: lastCheck,
         dental_focus_notes: dentalNotes.trim() || null,
         uses_mouthguard: mouthguard,
-        supplements_creatine: creatine,
-        supplements_omega3: omega3,
-        supplements_collagen_vit_c: collagen,
-        supplements_whey_protein: protein,
-        supplements_iron: iron,
-        supplements_custom: customSupp.trim() || null,
+        supplements_creatine: requiresParentalConsent ? false : creatine,
+        supplements_omega3: requiresParentalConsent ? false : omega3,
+        supplements_collagen_vit_c: requiresParentalConsent ? false : collagen,
+        supplements_whey_protein: requiresParentalConsent ? false : protein,
+        supplements_iron: requiresParentalConsent ? false : iron,
+        supplements_custom: requiresParentalConsent ? null : customSupp.trim() || null,
         allergies: [],
         dietary_type: diet,
       });
@@ -74,6 +76,12 @@ export default function DentalNutritionCard({
 
   return (
     <div className="bg-slate-900/90 border border-blue-900/25 rounded-2xl p-5 space-y-4">
+      {requiresParentalConsent && (
+        <div className="p-3 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs flex items-center gap-2 font-semibold">
+          <span>🔒</span>
+          <span>Потрібна згода батьків (призначення спортивних добавок заблоковано до отримання згоди). Огляд стоматолога доступний.</span>
+        </div>
+      )}
       {errorMsg && (
         <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between">
           <div className="flex items-center gap-2">

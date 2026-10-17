@@ -3,6 +3,7 @@
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
 import { assertAuth } from "@/lib/auth";
+import { hasConsent } from "@/lib/consents";
 import type {
   RpeScore,
   TrainingSessionType,
@@ -21,6 +22,11 @@ type SaveWorkloadInput = {
 export async function saveWorkloadAction(input: SaveWorkloadInput) {
   const auth = await assertAuth();
   if ("error" in auth) return { error: auth.error };
+
+  const allowed = await hasConsent(input.playerId, "gps");
+  if (!allowed) {
+    return { error: "Потрібна згода батьків (область: GPS-трекінг та моніторинг навантажень)." };
+  }
 
   const supabase = await createClient();
 
