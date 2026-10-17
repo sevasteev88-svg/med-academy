@@ -84,12 +84,35 @@ export default function RehabPortalClient({
   const [isSubmitted, setIsSubmitted] = useState<boolean>(false);
   const [isSubmitting, startSubmit] = useTransition();
 
-  // Initialize exercises on mount if already authenticated
+  // Helper to extract clean token from URL or string
+  const cleanToken = (val: string): string => {
+    let t = val.trim();
+    if (t.includes("token=")) {
+      const match = t.match(/token=([a-zA-Z0-9_-]+)/);
+      if (match) return match[1];
+    }
+    return t;
+  };
+
+  // Initialize exercises on mount if already authenticated & remember portal token
   React.useEffect(() => {
     if (initialSessionData?.player) {
       setupPlayerData(initialSessionData.player);
     }
-  }, [initialSessionData]);
+
+    if (tokenFromUrl && typeof window !== "undefined") {
+      try {
+        localStorage.setItem("med_player_portal_token", tokenFromUrl);
+      } catch {}
+    } else if (!tokenFromUrl && !initialSessionData?.player && typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("med_player_portal_token");
+        if (saved && saved.trim()) {
+          window.location.replace(`/rehab-portal?token=${saved.trim()}`);
+        }
+      } catch {}
+    }
+  }, [initialSessionData, tokenFromUrl]);
 
   const setupPlayerData = (player: any) => {
     const primaryInjury = player.injuries?.[0];
@@ -129,7 +152,7 @@ export default function RehabPortalClient({
   // Verify PIN with token
   const handleVerify = (e: React.FormEvent) => {
     e.preventDefault();
-    const token = (tokenInput || tokenFromUrl).trim();
+    const token = cleanToken(tokenInput || tokenFromUrl);
     if (!token) {
       setAuthError("Не вказано персональний токен або посилання для входу");
       return;
@@ -149,6 +172,11 @@ export default function RehabPortalClient({
       if (res.error) {
         setAuthError(res.error);
       } else if (res.success) {
+        if (typeof window !== "undefined") {
+          try {
+            localStorage.setItem("med_player_portal_token", token);
+          } catch {}
+        }
         // Refresh page to populate session server-side
         window.location.href = `/rehab-portal?token=${token}`;
       }
@@ -187,7 +215,12 @@ export default function RehabPortalClient({
       await playerLogoutAction();
       setAuthenticatedPlayer(null);
       setPin("");
-      window.location.href = "/rehab-portal";
+      const saved = typeof window !== "undefined" ? localStorage.getItem("med_player_portal_token") : null;
+      if (saved && saved.trim()) {
+        window.location.href = `/rehab-portal?token=${saved.trim()}`;
+      } else {
+        window.location.href = "/rehab-portal";
+      }
     });
   };
 
@@ -1230,7 +1263,7 @@ export default function RehabPortalClient({
         </p>
 
         {playerPreview && (
-          <div className="mt-3 p-3 rounded-2xl bg-sky-500/10 border border-sky-500/20">
+          <div className="mt-3 p-3 rounded-2xl bg-sky-500/10 border border-sky-500/20 text-center">
             <span className="text-[10px] text-sky-400 uppercase tracking-wider font-semibold block">
               Авторизація для гравця:
             </span>
@@ -1240,6 +1273,20 @@ export default function RehabPortalClient({
             <span className="text-[11px] text-slate-400 block">
               {playerPreview.team} · {playerPreview.position}
             </span>
+            <button
+              type="button"
+              onClick={() => {
+                if (typeof window !== "undefined") {
+                  try {
+                    localStorage.removeItem("med_player_portal_token");
+                  } catch {}
+                  window.location.href = "/rehab-portal";
+                }
+              }}
+              className="mt-2 text-[10px] text-sky-400/80 hover:text-sky-300 underline font-medium inline-block cursor-pointer"
+            >
+              Не ваш профіль? Увійти іншим гравцем
+            </button>
           </div>
         )}
       </div>
@@ -1254,10 +1301,11 @@ export default function RehabPortalClient({
               type="text"
               value={tokenInput}
               onChange={(e) => {
-                setTokenInput(e.target.value.trim());
+                const cleaned = cleanToken(e.target.value);
+                setTokenInput(cleaned);
                 setAuthError(null);
               }}
-              placeholder="Введіть персональний токен або скануйте QR"
+              placeholder="Вставте посилання або персональний токен"
               className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-400 transition-colors font-mono"
             />
           </div>
