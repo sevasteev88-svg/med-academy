@@ -54,6 +54,32 @@ export async function saveWellnessSurveyAction(input: SaveWellnessInput) {
     .from("wellness_surveys")
     .upsert({ ...payload, club_id: auth.user.clubId }, { onConflict: "player_id, date" } as any);
 
+  // 1b. Також зберігаємо в нову таблицю wellness_entries (Етап 8.1)
+  const wellnessEntryPayload = {
+    id: payload.id,
+    club_id: auth.user.clubId,
+    player_id: input.playerId,
+    date: input.date,
+    sleep_quality: input.sleepQuality,
+    fatigue: input.fatigueLevel,
+    soreness: input.muscleSoreness,
+    stress: input.stressLevel,
+    sleep_hours: null,
+    pain: false,
+    pain_vas: null,
+    pain_locations: input.sorenessLocation ? [input.sorenessLocation] : [],
+    illness: false,
+    comment: input.notes || null,
+    submitted_at: payload.created_at,
+    source: "staff",
+  };
+
+  try {
+    await supabase
+      .from("wellness_entries")
+      .upsert(wellnessEntryPayload as any, { onConflict: "player_id, date" });
+  } catch {}
+
   // 2. Якщо таблиці wellness_surveys немає або виникла помилка схеми —
   // надійно зберігаємо в існуючу таблицю injury_logs під категорією 'note' із маркером [WELLNESS]
   if (directErr) {
@@ -67,6 +93,17 @@ export async function saveWellnessSurveyAction(input: SaveWellnessInput) {
       note: logNote,
     } as any);
   }
+
+  // Завжди зберігаємо резервний [WELLNESS_ENTRY]
+  try {
+    await supabase.from("injury_logs").insert({
+      club_id: auth.user.clubId,
+      injury_id: null as any,
+      date: input.date,
+      category: "examination",
+      note: `[WELLNESS_ENTRY] ${JSON.stringify(wellnessEntryPayload)}`,
+    } as any);
+  } catch {}
 
   revalidatePath("/wellness");
   revalidatePath("/availability");

@@ -1,5 +1,45 @@
 export type WellnessScore = 1 | 2 | 3 | 4 | 5;
 
+export type WellnessEntrySource = "player" | "kiosk" | "staff";
+
+export interface WellnessEntry {
+  id: string;
+  club_id: string;
+  player_id: string;
+  date: string; // YYYY-MM-DD
+  sleep_quality: WellnessScore; // 1-5
+  fatigue: WellnessScore; // 1-5 (1 виснажений, 5 свіжий)
+  soreness: WellnessScore; // 1-5 (1 біль, 5 м'язи свіжі)
+  stress: WellnessScore | null; // 1-5 (1 стрес, 5 спокійний). Null для тренера!
+  sleep_hours: number | null;
+  pain: boolean;
+  pain_vas: number | null; // 0-10
+  pain_locations: string[] | null;
+  illness: boolean;
+  comment: string | null; // Null для тренера!
+  submitted_at: string;
+  source: WellnessEntrySource;
+}
+
+export type CoachWellnessEntry = Omit<WellnessEntry, "stress" | "comment"> & {
+  stress: null;
+  comment: null;
+};
+
+export const PAIN_LOCATIONS_LIST = [
+  { id: "head", label: "Голова", icon: "🧠" },
+  { id: "neck_shoulder", label: "Шия / Плече", icon: "🦒" },
+  { id: "back_lumbar", label: "Спина / Поперек", icon: "🧱" },
+  { id: "groin", label: "Пах / Привідні м'язи", icon: "🩲" },
+  { id: "thigh_anterior", label: "Стегно спереду (Квадрицепс)", icon: "🦵" },
+  { id: "thigh_posterior", label: "Стегно ззаду (Хамстрінг)", icon: "🦵" },
+  { id: "knee_left", label: "Коліно ліве", icon: "⚪" },
+  { id: "knee_right", label: "Коліно праве", icon: "⚪" },
+  { id: "calf_shin", label: "Гомілка / Литка", icon: "🦶" },
+  { id: "achilles", label: "Ахілл / П'ята", icon: "👟" },
+  { id: "foot_ankle", label: "Стопа / Гомілковостоп", icon: "👣" },
+];
+
 export type WellnessSurvey = {
   id: string;
   player_id: string;

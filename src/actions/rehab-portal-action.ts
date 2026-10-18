@@ -811,6 +811,34 @@ export async function submitRehabCheckinAction(data: RehabCheckinData) {
     };
 
     await safeInsertLog("examination", payload.date, `[WELLNESS] ${JSON.stringify(wellSurvey)}`);
+
+    // 8.1: Також зберігаємо запис у форматі wellness_entries
+    const wellnessEntryPayload = {
+      id: wellSurvey.id,
+      club_id: clubId,
+      player_id: data.player_id,
+      date: payload.date,
+      sleep_quality: data.sleep_quality,
+      fatigue: freshness,
+      soreness: data.muscle_soreness ?? 4,
+      stress: data.stress_level ?? 4,
+      sleep_hours: data.wearable_data?.sleep_duration_hours ?? null,
+      pain: (data.vas_score !== undefined && data.vas_score !== null && data.vas_score > 0),
+      pain_vas: data.vas_score ?? null,
+      pain_locations: data.soreness_location ? [data.soreness_location] : [],
+      illness: false,
+      comment: data.player_comment || null,
+      submitted_at: wellSurvey.created_at,
+      source: "player",
+    };
+
+    try {
+      await supabase
+        .from("wellness_entries")
+        .upsert(wellnessEntryPayload as any, { onConflict: "player_id, date" });
+    } catch {}
+
+    await safeInsertLog("examination", payload.date, `[WELLNESS_ENTRY] ${JSON.stringify(wellnessEntryPayload)}`);
   }
 
   // Workload
