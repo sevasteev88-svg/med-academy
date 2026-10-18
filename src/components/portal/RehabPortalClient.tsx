@@ -19,6 +19,7 @@ import {
   VAS_ALERT_THRESHOLD,
   URGENT_CASE_WARNING,
 } from "@/lib/constants";
+import PwaInstallPromptModal from "@/components/portal/PwaInstallPromptModal";
 
 interface Props {
   initialSessionData?: any;
@@ -28,12 +29,14 @@ interface Props {
     team: string;
     position: string;
   } | null;
+  isJustActivated?: boolean;
 }
 
 export default function RehabPortalClient({
   initialSessionData,
   tokenFromUrl = "",
   playerPreview,
+  isJustActivated = false,
 }: Props) {
   const [tokenInput, setTokenInput] = useState<string>(tokenFromUrl);
   const [pin, setPin] = useState<string>("");
@@ -115,6 +118,9 @@ export default function RehabPortalClient({
     if (typeof window !== "undefined") {
       // Якщо є активна сесія і токен у search params — видаляємо його з адресного рядка
       if (initialSessionData?.player && window.location.search.includes("token=")) {
+        window.history.replaceState({}, "", "/rehab-portal");
+      }
+      if (window.location.search.includes("activated=")) {
         window.history.replaceState({}, "", "/rehab-portal");
       }
 
@@ -510,6 +516,9 @@ export default function RehabPortalClient({
 
     return (
       <div className="max-w-lg mx-auto p-4 sm:p-6 rounded-3xl bg-slate-900/95 border border-sky-500/25 backdrop-blur-xl space-y-5 shadow-2xl shadow-black/60 animate-fadeIn">
+        {/* 8.2 Пропозиція «Додати на головний екран» (PWA) */}
+        <PwaInstallPromptModal forceOpen={isJustActivated} />
+
         {/* Top Player Profile Bar */}
         <div className="flex items-center justify-between pb-3 border-b border-sky-500/15">
           <div className="flex items-center gap-3">

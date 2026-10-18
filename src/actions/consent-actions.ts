@@ -201,18 +201,29 @@ export async function sendConsentRequestAction(input: {
   const auth = await assertDoctor();
   if ("error" in auth) return { error: auth.error };
 
+  const supabase = await createClient();
   const admin = createAdminClient();
-  const { data: player } = await admin
+
+  let { data: player } = await supabase
     .from("players")
-    .select("id, first_name, last_name, date_of_birth, club_id")
+    .select("id, first_name, last_name, date_of_birth")
     .eq("id", input.playerId)
     .maybeSingle();
+
+  if (!player) {
+    const { data: adminPlayer } = await admin
+      .from("players")
+      .select("id, first_name, last_name, date_of_birth")
+      .eq("id", input.playerId)
+      .maybeSingle();
+    player = adminPlayer;
+  }
 
   if (!player) {
     return { error: "Гравця не знайдено." };
   }
 
-  const clubId = player.club_id || auth.user.clubId || DEFAULT_CLUB_ID;
+  const clubId = (player as any).club_id || auth.user.clubId || DEFAULT_CLUB_ID;
   const age = calculatePlayerAge(player.date_of_birth);
   const isAdultSelf = age >= 18 && !input.guardianId;
 

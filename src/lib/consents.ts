@@ -465,14 +465,12 @@ export async function getPlayerConsentSummary(
   if (!dob) {
     const { data: p } = await supabase
       .from("players")
-      .select("date_of_birth, club_id, assent_acknowledged, assent_acknowledged_at")
+      .select("date_of_birth, club_id")
       .eq("id", playerId)
       .maybeSingle();
 
-    dob = p?.date_of_birth || "2010-01-01";
+    dob = p?.date_of_birth || "";
     clubId = p?.club_id || clubId;
-    assentAck = Boolean((p as any)?.assent_acknowledged);
-    assentAckAt = (p as any)?.assent_acknowledged_at || null;
   }
 
   const [activeDocs, records, guardians] = await Promise.all([
@@ -575,7 +573,8 @@ export async function getPlayerConsentSummary(
  */
 export async function hasConsent(
   playerId: string,
-  scope: ConsentScope
+  scope: ConsentScope,
+  playerDob?: string
 ): Promise<boolean> {
   if (!playerId) return true;
   if (scope === "data_processing") {
@@ -583,7 +582,7 @@ export async function hasConsent(
     return true;
   }
 
-  const summary = await getPlayerConsentSummary(playerId);
+  const summary = await getPlayerConsentSummary(playerId, playerDob);
   // Для гравців 18+ нічого не блокуємо
   if (!summary.isMinor) {
     return true;

@@ -13,6 +13,8 @@ import PlayerPhotoUploader from "@/components/players/PlayerPhotoUploader";
 import WearablesBiometricsCard from "@/components/players/WearablesBiometricsCard";
 import PlayerSportsIntelligenceCard from "@/components/players/PlayerSportsIntelligenceCard";
 import PlayerRehabCheckinHistory from "@/components/players/PlayerRehabCheckinHistory";
+import PlayerDevicesCard from "@/components/players/PlayerDevicesCard";
+import { getPlayerActiveDevicesAction } from "@/actions/player-device-actions";
 import { getOrGeneratePlayerPortalToken } from "@/actions/rehab-portal-action";
 import LsiSymmetryAssessmentCard from "@/components/injuries/LsiSymmetryAssessmentCard";
 import RehabExercisePlanBuilder from "@/components/injuries/RehabExercisePlanBuilder";
@@ -29,7 +31,6 @@ import { getCurrentUser } from "@/lib/auth";
 import { POSITION_LABELS, POSITION_FULL, DOMINANT_UA, LOCATION_UA, SEVERITY_UA, INJURY_TYPE_UA, STATUS_UA } from "@/lib/constants";
 import PlayerConsentsCard from "@/components/consents/PlayerConsentsCard";
 import {
-  hasConsent,
   getPlayerConsentSummary,
   getActiveConsentDocuments,
 } from "@/lib/consents";
@@ -223,22 +224,23 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
 
   const initials = `${player.last_name?.[0] ?? ""}${player.first_name?.[0] ?? ""}`;
 
-  // Перевіряємо згоди виключно через єдину функцію hasConsent(playerId, scope) (п. 6)
+  // Перевіряємо згоди: consentSummary містить дозволи за кожною областю
   const [
     consentSummary,
     activeDocuments,
-    hasPhotoConsent,
-    hasWearablesConsent,
-    hasAiConsent,
-    hasSupplementsConsent,
+    devicesRes,
   ] = await Promise.all([
     getPlayerConsentSummary(id, player.date_of_birth, player.club_id),
     getActiveConsentDocuments(player.club_id),
-    hasConsent(id, "photo"),
-    hasConsent(id, "wearables"),
-    hasConsent(id, "ai_processing"),
-    hasConsent(id, "supplements"),
+    getPlayerActiveDevicesAction(id),
   ]);
+
+  const hasPhotoConsent = consentSummary.scopes.photo.allowed;
+  const hasWearablesConsent = consentSummary.scopes.wearables.allowed;
+  const hasAiConsent = consentSummary.scopes.ai_processing.allowed;
+  const hasSupplementsConsent = consentSummary.scopes.supplements.allowed;
+
+  const activeDevices = devicesRes?.devices || [];
 
   return (
     <div className="min-h-screen text-slate-200 p-4 md:p-8">
@@ -404,6 +406,13 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
           playerName={`${player.last_name} ${player.first_name}`}
           initialProfile={latestNutrition}
           requiresParentalConsent={!hasSupplementsConsent}
+        />
+
+        {/* 8.2 Авторизовані пристрої гравця (QR-активація, макс 2 пристрої) */}
+        <PlayerDevicesCard
+          playerId={id}
+          playerName={`${player.last_name} ${player.first_name}`}
+          initialDevices={activeDevices}
         />
 
         <PlayerRehabCheckinHistory

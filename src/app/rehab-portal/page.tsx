@@ -10,9 +10,10 @@ export const metadata = {
 export default async function RehabPortalPage({
   searchParams,
 }: {
-  searchParams: Promise<{ token?: string }>;
+  searchParams: Promise<{ token?: string; activated?: string }>;
 }) {
-  const { token } = await searchParams;
+  const { token, activated } = await searchParams;
+  const isJustActivated = Boolean(activated);
 
   // 1. Перевіряємо чи є вже валідна сесія в httpOnly cookie
   const sessionData = await getAuthorizedPlayerCabinetData();
@@ -55,6 +56,7 @@ export default async function RehabPortalPage({
           initialSessionData={sessionData.success ? sessionData : null}
           tokenFromUrl={token || ""}
           playerPreview={playerPreview}
+          isJustActivated={isJustActivated}
         />
       </div>
 

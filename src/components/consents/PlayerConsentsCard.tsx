@@ -774,231 +774,301 @@ export default function PlayerConsentsCard({
 
       {/* МОДАЛКА СПОСОБУ А: Надіслати запит на згоду */}
       {sendModalOpen && (
-        <form
-          onSubmit={handleSendConsentLink}
-          className="p-4 rounded-2xl bg-slate-950/95 border border-sky-500/40 space-y-4 text-xs"
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto"
+          onClick={() => setSendModalOpen(false)}
         >
-          <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-            <h3 className="font-bold text-white">
-              📲 Спосіб А «Посилання батькам» (128 біт, 7 днів, OTP-підтвердження)
-            </h3>
-            <button
-              type="button"
-              onClick={() => setSendModalOpen(false)}
-              className="text-slate-400 hover:text-white"
-            >
-              ✕
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {summary.isMinor ? (
-              <div>
-                <label className="block text-slate-400 mb-1">
-                  Оберіть контакт батьків *
-                </label>
-                <select
-                  value={selectedGuardianId}
-                  onChange={(e) => setSelectedGuardianId(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white"
+          <div
+            className="w-full max-w-xl p-6 rounded-3xl bg-slate-900 border border-sky-500/40 shadow-2xl space-y-4 text-xs relative my-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <form onSubmit={handleSendConsentLink} className="space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">📲</span>
+                  <div>
+                    <h3 className="font-bold text-white text-sm">
+                      {summary.isMinor
+                        ? "Спосіб А «Посилання батькам»"
+                        : "Спосіб А «Посилання гравцю 18+»"}
+                    </h3>
+                    <p className="text-[11px] text-slate-400">
+                      128-бітний токен, 7 днів дії, OTP-підтвердження
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSendModalOpen(false)}
+                  className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-colors text-sm"
                 >
-                  {guardians.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.full_name} ({GUARDIAN_RELATION_UA[g.relation] || g.relation}) — {g.phone}
-                    </option>
-                  ))}
-                </select>
+                  ✕
+                </button>
               </div>
-            ) : (
-              <div>
-                <label className="block text-slate-400 mb-1">
-                  Телефон гравця 18+ (для OTP, adult_self)
-                </label>
-                <input
-                  type="tel"
-                  value={adultPhone}
-                  onChange={(e) => setAdultPhone(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono"
-                />
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                {summary.isMinor ? (
+                  <div>
+                    <label className="block text-slate-300 font-semibold mb-1">
+                      Оберіть контакт батьків *
+                    </label>
+                    {guardians.length === 0 ? (
+                      <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px] space-y-2">
+                        <p>⚠️ У гравця ще немає контактів законних представників.</p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSendModalOpen(false);
+                            setGuardianFormOpen(true);
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 font-bold underline"
+                        >
+                          + Додати законного представника
+                        </button>
+                      </div>
+                    ) : (
+                      <select
+                        value={selectedGuardianId}
+                        onChange={(e) => setSelectedGuardianId(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white focus:border-sky-500 outline-none"
+                      >
+                        {guardians.map((g) => (
+                          <option key={g.id} value={g.id}>
+                            {g.full_name} ({GUARDIAN_RELATION_UA[g.relation] || g.relation}) — {g.phone}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-slate-300 font-semibold mb-1">
+                      Телефон гравця 18+ (для OTP) *
+                    </label>
+                    <input
+                      type="tel"
+                      value={adultPhone}
+                      onChange={(e) => setAdultPhone(e.target.value)}
+                      placeholder="+380..."
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:border-sky-500 outline-none"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      Повнолітній гравець (18+) дає згоду особисто (adult_self).
+                    </p>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">
+                    Канал відправки посилання *
+                  </label>
+                  <select
+                    value={selectedChannel}
+                    onChange={(e) =>
+                      setSelectedChannel(e.target.value as ConsentChannel)
+                    }
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white focus:border-sky-500 outline-none"
+                  >
+                    <option value="sms">SMS-повідомлення</option>
+                    <option value="telegram">Telegram-бот</option>
+                    <option value="email">Email (Електронна пошта)</option>
+                    <option value="manual">Вручну (скопіювати посилання)</option>
+                  </select>
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    «Вручну» створить посилання для прямого відкриття або копіювання.
+                  </p>
+                </div>
               </div>
-            )}
 
-            <div>
-              <label className="block text-slate-400 mb-1">
-                Канал відправки посилання *
-              </label>
-              <select
-                value={selectedChannel}
-                onChange={(e) =>
-                  setSelectedChannel(e.target.value as ConsentChannel)
-                }
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white"
-              >
-                <option value="sms">SMS-повідомлення</option>
-                <option value="telegram">Telegram-бот</option>
-                <option value="email">Email (Електронна пошта)</option>
-                <option value="manual">Вручну (скопіювати одноразове посилання)</option>
-              </select>
-            </div>
-          </div>
+              {!summary.isMinor && selectedChannel === "email" && (
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">
+                    Email гравця
+                  </label>
+                  <input
+                    type="email"
+                    value={adultEmail}
+                    onChange={(e) => setAdultEmail(e.target.value)}
+                    placeholder="player@example.com"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white focus:border-sky-500 outline-none"
+                  />
+                </div>
+              )}
 
-          <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setSendModalOpen(false)}
-              className="px-3 py-1.5 rounded-xl bg-slate-800 text-slate-400"
-            >
-              Скасувати
-            </button>
-            <button
-              type="submit"
-              disabled={isPending || (summary.isMinor && guardians.length === 0)}
-              className="px-4 py-1.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-white font-bold disabled:opacity-50"
-            >
-              {isPending ? "Відправка..." : "Згенерувати та надіслати посилання"}
-            </button>
+              <div className="flex justify-end gap-2.5 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setSendModalOpen(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium transition-colors"
+                >
+                  Скасувати
+                </button>
+                <button
+                  type="submit"
+                  disabled={isPending || (summary.isMinor && guardians.length === 0)}
+                  className="px-5 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-white font-bold disabled:opacity-50 transition-colors flex items-center gap-2"
+                >
+                  {isPending ? "Відправка..." : "Згенерувати та надіслати"}
+                </button>
+              </div>
+            </form>
           </div>
-        </form>
+        </div>
       )}
 
       {/* МОДАЛКА СПОСОБУ Б: Завантаження скану паперової форми */}
       {paperModalOpen && (
-        <form
-          onSubmit={handleConfirmPaperConsent}
-          className="p-4 rounded-2xl bg-slate-950/95 border border-emerald-500/40 space-y-4 text-xs"
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto"
+          onClick={() => setPaperModalOpen(false)}
         >
-          <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-            <h3 className="font-bold text-emerald-300">
-              📄 Спосіб Б «Паперова форма» — Завантаження скану та підтвердження отримання
-            </h3>
-            <button
-              type="button"
-              onClick={() => setPaperModalOpen(false)}
-              className="text-slate-400 hover:text-white"
-            >
-              ✕
-            </button>
-          </div>
+          <div
+            className="w-full max-w-2xl p-6 rounded-3xl bg-slate-900 border border-emerald-500/40 shadow-2xl space-y-4 text-xs relative my-auto max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <form onSubmit={handleConfirmPaperConsent} className="space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">📄</span>
+                  <div>
+                    <h3 className="font-bold text-emerald-300 text-sm">
+                      Спосіб Б «Паперова форма»
+                    </h3>
+                    <p className="text-[11px] text-slate-400">
+                      Завантаження скану та підтвердження отримання оригіналів
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPaperModalOpen(false)}
+                  className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-colors text-sm"
+                >
+                  ✕
+                </button>
+              </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
-              <label className="block text-slate-400 mb-1">Номер документа</label>
-              <input
-                type="text"
-                value={paperDocNumber}
-                onChange={(e) => setPaperDocNumber(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono"
-              />
-            </div>
-            <div>
-              <label className="block text-slate-400 mb-1">
-                ПІБ підписанта (батьків / гравця 18+) *
-              </label>
-              <input
-                type="text"
-                required
-                value={paperSignerName}
-                onChange={(e) => setPaperSignerName(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white"
-              />
-            </div>
-            <div>
-              <label className="block text-slate-400 mb-1">
-                Ступінь спорідненості
-              </label>
-              <select
-                value={paperSignerRelation}
-                onChange={(e) => setPaperSignerRelation(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white"
-              >
-                <option value="mother">Мати</option>
-                <option value="father">Батько</option>
-                <option value="guardian">Опікун</option>
-                <option value="self">Особисто (18+)</option>
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-slate-400 mb-1.5">
-              Відмітьте області, які підписані у паперовій формі:
-            </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {ALL_CONSENT_SCOPES.map((sc) => {
-                const checked = paperSignedScopes.includes(sc);
-                return (
-                  <label
-                    key={sc}
-                    className="flex items-center gap-2 p-2 rounded-lg bg-slate-900 border border-slate-800 cursor-pointer"
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Номер документа</label>
+                  <input
+                    type="text"
+                    value={paperDocNumber}
+                    onChange={(e) => setPaperDocNumber(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:border-emerald-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">
+                    ПІБ підписанта (батьків / гравця 18+) *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={paperSignerName}
+                    onChange={(e) => setPaperSignerName(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white focus:border-emerald-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">
+                    Ступінь спорідненості
+                  </label>
+                  <select
+                    value={paperSignerRelation}
+                    onChange={(e) => setPaperSignerRelation(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white focus:border-emerald-500 outline-none"
                   >
+                    <option value="mother">Мати</option>
+                    <option value="father">Батько</option>
+                    <option value="guardian">Опікун</option>
+                    <option value="self">Особисто (18+)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1.5">
+                  Відмітьте області, які підписані у паперовій формі:
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {ALL_CONSENT_SCOPES.map((sc) => {
+                    const checked = paperSignedScopes.includes(sc);
+                    return (
+                      <label
+                        key={sc}
+                        className="flex items-center gap-2 p-2 rounded-lg bg-slate-950 border border-slate-800 cursor-pointer hover:border-slate-700 transition-colors"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setPaperSignedScopes((prev) => [...prev, sc]);
+                            } else {
+                              setPaperSignedScopes((prev) =>
+                                prev.filter((x) => x !== sc)
+                              );
+                            }
+                          }}
+                          className="rounded accent-emerald-500"
+                        />
+                        <span>
+                          {CONSENT_SCOPE_META[sc].icon}{" "}
+                          {CONSENT_SCOPE_META[sc].shortLabel} (v
+                          {activeDocuments[sc].version})
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">
+                    Скан або фото підписаної форми (приватне сховище) *
+                  </label>
+                  <input
+                    type="file"
+                    accept=".pdf,image/*"
+                    onChange={handlePaperScanFileChange}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-slate-300 text-xs"
+                  />
+                </div>
+
+                {summary.isTeenAssentApplicable && (
+                  <label className="flex items-center gap-2 cursor-pointer pt-4">
                     <input
                       type="checkbox"
-                      checked={checked}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setPaperSignedScopes((prev) => [...prev, sc]);
-                        } else {
-                          setPaperSignedScopes((prev) =>
-                            prev.filter((x) => x !== sc)
-                          );
-                        }
-                      }}
-                      className="rounded accent-emerald-500"
+                      checked={paperAssent}
+                      onChange={(e) => setPaperAssent(e.target.checked)}
+                      className="rounded accent-indigo-500"
                     />
-                    <span>
-                      {CONSENT_SCOPE_META[sc].icon}{" "}
-                      {CONSENT_SCOPE_META[sc].shortLabel} (v
-                      {activeDocuments[sc].version})
-                    </span>
+                    <span>Підпис гравця 14–17 р. «Гравець ознайомлений» присутній</span>
                   </label>
-                );
-              })}
-            </div>
-          </div>
+                )}
+              </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
-            <div>
-              <label className="block text-slate-400 mb-1">
-                Скан або фото підписаної форми (приватний bucket, доступ тільки doctor та admin) *
-              </label>
-              <input
-                type="file"
-                accept=".pdf,image/*"
-                onChange={handlePaperScanFileChange}
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-slate-300"
-              />
-            </div>
-
-            {summary.isTeenAssentApplicable && (
-              <label className="flex items-center gap-2 cursor-pointer pt-4">
-                <input
-                  type="checkbox"
-                  checked={paperAssent}
-                  onChange={(e) => setPaperAssent(e.target.checked)}
-                  className="rounded accent-indigo-500"
-                />
-                <span>Підпис гравця 14–17 р. «Гравець ознайомлений» присутній</span>
-              </label>
-            )}
+              <div className="flex justify-end gap-2.5 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setPaperModalOpen(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium transition-colors"
+                >
+                  Скасувати
+                </button>
+                <button
+                  type="submit"
+                  disabled={isPending}
+                  className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-colors"
+                >
+                  {isPending ? "Збереження..." : "Підтвердити отримання"}
+                </button>
+              </div>
+            </form>
           </div>
-
-          <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setPaperModalOpen(false)}
-              className="px-3 py-1.5 rounded-xl bg-slate-800 text-slate-400"
-            >
-              Скасувати
-            </button>
-            <button
-              type="submit"
-              disabled={isPending}
-              className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold"
-            >
-              {isPending ? "Збереження..." : "Підтвердити отримання"}
-            </button>
-          </div>
-        </form>
+        </div>
       )}
     </Card>
   );
