@@ -277,7 +277,7 @@ export async function sendConsentRequestAction(input: {
       guardian?.full_name || `${player.last_name} ${player.first_name}`,
   };
 
-  const { error: dbErr } = await admin.from("consent_requests").insert({
+  let { error: dbErr } = await admin.from("consent_requests").insert({
     id: requestRecord.id,
     club_id: clubId,
     player_id: requestRecord.player_id,
@@ -292,12 +292,28 @@ export async function sendConsentRequestAction(input: {
   } as any);
 
   if (dbErr) {
-    await insertFallbackLog(
-      admin,
-      input.playerId,
-      "[CONSENT_REQ]",
-      requestRecord
-    );
+    const { error: doctorErr } = await supabase.from("consent_requests").insert({
+      id: requestRecord.id,
+      club_id: clubId,
+      player_id: requestRecord.player_id,
+      guardian_id: requestRecord.guardian_id,
+      token_hash: requestRecord.token_hash,
+      scopes: requestRecord.scopes,
+      channel: requestRecord.channel,
+      sent_at: requestRecord.sent_at,
+      expires_at: requestRecord.expires_at,
+      otp_attempts: 0,
+      created_by: auth.user.id,
+    } as any);
+
+    if (doctorErr) {
+      await insertFallbackLog(
+        supabase,
+        input.playerId,
+        "[CONSENT_REQ]",
+        requestRecord
+      );
+    }
   }
 
   const hdrs = await headers();
@@ -477,7 +493,7 @@ export async function getPublicConsentPageData(rawToken: string) {
 
   const { data: player } = await admin
     .from("players")
-    .select("id, first_name, last_name, date_of_birth, club_id, assent_acknowledged")
+    .select("id, first_name, last_name, date_of_birth, club_id")
     .eq("id", request.player_id)
     .maybeSingle();
 
