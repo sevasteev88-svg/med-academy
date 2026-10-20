@@ -36,3 +36,30 @@ export interface ActivationResult {
   lockedUntilMinutes?: number;
   playerId?: string;
 }
+
+export type PlayerActivationStatus = "active" | "pending" | "revoked_or_expired" | "not_issued";
+
+export interface TeamPlayerActivationSummary {
+  playerId: string;
+  firstName: string;
+  lastName: string;
+  position: string;
+  teamId: string;
+  teamName: string;
+  activationStatus: PlayerActivationStatus;
+  statusLabelUa: string;
+  activeDeviceName?: string | null;
+  lastSeenAt?: string | null;
+  tokenExpiresAt?: string | null;
+  requiresParentConsent?: boolean;
+  hasParentConsent?: boolean;
+}
+
+export interface GeneratedQrCard {
+  playerId: string;
+  fullName: string;
+  teamName: string;
+  token: string;
+  activationUrl: string;
+  qrDataUrl?: string;
+}

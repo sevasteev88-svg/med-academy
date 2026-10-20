@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import Card from "@/components/ui/Card";
 import { POSITION_LABELS } from "@/lib/constants";
 
@@ -105,21 +106,27 @@ export default function CoachBriefingClient({ teams, players }: CoachBriefingPro
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <Link
+              href="/team/qr-cards"
+              className="px-3.5 py-2.5 bg-slate-900/80 hover:bg-slate-800 text-sky-400 hover:text-white border border-sky-500/25 text-xs font-bold rounded-xl shadow-[0_0_12px_rgba(14,165,233,0.15)] transition-all flex items-center gap-1.5"
+            >
+              <span>🪪</span> QR-картки команди
+            </Link>
             <button
               type="button"
               onClick={generateAiBriefing}
               disabled={aiLoading}
-              className="px-4 py-2.5 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-[0_0_15px_rgba(56,189,248,0.3)] transition-all flex items-center gap-2 active:scale-95 disabled:opacity-50"
+              className="px-3.5 py-2.5 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-[0_0_15px_rgba(56,189,248,0.3)] transition-all flex items-center gap-1.5 active:scale-95 disabled:opacity-50"
             >
-              <span>🧠</span> {aiLoading ? "Аналіз ШІ..." : "ШІ-Зведення (Claude)"}
+              <span>🧠</span> {aiLoading ? "Аналіз ШІ..." : "ШІ-Зведення"}
             </button>
             <button
               type="button"
               onClick={() => window.print()}
-              className="px-4 py-2.5 bg-slate-900/80 hover:bg-slate-800 text-sky-400 border border-sky-500/25 text-xs font-bold rounded-xl shadow-[0_0_12px_rgba(14,165,233,0.15)] transition-all flex items-center gap-2"
+              className="px-3.5 py-2.5 bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5"
             >
-              <span>🖨️</span> Роздрукувати рапорт
+              <span>🖨️</span> Друк
             </button>
           </div>
         </div>

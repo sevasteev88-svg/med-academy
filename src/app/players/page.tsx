@@ -296,10 +296,16 @@ export default async function PlayersPage({
               )}
             </p>
           </div>
-          <div className="w-full sm:w-auto">
+          <div className="w-full sm:w-auto flex flex-wrap items-center gap-2.5">
+            <Link
+              href="/team/qr-cards"
+              className="bg-slate-900/80 hover:bg-slate-800 text-sky-400 hover:text-white border border-sky-500/25 font-bold py-2.5 px-3.5 rounded-xl text-xs transition-all shadow-md active:scale-95 whitespace-nowrap flex items-center justify-center gap-1.5"
+            >
+              <span>🪪</span> QR-картки команди
+            </Link>
             <Link
               href="/players/new"
-              className="bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition-all shadow-lg shadow-sky-600/20 active:scale-95 whitespace-nowrap flex items-center justify-center gap-1.5 w-full sm:w-auto"
+              className="bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition-all shadow-lg shadow-sky-600/20 active:scale-95 whitespace-nowrap flex items-center justify-center gap-1.5"
             >
               <span>+</span> Додати гравця
             </Link>
