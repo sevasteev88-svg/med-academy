@@ -79,9 +79,13 @@ export default function PublicConsentPortalClient({
     photo: false,
   });
 
-  const [signerFullName, setSignerFullName] = useState(
-    initialData.guardian.fullName || ""
-  );
+  const defaultSignerName =
+    initialData.guardian.fullName ||
+    (!initialData.player.isMinor
+      ? `${initialData.player.lastName} ${initialData.player.firstName}`
+      : "");
+
+  const [signerFullName, setSignerFullName] = useState(defaultSignerName);
   const [signerRelation, setSignerRelation] = useState(
     initialData.guardian.relation ||
       (initialData.player.isMinor ? "mother" : "self")
@@ -125,12 +129,16 @@ export default function PublicConsentPortalClient({
     if (purpose === "grant") {
       if (selectedScopes.length === 0) {
         setErrorMsg(
-          "Увімкніть перемикачем хоча б одну область згоди перед запитом коду OTP."
+          "Увімкніть хоча б одну область згоди (перемикачем у пункті 1 вище) перед запитом коду OTP."
         );
         return;
       }
       if (!signerFullName.trim()) {
-        setErrorMsg("Заповніть поле «ПІБ законного представника».");
+        setErrorMsg(
+          initialData.player.isMinor
+            ? "Вкажіть ПІБ законного представника (пункт 2 вище) перед запитом коду OTP."
+            : "Вкажіть ПІБ гравця (пункт 2 вище) перед запитом коду OTP."
+        );
         return;
       }
     } else {
@@ -473,7 +481,11 @@ export default function PublicConsentPortalClient({
                     value={signerFullName}
                     onChange={(e) => setSignerFullName(e.target.value)}
                     placeholder="Введіть Прізвище Ім'я По батькові"
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-white"
+                    className={`w-full bg-slate-950 border rounded-xl px-3.5 py-2.5 text-white transition-colors ${
+                      !signerFullName.trim() && errorMsg
+                        ? "border-rose-500 ring-1 ring-rose-500"
+                        : "border-slate-700"
+                    }`}
                   />
                 </div>
 
@@ -483,7 +495,15 @@ export default function PublicConsentPortalClient({
                   </label>
                   <select
                     value={signerRelation}
-                    onChange={(e) => setSignerRelation(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setSignerRelation(val);
+                      if (val === "self" && !signerFullName.trim()) {
+                        setSignerFullName(
+                          `${initialData.player.lastName} ${initialData.player.firstName}`
+                        );
+                      }
+                    }}
                     className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-white"
                   >
                     <option value="mother">Мати</option>
@@ -534,11 +554,53 @@ export default function PublicConsentPortalClient({
                   type="button"
                   onClick={() => handleRequestOtp("grant")}
                   disabled={isPending || initialData.request.isExpired}
-                  className="px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold shrink-0 disabled:opacity-50"
+                  className="px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold shrink-0 disabled:opacity-50 transition-colors"
                 >
-                  {otpSent ? "Надіслати код повторно" : "📲 Отримати код OTP"}
+                  {isPending
+                    ? "Відправка..."
+                    : otpSent
+                    ? "Надіслати код повторно"
+                    : "📲 Отримати код OTP"}
                 </button>
               </div>
+
+              {/* Сповіщення про помилку валідації прямо в розділі 3 */}
+              {errorMsg && (
+                <div className="p-3.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-semibold flex items-center justify-between">
+                  <span>⚠️ {errorMsg}</span>
+                  <button
+                    type="button"
+                    onClick={() => setErrorMsg(null)}
+                    className="text-rose-400 hover:text-white text-sm px-1.5"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+
+              {/* Тестова підказка з кодом OTP прямо в блоці введення */}
+              {devOtpHint && (
+                <div className="p-3.5 rounded-xl bg-sky-950/90 border-2 border-sky-400 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xl">
+                  <div>
+                    <div className="font-bold text-sky-300 flex items-center gap-1.5">
+                      <span>🧪</span> Тестовий режим (OTP код):
+                    </div>
+                    <div className="text-slate-200 mt-1">
+                      Код підтвердження:{" "}
+                      <strong className="text-base font-mono text-white bg-slate-900 px-2.5 py-0.5 rounded border border-sky-400 ml-1">
+                        {devOtpHint}
+                      </strong>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setOtpCode(devOtpHint)}
+                    className="px-3.5 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-white font-bold shrink-0"
+                  >
+                    Вставити код
+                  </button>
+                </div>
+              )}
 
               {otpSent && (
                 <div className="pt-3 border-t border-slate-800 flex flex-col sm:flex-row sm:items-center gap-3">
@@ -689,13 +751,26 @@ export default function PublicConsentPortalClient({
                   </p>
 
                   <div className="flex flex-wrap items-center gap-2">
+                    {errorMsg && (
+                      <div className="w-full p-2.5 rounded-lg bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs font-semibold">
+                        ⚠️ {errorMsg}
+                      </div>
+                    )}
+                    {devOtpHint && revokeOtpSent && (
+                      <div className="w-full p-2.5 rounded-lg bg-sky-950/80 border border-sky-400 text-xs flex items-center justify-between">
+                        <span>🧪 Тестовий OTP код: <strong className="text-white font-mono">{devOtpHint}</strong></span>
+                        <button type="button" onClick={() => setRevokeOtpCode(devOtpHint)} className="px-2 py-1 rounded bg-sky-500 text-white font-bold">Вставити</button>
+                      </div>
+                    )}
                     <button
                       type="button"
                       onClick={() => handleRequestOtp("revoke")}
                       disabled={isPending}
                       className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold"
                     >
-                      {revokeOtpSent
+                      {isPending
+                        ? "Відправка..."
+                        : revokeOtpSent
                         ? "Надіслати код повторно"
                         : "📲 Отримати код OTP для відкликання"}
                     </button>
