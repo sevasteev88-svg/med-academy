@@ -43,7 +43,14 @@ export default async function TeamReadinessPage({
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Link
+              href="/admin/readiness-settings"
+              className="px-3.5 py-2 rounded-xl bg-amber-950/30 border border-amber-500/30 hover:border-amber-500/60 text-xs font-bold text-amber-300 transition-all flex items-center gap-1.5"
+            >
+              <span>⚙️</span>
+              <span>Пороги лікаря</span>
+            </Link>
             <Link
               href="/team/qr-cards"
               className="px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-xs font-semibold text-slate-300 transition-all"

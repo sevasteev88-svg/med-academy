@@ -14,6 +14,7 @@ const DOCTOR_NAV: NavItem[] = [
   { href: "/", label: "Дашборд", icon: "🏠" },
   { href: "/players", label: "Реєстр", icon: "👥" },
   { href: "/team/readiness", label: "Готовність (Світлофор)", icon: "🚦" },
+  { href: "/admin/readiness-settings", label: "Пороги готовності (лікар)", icon: "⚙️" },
   { href: "/team/qr-cards", label: "QR-картки команди", icon: "🪪" },
   { href: "/availability", label: "Доступність", icon: "🟢" },
   { href: "/rtp", label: "Return-to-Play", icon: "🏃" },
