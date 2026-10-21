@@ -41,7 +41,7 @@ export default async function TeamQrCardsPage() {
   const initialTeamId = teams[0]?.id || "";
 
   // Отримуємо статус гравців початкової команди
-  let initialPlayers = [];
+  let initialPlayers: any[] = [];
   if (initialTeamId) {
     const summaryRes = await getTeamActivationSummaryAction(initialTeamId);
     if (summaryRes.success && summaryRes.players) {

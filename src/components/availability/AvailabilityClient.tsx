@@ -300,6 +300,13 @@ export default function AvailabilityClient({ teams }: Props) {
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <Link
+              href="/team/readiness"
+              className="px-3.5 py-2 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-[0_0_12px_rgba(16,185,129,0.15)]"
+            >
+              <span>🚦</span>
+              <span>Світлофор готовності</span>
+            </Link>
+            <Link
               href="/wellness"
               className="px-3.5 py-2 rounded-xl bg-slate-900/80 border border-sky-500/30 text-sky-400 hover:bg-sky-500/20 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5"
             >

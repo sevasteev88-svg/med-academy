@@ -13,6 +13,7 @@ type NavItem = { href: string; label: string; icon: string };
 const DOCTOR_NAV: NavItem[] = [
   { href: "/", label: "Дашборд", icon: "🏠" },
   { href: "/players", label: "Реєстр", icon: "👥" },
+  { href: "/team/readiness", label: "Готовність (Світлофор)", icon: "🚦" },
   { href: "/team/qr-cards", label: "QR-картки команди", icon: "🪪" },
   { href: "/availability", label: "Доступність", icon: "🟢" },
   { href: "/rtp", label: "Return-to-Play", icon: "🏃" },
@@ -35,6 +36,7 @@ const DOCTOR_NAV: NavItem[] = [
 
 const COACH_NAV: NavItem[] = [
   { href: "/", label: "Дашборд", icon: "🏠" },
+  { href: "/team/readiness", label: "Готовність (Світлофор)", icon: "🚦" },
   { href: "/coach-briefing", label: "Брифінг тренера", icon: "🛡️" },
   { href: "/team/qr-cards", label: "QR-картки команди", icon: "🪪" },
   { href: "/availability", label: "Доступність", icon: "🟢" },

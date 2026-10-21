@@ -427,7 +427,11 @@ export async function revokePlayerDevicesAction(playerId: string): Promise<{
   revokedCount?: number;
 }> {
   try {
-    const user = await assertDoctor();
+    const authRes = await assertDoctor();
+    if ("error" in authRes) {
+      return { success: false, error: authRes.error };
+    }
+    const user = authRes.user;
     if (!playerId) {
       return { success: false, error: "Не вказано гравця" };
     }
