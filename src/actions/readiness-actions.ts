@@ -230,7 +230,6 @@ export async function getTeamReadinessAction(params?: {
       last_name,
       position,
       team_id,
-      birth_date,
       teams ( id, name )
     `)
     .is("archived_at", null)
