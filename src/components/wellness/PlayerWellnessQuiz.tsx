@@ -5,12 +5,19 @@ import {
   submitWellnessEntryAction,
   checkPlayerWellnessAccessAction,
   getTodayWellnessEntryForPlayerAction,
+  getPlayerWeeklySummaryAction,
 } from "@/actions/wellness-entry-actions";
 import {
   type WellnessScore,
   type WellnessEntry,
   PAIN_LOCATIONS_LIST,
 } from "@/types/wellness";
+import { PlayerWearablesSection } from "./PlayerWearablesSection";
+import {
+  getTodayWearableEntryAction,
+  submitWearableEntryAction,
+} from "@/actions/wearable-actions";
+import type { WearableInputData } from "@/types/wearables";
 import Link from "next/link";
 
 interface Props {
@@ -89,6 +96,13 @@ export default function PlayerWellnessQuiz({
 
   const [isIll, setIsIll] = useState<boolean | null>(initialEntry ? initialEntry.illness : null);
   const [comment, setComment] = useState<string>(initialEntry?.comment || "");
+  const [trainingRpe, setTrainingRpe] = useState<number | null>(null);
+  const [wearablesData, setWearablesData] = useState<WearableInputData | null>(null);
+  const [monotonyNotice, setMonotonyNotice] = useState<{
+    isMonotonous: boolean;
+    consecutiveDays: number;
+    prompt: string | null;
+  } | null>(null);
 
   const [isSubmitted, setIsSubmitted] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -111,8 +125,16 @@ export default function PlayerWellnessQuiz({
     };
   }, [playerId]);
 
-  // Завантаження вже поданого сьогоднішнього звіту (для правки в той самий день)
+  // Завантаження вже поданого сьогоднішнього звіту та перевірка монотонності відповідей
   useEffect(() => {
+    if (playerId) {
+      getPlayerWeeklySummaryAction(playerId).then((summary) => {
+        if (summary?.monotonyNotice) {
+          setMonotonyNotice(summary.monotonyNotice);
+        }
+      });
+    }
+
     if (!initialEntry && playerId) {
       getTodayWellnessEntryForPlayerAction(playerId).then((res) => {
         if (res.entry) {
@@ -126,6 +148,22 @@ export default function PlayerWellnessQuiz({
           setPainLocations(res.entry.pain_locations || []);
           setIsIll(res.entry.illness);
           setComment(res.entry.comment || "");
+        }
+      });
+
+      // 8.8 Завантаження сьогоднішніх даних годинника
+      getTodayWearableEntryAction(playerId).then((res) => {
+        if (res?.entry) {
+          setWearablesData({
+            device_type: res.entry.device_type,
+            resting_hr_bpm: res.entry.resting_hr_bpm,
+            hrv_ms: res.entry.hrv_ms,
+            hrv_metric: res.entry.hrv_metric,
+            sleep_duration_min: res.entry.sleep_duration_min,
+            device_score: res.entry.device_score,
+            device_score_name: res.entry.device_score_name,
+            source: res.entry.source,
+          });
         }
       });
     }
@@ -236,12 +274,25 @@ export default function PlayerWellnessQuiz({
         painLocations: hasPain ? painLocations : [],
         illness: isIll,
         comment: comment.trim() || null,
+        trainingRpe: trainingRpe !== null ? trainingRpe : undefined,
         source,
       });
 
       if (res.error) {
         setErrorMsg(res.error);
       } else if (res.success && res.entry) {
+        // 8.8 Збереження даних з годинника (якщо введено)
+        if (wearablesData) {
+          try {
+            await submitWearableEntryAction({
+              ...wearablesData,
+              playerId,
+            });
+          } catch (wErr) {
+            console.error("[PlayerWellnessQuiz] Error submitting wearables:", wErr);
+          }
+        }
+
         setIsSubmitted(true);
         if (onSuccess) onSuccess(res.entry);
       }
@@ -692,6 +743,74 @@ export default function PlayerWellnessQuiz({
             <p className="text-xs text-slate-400">
               Коментар лікарю (конфіденційно, тренер його не бачить)
             </p>
+          </div>
+
+          {/* 8.5 М'яка ненав'язлива підказка при однакових відповідях N днів поспіль (не блокує і не штрафує) */}
+          {monotonyNotice?.isMonotonous && (
+            <div className="p-3.5 rounded-2xl bg-purple-950/30 border border-purple-500/30 flex items-start gap-2.5 text-xs text-purple-200 shadow-sm animate-fadeIn">
+              <span className="text-lg mt-0.5">💬</span>
+              <div>
+                <span className="font-bold block text-white">Все гаразд? Можна додати нотатку</span>
+                <span className="text-[11px] text-slate-300 leading-snug block mt-0.5">
+                  Твої відповіді стабільні кілька днів поспіль. Якщо відчуваєш дискомфорт, втому чи стрес — напиши нижче для лікаря. Це приватно, тренер цей коментар не бачить.
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* 8.8 Ручний ввід даних з годинника (сворачиваемый блок, необов'язково) */}
+          <PlayerWearablesSection
+            playerId={playerId}
+            initialData={wearablesData}
+            parentSleepHours={sleepHours}
+            onSleepHoursChange={(hours) => {
+              if (hours !== null) setSleepHours(hours);
+            }}
+            onChange={(data) => setWearablesData(data)}
+          />
+
+          {/* 8.6 Оцінка навантаження тренування гравцем (необов'язково) */}
+          <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-amber-500/25 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-base">⏱️</span>
+                <div>
+                  <label className="text-xs font-bold text-slate-200 block">
+                    Оцінка тренування за сьогодні (необов&apos;язково)
+                  </label>
+                  <span className="text-[10px] text-slate-400">
+                    Як ти оцінюєш важкість заняття? (Borg 0–10)
+                  </span>
+                </div>
+              </div>
+              {trainingRpe !== null && (
+                <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                  {trainingRpe} / 10
+                </span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-11 gap-1 pt-1">
+              {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
+                <button
+                  key={num}
+                  type="button"
+                  onClick={() => setTrainingRpe(trainingRpe === num ? null : num)}
+                  className={`h-7 rounded-lg font-mono text-xs font-bold transition-all border ${
+                    trainingRpe === num
+                      ? "bg-amber-500 text-black border-amber-400 shadow-md font-black"
+                      : "bg-slate-900 text-slate-300 border-slate-800 hover:border-slate-700"
+                  }`}
+                >
+                  {num}
+                </button>
+              ))}
+            </div>
+            <div className="flex justify-between text-[9px] text-slate-400 pt-0.5">
+              <span>0: Відпочинок</span>
+              <span>5: Важко</span>
+              <span>10: Максимум</span>
+            </div>
           </div>
 
           <div className="space-y-1.5">

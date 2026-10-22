@@ -108,6 +108,12 @@ export default function CoachBriefingClient({ teams, players }: CoachBriefingPro
 
           <div className="flex flex-wrap items-center gap-2.5">
             <Link
+              href="/how-to-use"
+              className="px-3.5 py-2.5 bg-sky-950/40 hover:bg-sky-900/50 text-sky-300 hover:text-white border border-sky-500/30 text-xs font-bold rounded-xl shadow-[0_0_12px_rgba(56,189,248,0.15)] transition-all flex items-center gap-1.5"
+            >
+              <span>📖</span> Як користуватись
+            </Link>
+            <Link
               href="/team/readiness"
               className="px-3.5 py-2.5 bg-emerald-950/40 hover:bg-emerald-900/50 text-emerald-300 hover:text-white border border-emerald-500/30 text-xs font-bold rounded-xl shadow-[0_0_12px_rgba(16,185,129,0.15)] transition-all flex items-center gap-1.5"
             >

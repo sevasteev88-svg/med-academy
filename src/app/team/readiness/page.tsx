@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getTeamReadinessAction } from "@/actions/readiness-actions";
 import CoachReadinessClient from "@/components/readiness/CoachReadinessClient";
+import CoachWeeklyTelegramModal from "@/components/reports/CoachWeeklyTelegramModal";
 
 export default async function TeamReadinessPage({
   searchParams,
@@ -44,6 +45,19 @@ export default async function TeamReadinessPage({
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
+            <CoachWeeklyTelegramModal
+              teamId={result.currentTeamId || ""}
+              teamName={
+                result.teams?.find((t: any) => t.id === result.currentTeamId)?.name || "Команда"
+              }
+            />
+            <Link
+              href="/how-to-use"
+              className="px-3.5 py-2 rounded-xl bg-sky-500/15 border border-sky-500/30 hover:bg-sky-500/25 text-xs font-semibold text-sky-300 transition-all flex items-center gap-1.5"
+            >
+              <span>📖</span>
+              <span>Як користуватись</span>
+            </Link>
             <Link
               href="/admin/readiness-settings"
               className="px-3.5 py-2 rounded-xl bg-amber-950/30 border border-amber-500/30 hover:border-amber-500/60 text-xs font-bold text-amber-300 transition-all flex items-center gap-1.5"
@@ -78,6 +92,7 @@ export default async function TeamReadinessPage({
             currentDate={result.currentDate}
             userRole={result.userRole}
             config={result.config}
+            teamCompliance={result.teamCompliance}
           />
         )}
       </div>

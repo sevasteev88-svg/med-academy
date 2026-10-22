@@ -11,6 +11,7 @@ export interface ReadinessThresholds {
   zScoreYellowThreshold: number; // Відхилення Z-score для жовтого прапорця (за замовчуванням <= -1.0)
   singleScoreRedThreshold: number; // Одиночна оцінка сну/втоми/крепатури для червоного (за замовчуванням <= 1)
   singleScoreYellowThreshold: number; // Одиночна оцінка для жовтого (за замовчуванням <= 2)
+  monotonyThresholdDays: number; // Поріг абсолютно однакових відповідей поспіль (за замовчуванням 7)
 }
 
 export interface CoachCategoryVisibility {
@@ -18,6 +19,13 @@ export interface CoachCategoryVisibility {
   showFatigueCategory: boolean; // Показувати категорію "втома"
   showSleepCategory: boolean; // Показувати категорію "сон"
   showIllnessCategory: boolean; // Показувати категорію "нездужання"
+}
+
+export interface MorningReminderConfig {
+  enabled: boolean;
+  time: string; // "08:30"
+  channel: "push" | "telegram" | "both";
+  lastSentDate?: string | null;
 }
 
 export type ThresholdApprovalStatus = "draft" | "approved";
@@ -30,10 +38,19 @@ export interface ClubReadinessConfig {
   approvedAt?: string | null;
   thresholds: ReadinessThresholds;
   visibility: CoachCategoryVisibility;
+  morningReminder: MorningReminderConfig;
+  wearablesAiScreenshotEnabled?: boolean; // 8.8 ШІ-розпізнавання скріншотів годинника (за замовчуванням вимкнено)
 }
 
 export const DRAFT_STATUS_LABEL = "ЧЕРНЕТКА, потребує затвердження лікарем";
 export const APPROVED_STATUS_LABEL = "Затверджено лікарем";
+
+export const DEFAULT_MORNING_REMINDER_CONFIG: MorningReminderConfig = {
+  enabled: true,
+  time: "08:30",
+  channel: "push",
+  lastSentDate: null,
+};
 
 export const DEFAULT_READINESS_THRESHOLDS: ReadinessThresholds = {
   baselineRequiredDays: 14,
@@ -44,6 +61,7 @@ export const DEFAULT_READINESS_THRESHOLDS: ReadinessThresholds = {
   zScoreYellowThreshold: -1.0,
   singleScoreRedThreshold: 1,
   singleScoreYellowThreshold: 2,
+  monotonyThresholdDays: 7,
 };
 
 export const DEFAULT_COACH_CATEGORY_VISIBILITY: CoachCategoryVisibility = {
@@ -61,6 +79,8 @@ export const DEFAULT_CLUB_READINESS_CONFIG: ClubReadinessConfig = {
   approvedAt: null,
   thresholds: { ...DEFAULT_READINESS_THRESHOLDS },
   visibility: { ...DEFAULT_COACH_CATEGORY_VISIBILITY },
+  morningReminder: { ...DEFAULT_MORNING_REMINDER_CONFIG },
+  wearablesAiScreenshotEnabled: false,
 };
 
 export const READINESS_DISCLAIMER_TEXT =

@@ -3,6 +3,7 @@
  */
 
 import type { WellnessEntry, CoachWellnessEntry } from "../types/wellness.ts";
+import type { WearableBaselineReport } from "../types/wearables.ts";
 import {
   DEFAULT_READINESS_THRESHOLDS,
   DEFAULT_COACH_CATEGORY_VISIBILITY,
@@ -56,6 +57,21 @@ export interface PlayerReadinessResult {
   // 7-денний тренд для міні-графіка
   trendLast7Days: ReadinessTrendPoint[];
 
+  // 8.5 Статистика заповнення та дисципліна (Compliance)
+  compliance7Days: number; // 0 - 100% за останні 7 днів
+  compliance28Days: number; // 0 - 100% за останні 28 днів
+  currentStreakDays: number; // Серия заповнення поспіль
+
+  // 8.5 Зворотний зв'язок (Відмітка перегляду штабом)
+  isAcknowledged: boolean;
+  reviewedByRole: "coach" | "doctor" | "admin" | null;
+  reviewedAt: string | null;
+
+  // 8.5 Детекція монотонних однакових відповідей (ВИДНО ТІЛЬКИ ЛІКАРЮ ТА АДМІНУ!)
+  hasMonotony: boolean;
+  monotonyDays: number;
+  monotonyPrompt?: string | null;
+
   // ДЕТАЛІ ДЛЯ ЛІКАРЯ (Суворо null або undefined для тренера!)
   doctorDetails?: {
     pain: boolean;
@@ -68,6 +84,19 @@ export interface PlayerReadinessResult {
     sleepQuality: number;
     fatigue: number;
     soreness: number;
+    wearables?: {
+      deviceType: string;
+      hrvMetric: string;
+      restingHrBpm: number | null;
+      hrvMs: number | null;
+      sleepDurationMin: number | null;
+      deviceScore: number | null;
+      deviceScoreName: string | null;
+      restingHrZScore: number | null;
+      hrvZScore: number | null;
+      baselineStatus: string;
+      disclaimer: string;
+    } | null;
   } | null;
 }
 
@@ -86,6 +115,7 @@ export interface CalculateReadinessOptions {
     teamName?: string;
     position?: string;
   };
+  wearablesReport?: WearableBaselineReport | null;
 }
 
 /**
@@ -176,6 +206,15 @@ export function evaluatePlayerReadiness(
     zScore: null,
     flagCategories: [],
     trendLast7Days: [],
+    compliance7Days: 0,
+    compliance28Days: 0,
+    currentStreakDays: 0,
+    isAcknowledged: false,
+    reviewedByRole: null,
+    reviewedAt: null,
+    hasMonotony: false,
+    monotonyDays: 0,
+    monotonyPrompt: null,
     doctorDetails: null,
   };
 
@@ -216,6 +255,27 @@ export function evaluatePlayerReadiness(
   // Формуємо 7-денний тренд
   baseResult.trendLast7Days = generate7DayTrend(todayDate, dateMap);
 
+  // 8.5 Розрахунок дисципліни заповнення (Compliance) та серій заповнення (Streaks)
+  const { compliance7, compliance28 } = calculateComplianceRates(todayDate, dateMap);
+  const streak = calculateStreakDays(todayDate, dateMap);
+  baseResult.compliance7Days = compliance7;
+  baseResult.compliance28Days = compliance28;
+  baseResult.currentStreakDays = streak;
+
+  // 8.5 Детекція монотонних однакових відповідей N днів поспіль
+  const monotonyThreshold = thresholds.monotonyThresholdDays || 7;
+  const monotony = detectMonotonousAnswers(entriesLast28Days, monotonyThreshold);
+  baseResult.hasMonotony = monotony.isMonotonous;
+  baseResult.monotonyDays = monotony.consecutiveDays;
+  baseResult.monotonyPrompt = monotony.messageForPlayer;
+
+  // 8.5 Перевірка статусу перегляду (acknowledgement)
+  if (todayEntry) {
+    baseResult.isAcknowledged = Boolean(todayEntry.acknowledged || todayEntry.reviewed_at);
+    baseResult.reviewedByRole = todayEntry.reviewed_by_role || null;
+    baseResult.reviewedAt = todayEntry.reviewed_at || null;
+  }
+
   // Якщо сьогодні анкету ще не заповнено
   if (!todayEntry) {
     return {
@@ -244,6 +304,21 @@ export function evaluatePlayerReadiness(
       sleepQuality: todayEntry.sleep_quality,
       fatigue: todayEntry.fatigue,
       soreness: todayEntry.soreness,
+      wearables: options.wearablesReport?.todayEntry
+        ? {
+            deviceType: options.wearablesReport.deviceType,
+            hrvMetric: options.wearablesReport.hrvMetric,
+            restingHrBpm: options.wearablesReport.todayEntry.resting_hr_bpm,
+            hrvMs: options.wearablesReport.todayEntry.hrv_ms,
+            sleepDurationMin: options.wearablesReport.todayEntry.sleep_duration_min,
+            deviceScore: options.wearablesReport.todayEntry.device_score,
+            deviceScoreName: options.wearablesReport.todayEntry.device_score_name,
+            restingHrZScore: options.wearablesReport.todayRestingHrZScore,
+            hrvZScore: options.wearablesReport.todayHrvZScore,
+            baselineStatus: options.wearablesReport.status,
+            disclaimer: options.wearablesReport.disclaimer,
+          }
+        : null,
     };
   }
 
@@ -330,6 +405,22 @@ export function evaluatePlayerReadiness(
     if (visibility.showPainCategory) categories.add("біль");
   }
 
+  // Правило 5 (8.8): Wearable-дані як додатковий фізіологічний сигнал
+  // Можуть вплинути на світлофор тільки як додатковий сигнал і ніколи не замінюють анкету
+  if (options.wearablesReport && options.wearablesReport.status === "ready") {
+    const hrvZ = options.wearablesReport.todayHrvZScore;
+    const rhrZ = options.wearablesReport.todayRestingHrZScore;
+
+    // Сильне падіння HRV (Z <= -2.0) або суттєвий стрибок пульсу спокою (Z >= 2.0)
+    if (hrvZ !== null && hrvZ <= -2.0) {
+      yellowReasons.push("Фізіологічний сигнал: значне падіння HRV нижче індивідуальної норми");
+      if (visibility.showFatigueCategory) categories.add("втома");
+    } else if (rhrZ !== null && rhrZ >= 2.0) {
+      yellowReasons.push("Фізіологічний сигнал: підвищений пульс спокою вище індивідуальної норми");
+      if (visibility.showFatigueCategory) categories.add("втома");
+    }
+  }
+
   baseResult.flagCategories = Array.from(categories);
 
   // 6. ВИЗНАЧЕННЯ ФІНАЛЬНОГО СТАТУСУ
@@ -403,13 +494,138 @@ function generate7DayTrend(
 }
 
 /**
+ * Розраховує відсоток заповнення за 7 та 28 днів
+ */
+export function calculateComplianceRates(
+  todayDate: string,
+  dateMap: Map<string, WellnessEntry>
+): { compliance7: number; compliance28: number } {
+  const baseDate = new Date(todayDate);
+
+  let count7 = 0;
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(baseDate);
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().split("T")[0];
+    if (dateMap.has(dateStr)) {
+      count7++;
+    }
+  }
+
+  let count28 = 0;
+  for (let i = 0; i < 28; i++) {
+    const d = new Date(baseDate);
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().split("T")[0];
+    if (dateMap.has(dateStr)) {
+      count28++;
+    }
+  }
+
+  return {
+    compliance7: Math.round((count7 / 7) * 100),
+    compliance28: Math.round((count28 / 28) * 100),
+  };
+}
+
+/**
+ * Розраховує серію заповнених днів поспіль (Streaks).
+ * Нагороджує виключно за факт заповнення, не за бали!
+ */
+export function calculateStreakDays(
+  todayDate: string,
+  dateMap: Map<string, WellnessEntry>
+): number {
+  const baseDate = new Date(todayDate);
+  let streak = 0;
+
+  // Якщо сьогодні вже заповнено, починаємо відсьогодні
+  // Якщо сьогодні ще ні, перевіряємо від учора, щоб серія не обривалася завчасно
+  const hasToday = dateMap.has(todayDate);
+  const startOffset = hasToday ? 0 : 1;
+
+  for (let i = startOffset; i < 120; i++) {
+    const d = new Date(baseDate);
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().split("T")[0];
+    if (dateMap.has(dateStr)) {
+      streak++;
+    } else {
+      break;
+    }
+  }
+
+  return streak;
+}
+
+/**
+ * Детекція однакових відповідей N днів поспіль (за замовчуванням 7).
+ * При збігу повертає прапорець для лікаря та м'яку підказку для гравця.
+ * Не карає та не блокує.
+ */
+export function detectMonotonousAnswers(
+  entries: WellnessEntry[],
+  thresholdDays: number = 7
+): {
+  isMonotonous: boolean;
+  consecutiveDays: number;
+  messageForPlayer?: string | null;
+} {
+  if (entries.length < thresholdDays) {
+    return { isMonotonous: false, consecutiveDays: 0, messageForPlayer: null };
+  }
+
+  // Сортуємо хронологічно від найстаріших до найновіших
+  const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
+
+  // Беремо останній запис як еталон
+  const latest = sorted[sorted.length - 1];
+  let consecutiveSame = 0;
+
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    const cur = sorted[i];
+    const isSame =
+      cur.sleep_quality === latest.sleep_quality &&
+      cur.fatigue === latest.fatigue &&
+      cur.soreness === latest.soreness &&
+      cur.stress === latest.stress &&
+      cur.pain === latest.pain &&
+      cur.illness === latest.illness;
+
+    if (isSame) {
+      consecutiveSame++;
+    } else {
+      break;
+    }
+  }
+
+  if (consecutiveSame >= thresholdDays) {
+    return {
+      isMonotonous: true,
+      consecutiveDays: consecutiveSame,
+      messageForPlayer: "Все гаразд? Можна додати нотатку або обговорити з лікарем",
+    };
+  }
+
+  return {
+    isMonotonous: false,
+    consecutiveDays: consecutiveSame,
+    messageForPlayer: null,
+  };
+}
+
+/**
  * Фільтрація для тренера: видаляє будь-які приватні та клінічні дані, якщо випадково передані.
+ * ВИМОГА 8.5: Тренер бачить відсоток заповнення, але НЕ бачить метку монотонності (видно тільки doctor/admin)!
  */
 export function sanitizeReadinessForCoach(
   result: PlayerReadinessResult
 ): PlayerReadinessResult {
   return {
     ...result,
+    hasMonotony: false,
+    monotonyDays: 0,
+    monotonyPrompt: null,
     doctorDetails: null, // Тренер ніколи не бачить doctorDetails
   };
 }

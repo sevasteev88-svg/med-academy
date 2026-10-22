@@ -513,6 +513,7 @@ export default function RehabPortalClient({
   if (authenticatedPlayer) {
     const doctorInstruction = authenticatedPlayer.doctorInstruction;
     const pastCheckins = authenticatedPlayer.pastCheckins || [];
+    const weeklySummary = authenticatedPlayer.weeklySummary;
 
     return (
       <div className="max-w-lg mx-auto p-4 sm:p-6 rounded-3xl bg-slate-900/95 border border-sky-500/25 backdrop-blur-xl space-y-5 shadow-2xl shadow-black/60 animate-fadeIn">
@@ -715,7 +716,7 @@ export default function RehabPortalClient({
                   : "text-slate-400 hover:text-white"
               }`}
             >
-              <span>📈</span> Динаміка
+              <span>📊</span> Мій тиждень
             </button>
           </div>
         ) : (
@@ -740,7 +741,7 @@ export default function RehabPortalClient({
                   : "text-slate-400 hover:text-white"
               }`}
             >
-              <span>📈</span> Мій стан та сон
+              <span>📊</span> Мій тиждень
             </button>
           </div>
         )}
@@ -1482,119 +1483,167 @@ export default function RehabPortalClient({
           </form>
         )}
 
-        {/* TAB 3: Мій стан та сон (Динаміка) */}
+        {/* TAB 3: Екран «Мій тиждень» (Власні відповіді, графік, зворотний зв'язок) */}
         {activeTab === "progress" && (
           <div className="space-y-4 animate-fadeIn">
-            {/* 6. Здоровому гравцю НЕ показувати пустий блок «Динаміка болю ВАШ»! */}
-            {primaryInjury ? (
-              <div className="p-4 rounded-2xl bg-slate-950/70 border border-sky-500/20 space-y-3">
-                <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
-                  <span>📉</span> Динаміка болю ВАШ за останні дні:
-                </h4>
-
-                {pastCheckins.length === 0 ? (
-                  <p className="text-xs text-slate-500 text-center py-4">
-                    Ще немає збереженої історії звітів. Відправляй щоденний чек-ін, щоб бачити динаміку!
-                  </p>
-                ) : (
-                  <div className="space-y-2 pt-2">
-                    <div className="flex items-end justify-between gap-1.5 h-32 px-2 pb-2 border-b border-white/10">
-                      {pastCheckins.slice(-14).map((c: any, i: number) => {
-                        const v = c.vas_score ?? 0;
-                        const heightPct = Math.max(10, (v / 10) * 100);
-                        const isHigh = v >= VAS_ALERT_THRESHOLD;
-                        const isMid = v >= 4;
-
-                        return (
-                          <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                            <span className="text-[10px] font-mono font-bold text-slate-300">
-                              {v}
-                            </span>
-                            <div
-                              style={{ height: `${heightPct}%` }}
-                              className={`w-full rounded-t-lg transition-all ${
-                                isHigh
-                                  ? "bg-rose-500"
-                                  : isMid
-                                  ? "bg-amber-500"
-                                  : "bg-emerald-500"
-                              }`}
-                            />
-                            <span className="text-[9px] font-mono text-slate-500 truncate max-w-[28px]">
-                              {c.date?.slice(5)}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <div className="flex justify-between text-[10px] text-slate-400 px-1 font-mono">
-                      <span>🟢 0–3: Норма</span>
-                      <span>🟡 4–6: Помірний</span>
-                      <span>🔴 7+: Гострий біль</span>
-                    </div>
-                  </div>
+            {/* 8.5 Фраза зворотного зв'язку «Ваш звіт переглянув(ла) тренер/лікар» */}
+            <div className="p-4 rounded-2xl bg-gradient-to-r from-slate-900 to-sky-950/50 border border-sky-500/30 space-y-2 shadow-lg shadow-sky-950/20">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                  <span>{weeklySummary?.isAcknowledged ? "✅" : "📬"}</span>
+                  <span>Зворотний зв&apos;язок штабу:</span>
+                </span>
+                {weeklySummary?.isAcknowledged && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-mono font-bold">
+                    Взято до уваги
+                  </span>
                 )}
               </div>
-            ) : (
-              /* Графік власної анкети здорового гравця за останні 14 днів */
-              <div className="p-4 rounded-2xl bg-slate-950/70 border border-sky-500/20 space-y-3">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
-                    <span>📊</span> Динаміка самопочуття за останні 14 днів:
-                  </h4>
-                  <span className="text-[10px] text-slate-400 font-mono">Макс. 20 балів</span>
+              <p className="text-sm font-bold text-white leading-snug">
+                «{weeklySummary?.statusMessage || (pastCheckins.length > 0 ? "Ваш звіт надіслано штабу команди" : "Заповніть сьогоднішнє самопочуття")}»
+              </p>
+              {weeklySummary?.isAcknowledged && weeklySummary?.reviewedAt && (
+                <p className="text-[10px] text-slate-400 font-mono">
+                  Час перегляду: {new Date(weeklySummary.reviewedAt).toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" })}
+                </p>
+              )}
+            </div>
+
+            {/* 8.5 Серії заповнення «N днів поспіль» — нагороджують ТІЛЬКИ за ЗАПОВНЕННЯ! */}
+            <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-950/25 via-slate-900 to-slate-900 border border-amber-500/30 flex items-center justify-between shadow-md">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-2xl shrink-0">
+                  🔥
                 </div>
-
-                {pastCheckins.length === 0 ? (
-                  <p className="text-xs text-slate-500 text-center py-6">
-                    Ще немає збереженої історії відповідей. Відправляй щоденне самопочуття, щоб відстежувати графік своєї форми!
-                  </p>
-                ) : (
-                  <div className="space-y-3 pt-2">
-                    <div className="flex items-end justify-between gap-1.5 h-36 px-2 pb-2 border-b border-white/10">
-                      {pastCheckins.slice(-14).map((c: any, i: number) => {
-                        const total = c.total_score ?? 16;
-                        const heightPct = Math.max(15, (total / 20) * 100);
-                        const isGood = total >= 16;
-                        const isWarn = total >= 12;
-
-                        return (
-                          <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                            <span className="text-[9px] font-mono font-bold text-slate-300">
-                              {total}
-                            </span>
-                            <div
-                              style={{ height: `${heightPct}%` }}
-                              className={`w-full rounded-t-lg transition-all ${
-                                isGood
-                                  ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.3)]"
-                                  : isWarn
-                                  ? "bg-amber-400"
-                                  : "bg-rose-500"
-                              }`}
-                            />
-                            <span className="text-[9px] font-mono text-slate-500 truncate max-w-[28px]">
-                              {c.date?.slice(5)}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <div className="flex justify-between text-[10px] text-slate-400 px-1 font-mono">
-                      <span>🟢 16–20: Оптимально</span>
-                      <span>🟡 12–15: Увага</span>
-                      <span>🔴 &lt;12: Втома</span>
-                    </div>
+                <div>
+                  <div className="text-sm font-black text-white flex items-center gap-1.5">
+                    <span>{weeklySummary?.streakDays || 0}</span>
+                    <span>
+                      {(weeklySummary?.streakDays || 0) === 1
+                        ? "день"
+                        : (weeklySummary?.streakDays || 0) > 1 && (weeklySummary?.streakDays || 0) < 5
+                        ? "дні"
+                        : "днів"}{" "}
+                      поспіль
+                    </span>
                   </div>
-                )}
+                  <p className="text-[11px] text-slate-300 leading-snug mt-0.5">
+                    Нагороджуємо тільки за регулярність заповнення, не за бали. Клуб цінує чесність!
+                  </p>
+                </div>
+              </div>
+              <div className="text-right shrink-0 ml-2">
+                <span className="text-[10px] font-mono text-amber-400 font-bold block">
+                  7д: {weeklySummary?.compliance7Days || 0}%
+                </span>
+                <span className="text-[9px] text-slate-400 block font-mono">
+                  28д: {weeklySummary?.compliance28Days || 0}%
+                </span>
+              </div>
+            </div>
+
+            {/* 8.5 М'яка підказка при однакових відповідях N днів поспіль */}
+            {weeklySummary?.monotonyNotice?.isMonotonous && (
+              <div className="p-3.5 rounded-2xl bg-purple-950/30 border border-purple-500/40 flex items-start gap-3 shadow-md">
+                <span className="text-2xl mt-0.5">💬</span>
+                <div>
+                  <div className="text-xs font-bold text-purple-200">
+                    Все гаразд? Можна додати нотатку
+                  </div>
+                  <p className="text-[11px] text-slate-300 leading-relaxed mt-0.5">
+                    Помітили, що твої оцінки однакові вже {weeklySummary.monotonyNotice.consecutiveDays} днів поспіль. Якщо відчуваєш втому чи дискомфорт — не бійся повідомити лікаря в коментарях або особисто перед розминкою.
+                  </p>
+                </div>
               </div>
             )}
 
-            {/* 5. Мотиваційний блок з нейтральним текстом без вигаданих відсотків */}
+            {/* 8.5 Власний графік відповідей за тиждень */}
+            <div className="p-4 rounded-2xl bg-slate-950/70 border border-sky-500/20 space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <span>📊</span> Мій тиждень: динаміка відповідей
+                </h4>
+                <span className="text-[10px] text-slate-400 font-mono">Шкала 1–5</span>
+              </div>
+
+              {(!weeklySummary?.entries || weeklySummary.entries.length === 0) && pastCheckins.length === 0 ? (
+                <p className="text-xs text-slate-500 text-center py-6">
+                  Ще немає збереженої історії відповідей. Відправляй щоденне самопочуття, щоб бачити свій тижневий графік!
+                </p>
+              ) : (
+                <div className="space-y-4 pt-1">
+                  {/* Простий наочний стовпчастий графік за останні дні */}
+                  <div className="flex items-end justify-between gap-1.5 h-36 px-2 pb-2 border-b border-white/10">
+                    {((weeklySummary?.entries && weeklySummary.entries.length > 0)
+                      ? weeklySummary.entries
+                      : pastCheckins.slice(-7)
+                    ).map((c: any, i: number) => {
+                      const sleep = Number(c.sleep_quality || 4);
+                      const fatigue = Number(c.fatigue || (c.freshness_level ?? 4));
+                      const soreness = Number(c.soreness || (c.muscle_soreness ?? 4));
+                      const avg = Number(((sleep + fatigue + soreness) / 3).toFixed(1));
+                      const heightPct = Math.max(20, (avg / 5) * 100);
+                      const isGood = avg >= 4;
+                      const isWarn = avg >= 3;
+
+                      return (
+                        <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                          <span className="text-[9px] font-mono font-bold text-slate-300">
+                            {avg}
+                          </span>
+                          <div
+                            style={{ height: `${heightPct}%` }}
+                            className={`w-full rounded-t-lg transition-all ${
+                              isGood
+                                ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.3)]"
+                                : isWarn
+                                ? "bg-amber-400"
+                                : "bg-rose-500"
+                            }`}
+                          />
+                          <span className="text-[9px] font-mono text-slate-500 truncate max-w-[32px]">
+                            {c.date?.slice(5)}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                    <div className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-center">
+                      <span className="text-slate-400 block text-[10px]">😴 Сон</span>
+                      <span className="text-white font-bold font-mono">
+                        {weeklySummary?.todayEntry?.sleep_quality || "—"} / 5
+                      </span>
+                    </div>
+                    <div className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-center">
+                      <span className="text-slate-400 block text-[10px]">⚡ Свіжість</span>
+                      <span className="text-white font-bold font-mono">
+                        {weeklySummary?.todayEntry?.fatigue || "—"} / 5
+                      </span>
+                    </div>
+                    <div className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-center">
+                      <span className="text-slate-400 block text-[10px]">🦵 М&apos;язи</span>
+                      <span className="text-white font-bold font-mono">
+                        {weeklySummary?.todayEntry?.soreness || "—"} / 5
+                      </span>
+                    </div>
+                    <div className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-center">
+                      <span className="text-slate-400 block text-[10px]">🧘 Спокій</span>
+                      <span className="text-white font-bold font-mono">
+                        {weeklySummary?.todayEntry?.stress || "—"} / 5
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Мотиваційний блок */}
             <div className="p-3.5 rounded-2xl bg-slate-950/60 border border-sky-500/20 text-xs text-slate-300 leading-relaxed flex items-center gap-3">
               <span className="text-2xl">🌱</span>
               <p className="text-[11px] leading-snug">
-                Відновлення залежить від твого стану, а не від дат. Повідомляй лікаря про біль і дискомфорт.
+                Самопочуття — це твій особистий навігатор форми. Чесні відповіді допомагають тренеру та лікарю дозувати навантаження і захищати тебе від перевтоми.
               </p>
             </div>
           </div>

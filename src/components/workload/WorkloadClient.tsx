@@ -70,6 +70,8 @@ export default function WorkloadClient({
   const dangerCount = summaries.filter((s) => s.riskZone === "danger").length;
   const cautionCount = summaries.filter((s) => s.riskZone === "caution").length;
   const sweetSpotCount = summaries.filter((s) => s.riskZone === "sweet_spot").length;
+  const insufficientCount = summaries.filter((s) => s.riskZone === "insufficient_data" || s.isInsufficientData).length;
+  const discrepanciesCount = summaries.filter((s) => s.rpeDiscrepancy && Math.abs(s.rpeDiscrepancy.diff) >= 2).length;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -262,8 +264,49 @@ export default function WorkloadClient({
               >
                 🟢 Оптимум ({sweetSpotCount})
               </button>
+              <button
+                onClick={() => setRiskFilter("insufficient_data")}
+                className={`px-2.5 py-1 rounded-md text-[11px] font-semibold ${
+                  riskFilter === "insufficient_data"
+                    ? "bg-slate-600 text-white"
+                    : "bg-surface-raised text-slate-400 hover:bg-slate-800"
+                }`}
+              >
+                ⚪ Недостатньо даних ({insufficientCount})
+              </button>
             </div>
           </div>
+
+          {/* Справочно для лікаря: Розбіжності RPE */}
+          {discrepanciesCount > 0 && (
+            <div className="p-4 rounded-xl bg-amber-950/20 border border-amber-500/40 space-y-2 text-xs">
+              <div className="flex items-center gap-2 text-amber-300 font-bold">
+                <span>ℹ️</span>
+                <span>Справочно для лікаря: Виявлено розбіжності в оцінці навантаження ({discrepanciesCount})</span>
+              </div>
+              <p className="text-slate-300 text-[11px]">
+                Окремі гравці суб&apos;єктивно оцінили навантаження значно важче або легше, ніж встановив тренер (розбіжність ≥ 2 бали):
+              </p>
+              <div className="flex flex-wrap gap-2 pt-1">
+                {summaries
+                  .filter((s) => s.rpeDiscrepancy && Math.abs(s.rpeDiscrepancy.diff) >= 2)
+                  .map((s) => (
+                    <span
+                      key={s.playerId}
+                      className="px-2.5 py-1 rounded-lg bg-slate-900 border border-amber-500/30 text-slate-200 text-[11px] flex items-center gap-1.5 font-medium"
+                    >
+                      <strong>{s.playerName}</strong>:
+                      <span className="text-slate-400">Тренер {s.rpeDiscrepancy!.coachRpe}</span>
+                      <span>vs</span>
+                      <span className="text-amber-300 font-bold">Гравець {s.rpeDiscrepancy!.playerRpe}</span>
+                      <span className="font-mono text-xs text-amber-400 font-black">
+                        ({s.rpeDiscrepancy!.diff > 0 ? `+${s.rpeDiscrepancy!.diff}` : s.rpeDiscrepancy!.diff})
+                      </span>
+                    </span>
+                  ))}
+              </div>
+            </div>
+          )}
 
           {/* Table */}
           <div className="bg-surface border border-blue-900/20 rounded-xl overflow-hidden shadow-lg">
@@ -291,7 +334,9 @@ export default function WorkloadClient({
                     </tr>
                   ) : (
                     filteredSummaries.map((s) => {
-                      const badge = calculateAcwr(s.acuteLoad, s.chronicLoad);
+                      const badge = calculateAcwr(s.acuteLoad, s.chronicLoad, {
+                        chronicSessionsCount: s.recentSessionsCount,
+                      });
                       return (
                         <tr
                           key={s.playerId}
@@ -317,11 +362,20 @@ export default function WorkloadClient({
                             <span className="text-[10px] text-slate-500">AU/т</span>
                           </td>
                           <td className="py-3 px-3 text-center">
-                            <span
-                              className={`inline-block px-2.5 py-1 rounded-md font-mono font-black text-xs border ${badge.badgeClass}`}
-                            >
-                              {s.acwr.toFixed(2)}
-                            </span>
+                            {badge.isInsufficientData || s.acwr === null ? (
+                              <span
+                                className="inline-block px-2 py-0.5 rounded text-[10px] font-mono text-slate-400 bg-slate-800/80 border border-slate-700"
+                                title="Недостатньо даних (< 14-28 днів)"
+                              >
+                                Немає даних
+                              </span>
+                            ) : (
+                              <span
+                                className={`inline-block px-2.5 py-1 rounded-md font-mono font-black text-xs border ${badge.badgeClass}`}
+                              >
+                                {s.acwr.toFixed(2)}
+                              </span>
+                            )}
                           </td>
                           <td className="py-3 px-3">
                             <div className="text-[11px] font-medium text-slate-300">
@@ -330,9 +384,20 @@ export default function WorkloadClient({
                           </td>
                           <td className="py-3 px-3 text-[11px] text-slate-400">
                             {s.lastSessionDate ? (
-                              <span>
-                                {s.lastSessionDate} · RPE {s.lastSessionRpe}/10 ({s.lastSessionWorkload} AU)
-                              </span>
+                              <div>
+                                <span>
+                                  {s.lastSessionDate} · RPE {s.lastSessionRpe}/10 ({s.lastSessionWorkload} AU)
+                                </span>
+                                {s.rpeDiscrepancy && Math.abs(s.rpeDiscrepancy.diff) >= 2 && (
+                                  <div className="mt-1 flex items-center gap-1 text-[10px] text-amber-300 font-semibold bg-amber-500/10 border border-amber-500/30 px-1.5 py-0.5 rounded">
+                                    <span>⚠️ Розбіжність:</span>
+                                    <span>Тренер {s.rpeDiscrepancy.coachRpe} / Гравець {s.rpeDiscrepancy.playerRpe}</span>
+                                    <span className="font-mono font-bold">
+                                      ({s.rpeDiscrepancy.diff > 0 ? "+" : ""}{s.rpeDiscrepancy.diff})
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
                             ) : (
                               <span className="text-slate-600">—</span>
                             )}

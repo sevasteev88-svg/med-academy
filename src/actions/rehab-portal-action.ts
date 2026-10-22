@@ -21,6 +21,8 @@ import {
 } from "@/lib/player-rate-limit";
 import { assertDoctor, DEFAULT_CLUB_ID } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
+import { getPlayerWeeklySummaryAction } from "@/actions/wellness-entry-actions";
+import { submitPlayerSelfRpeAction } from "./training-session-actions";
 
 /**
  * Отримує або ініціалізує portal_token для гравця (викликається сервером або лікарем).
@@ -597,6 +599,9 @@ export async function getAuthorizedPlayerCabinetData() {
     } catch {}
   }
 
+  // 8. Персональна тижнева динаміка та статус перегляду штабом (8.5)
+  const weeklySummary = await getPlayerWeeklySummaryAction(player.id);
+
   return {
     success: true,
     mustChangePin: session.mustChangePin,
@@ -611,6 +616,7 @@ export async function getAuthorizedPlayerCabinetData() {
       customRehabPlan,
       pastCheckins,
       prescribedSupplements,
+      weeklySummary,
     },
   };
 }
@@ -858,6 +864,15 @@ export async function submitRehabCheckinAction(data: RehabCheckinData) {
     };
 
     await safeInsertLog("procedure", payload.date, `[WORKLOAD] ${JSON.stringify(sessionPayload)}`);
+
+    try {
+      await submitPlayerSelfRpeAction({
+        playerId: data.player_id,
+        date: payload.date,
+        playerRpe: rpe as any,
+        sessionMinutes: duration,
+      });
+    } catch {}
   }
 
   if (data.vas_score !== undefined && data.vas_score !== null && targetInjuryId) {

@@ -19,6 +19,43 @@ export interface WellnessEntry {
   comment: string | null; // Null для тренера!
   submitted_at: string;
   source: WellnessEntrySource;
+  reviewed_at?: string | null;
+  reviewed_by_role?: "coach" | "doctor" | "admin" | null;
+  reviewed_by_name?: string | null;
+  acknowledged?: boolean;
+}
+
+export interface PlayerComplianceStats {
+  playerId: string;
+  rate7Days: number; // 0 - 100%
+  completedDays7: number;
+  totalDays7: number; // 7
+  rate28Days: number; // 0 - 100%
+  completedDays28: number;
+  totalDays28: number; // 28
+  currentStreakDays: number; // Серия заповнення поспіль
+}
+
+export interface TeamComplianceStats {
+  teamId?: string;
+  rate7Days: number; // 0 - 100%
+  rate28Days: number; // 0 - 100%
+  activePlayersCount: number;
+}
+
+export interface MonotonyCheckResult {
+  isMonotonous: boolean;
+  consecutiveDays: number;
+  thresholdDays: number;
+  messageForPlayer?: string | null; // "Все гаразд? Можна додати нотатку"
+  noteForDoctor?: string | null; // "Повторювані відповіді (N днів)"
+}
+
+export interface MorningReminderConfig {
+  enabled: boolean;
+  time: string; // Наприклад "08:30"
+  channel: "push" | "telegram" | "both";
+  lastSentDate?: string | null;
 }
 
 export type CoachWellnessEntry = Omit<WellnessEntry, "stress" | "comment"> & {

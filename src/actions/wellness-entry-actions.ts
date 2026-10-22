@@ -13,6 +13,7 @@ import type {
   CoachWellnessEntry,
 } from "@/types/wellness";
 import { logAudit } from "@/lib/audit";
+import { submitPlayerSelfRpeAction } from "./training-session-actions";
 
 export interface SubmitWellnessEntryInput {
   playerId: string;
@@ -26,6 +27,7 @@ export interface SubmitWellnessEntryInput {
   painLocations?: string[] | null;
   illness: boolean;
   comment?: string | null;
+  trainingRpe?: number | null;
   source: WellnessEntrySource;
   entryDate?: string;
 }
@@ -224,6 +226,22 @@ export async function submitWellnessEntryAction(input: SubmitWellnessEntryInput)
     } as any);
   } catch {}
 
+  // 8.6 Фіксація власної оцінки навантаження тренування гравцем (RPE)
+  if (
+    input.trainingRpe !== undefined &&
+    input.trainingRpe !== null &&
+    input.trainingRpe >= 0 &&
+    input.trainingRpe <= 10
+  ) {
+    try {
+      await submitPlayerSelfRpeAction({
+        playerId: input.playerId,
+        date: targetDate,
+        playerRpe: Number(input.trainingRpe) as any,
+      });
+    } catch {}
+  }
+
   revalidatePath("/rehab-portal");
   revalidatePath("/wellness");
   revalidatePath("/wellness/kiosk");
@@ -315,5 +333,318 @@ export async function getWellnessEntriesForDashboardAction(
   return {
     entries: sanitizedEntries,
     isCoachRole: userIsCoach,
+  };
+}
+
+/**
+ * 8.5 Отримання персональної тижневої динаміки для гравця:
+ * - Власні відповіді за останні 7 днів для простого графіка
+ * - Статус перегляду штабом («Ваш звіт переглянув(ла) тренер/лікар»)
+ * - Розрахунок дисципліни та серій заповнення (Streaks)
+ * - М'яка підказка при виявленні однакових відповідей N днів поспіль
+ */
+export async function getPlayerWeeklySummaryAction(playerId: string): Promise<{
+  entries: WellnessEntry[];
+  todayEntry: WellnessEntry | null;
+  compliance7Days: number;
+  compliance28Days: number;
+  streakDays: number;
+  isAcknowledged: boolean;
+  reviewedByRole: "coach" | "doctor" | "admin" | null;
+  reviewedByName: string | null;
+  reviewedAt: string | null;
+  statusMessage: string;
+  monotonyNotice: {
+    isMonotonous: boolean;
+    consecutiveDays: number;
+    prompt: string | null;
+  };
+}> {
+  if (!playerId) {
+    return {
+      entries: [],
+      todayEntry: null,
+      compliance7Days: 0,
+      compliance28Days: 0,
+      streakDays: 0,
+      isAcknowledged: false,
+      reviewedByRole: null,
+      reviewedByName: null,
+      reviewedAt: null,
+      statusMessage: "Не вказано гравця",
+      monotonyNotice: { isMonotonous: false, consecutiveDays: 0, prompt: null },
+    };
+  }
+
+  const { clubId, timezone } = await getPlayerClubTimezone(playerId);
+  const today = getClubDate(timezone);
+  const supabase = createAdminClient();
+
+  // Вибірка за останні 28 днів для розрахунку комплаєнсу та стриків
+  const todayDateObj = new Date(today);
+  const past28DateObj = new Date(todayDateObj);
+  past28DateObj.setDate(past28DateObj.getDate() - 28);
+  const minDateStr = past28DateObj.toISOString().split("T")[0];
+
+  let allEntries: WellnessEntry[] = [];
+  try {
+    const { data } = await supabase
+      .from("wellness_entries")
+      .select("*")
+      .eq("player_id", playerId)
+      .gte("date", minDateStr)
+      .lte("date", today)
+      .order("date", { ascending: true });
+
+    if (data) {
+      allEntries = data as WellnessEntry[];
+    }
+  } catch {}
+
+  // Отримуємо клубові acknowledgements для надійності
+  let clubAck: any = null;
+  try {
+    const { data: club } = await supabase
+      .from("clubs")
+      .select("settings")
+      .eq("id", clubId)
+      .maybeSingle();
+    const acks = (club as any)?.settings?.wellness_acknowledgements || {};
+    clubAck = acks[`${playerId}_${today}`];
+  } catch {}
+
+  const dateMap = new Map<string, WellnessEntry>();
+  for (const e of allEntries) {
+    dateMap.set(e.date, e);
+  }
+
+  const todayEntry = dateMap.get(today) || null;
+  if (todayEntry && clubAck) {
+    todayEntry.acknowledged = true;
+    todayEntry.reviewed_at = todayEntry.reviewed_at || clubAck.reviewed_at;
+    todayEntry.reviewed_by_role = todayEntry.reviewed_by_role || clubAck.reviewed_by_role;
+    todayEntry.reviewed_by_name = todayEntry.reviewed_by_name || clubAck.reviewed_by_name;
+  }
+
+  // Останні 7 днів для графіка
+  const past7DateObj = new Date(todayDateObj);
+  past7DateObj.setDate(past7DateObj.getDate() - 6);
+  const min7DateStr = past7DateObj.toISOString().split("T")[0];
+
+  const last7Entries = allEntries.filter((e) => e.date >= min7DateStr);
+
+  // Compliance
+  let count7 = 0;
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(todayDateObj);
+    d.setDate(d.getDate() - i);
+    const dStr = d.toISOString().split("T")[0];
+    if (dateMap.has(dStr)) count7++;
+  }
+  const compliance7Days = Math.round((count7 / 7) * 100);
+
+  let count28 = 0;
+  for (let i = 0; i < 28; i++) {
+    const d = new Date(todayDateObj);
+    d.setDate(d.getDate() - i);
+    const dStr = d.toISOString().split("T")[0];
+    if (dateMap.has(dStr)) count28++;
+  }
+  const compliance28Days = Math.round((count28 / 28) * 100);
+
+  // Streak (серия заповнення поспіль)
+  let streakDays = 0;
+  const startOffset = dateMap.has(today) ? 0 : 1;
+  for (let i = startOffset; i < 120; i++) {
+    const d = new Date(todayDateObj);
+    d.setDate(d.getDate() - i);
+    const dStr = d.toISOString().split("T")[0];
+    if (dateMap.has(dStr)) {
+      streakDays++;
+    } else {
+      break;
+    }
+  }
+
+  // Статус перегляду (Reviewed / Acknowledged)
+  const isAcknowledged = Boolean(
+    todayEntry?.acknowledged || todayEntry?.reviewed_at || clubAck
+  );
+  const reviewedByRole =
+    todayEntry?.reviewed_by_role || clubAck?.reviewed_by_role || null;
+  const reviewedByName =
+    todayEntry?.reviewed_by_name || clubAck?.reviewed_by_name || null;
+  const reviewedAt =
+    todayEntry?.reviewed_at || clubAck?.reviewed_at || null;
+
+  let statusMessage = "Сьогоднішня анкета ще не заповнена. Заповніть її перед ранковим тренуванням!";
+  if (todayEntry) {
+    if (isAcknowledged) {
+      const staffRoleLabel =
+        reviewedByRole === "doctor"
+          ? "лікар"
+          : reviewedByRole === "coach"
+          ? "тренер"
+          : "тренер / лікар";
+      statusMessage = `Ваш звіт переглянув(ла) ${staffRoleLabel}`;
+    } else {
+      statusMessage = "Ваш звіт надіслано. Очікує перегляду штабом перед тренуванням";
+    }
+  }
+
+  // Детекція однакових відповідей N днів поспіль (за замовчуванням 7)
+  let monotonyNotice = {
+    isMonotonous: false,
+    consecutiveDays: 0,
+    prompt: null as string | null,
+  };
+
+  if (allEntries.length >= 7) {
+    const sorted = [...allEntries].sort((a, b) => a.date.localeCompare(b.date));
+    const latest = sorted[sorted.length - 1];
+    let sameCount = 0;
+    for (let i = sorted.length - 1; i >= 0; i--) {
+      const cur = sorted[i];
+      const isSame =
+        cur.sleep_quality === latest.sleep_quality &&
+        cur.fatigue === latest.fatigue &&
+        cur.soreness === latest.soreness &&
+        cur.stress === latest.stress &&
+        cur.pain === latest.pain &&
+        cur.illness === latest.illness;
+      if (isSame) {
+        sameCount++;
+      } else {
+        break;
+      }
+    }
+
+    if (sameCount >= 7) {
+      monotonyNotice = {
+        isMonotonous: true,
+        consecutiveDays: sameCount,
+        prompt: "Все гаразд? Можна додати нотатку або обговорити з лікарем",
+      };
+    }
+  }
+
+  return {
+    entries: last7Entries,
+    todayEntry,
+    compliance7Days,
+    compliance28Days,
+    streakDays,
+    isAcknowledged,
+    reviewedByRole,
+    reviewedByName,
+    reviewedAt,
+    statusMessage,
+    monotonyNotice,
+  };
+}
+
+/**
+ * 8.5, 8.7 Одноразове ранкове нагадування про незаповнену анкету
+ * Правило: Тільки один раз вранці (наприклад о 08:30). Жодних повторних нагадувань протягом дня!
+ */
+export async function sendMorningWellnessRemindersAction(): Promise<{
+  success: boolean;
+  skipped?: boolean;
+  reason?: string;
+  sentCount?: number;
+  missingPlayersCount?: number;
+  date?: string;
+}> {
+  const supabase = createAdminClient();
+  const timezone = "Europe/Kyiv";
+  const today = getClubDate(timezone);
+
+  // 1. Отримуємо налаштування клубу та перевіряємо, чи вже надсилалося нагадування сьогодні
+  const { data: club } = await supabase
+    .from("clubs")
+    .select("settings")
+    .eq("id", DEFAULT_CLUB_ID)
+    .maybeSingle();
+
+  const currentSettings = (club as any)?.settings || {};
+  const reminderConfig = currentSettings?.readiness_config?.morningReminder || {
+    enabled: true,
+    time: "08:30",
+    channel: "push",
+    lastSentDate: null,
+  };
+
+  if (!reminderConfig.enabled) {
+    return { success: true, skipped: true, reason: "Нагадування вимкнені в налаштуваннях" };
+  }
+
+  // СУВОРЕ ПРАВИЛО: Жодних повторних нагадувань протягом дня!
+  if (reminderConfig.lastSentDate === today) {
+    return {
+      success: true,
+      skipped: true,
+      reason: `Сьогодні (${today}) ранкове нагадування вже надсилалося. Повторні нагадування заблоковано.`,
+    };
+  }
+
+  // 2. Отримуємо всіх активних гравців
+  const { data: activePlayers } = await supabase
+    .from("players")
+    .select("id, first_name, last_name, team_id")
+    .is("archived_at", null);
+
+  const players = activePlayers || [];
+  if (players.length === 0) {
+    return { success: true, sentCount: 0, missingPlayersCount: 0, date: today };
+  }
+
+  // 3. Знаходимо, хто вже заповнив анкету сьогодні
+  const { data: todayEntries } = await supabase
+    .from("wellness_entries")
+    .select("player_id")
+    .eq("date", today);
+
+  const filledPlayerIds = new Set((todayEntries || []).map((e: any) => e.player_id));
+  const missingPlayers = players.filter((p) => !filledPlayerIds.has(p.id));
+
+  // 4. Фіксуємо факт відправки сьогоднішнього ранкового нагадування
+  const updatedReminderConfig = {
+    ...reminderConfig,
+    lastSentDate: today,
+  };
+
+  const updatedSettings = {
+    ...currentSettings,
+    readiness_config: {
+      ...(currentSettings.readiness_config || {}),
+      morningReminder: updatedReminderConfig,
+    },
+  };
+
+  await supabase
+    .from("clubs")
+    .update({ settings: updatedSettings } as any)
+    .eq("id", DEFAULT_CLUB_ID);
+
+  // 5. Логуємо аудит
+  await logAudit({
+    action: "morning_wellness_reminder_sent",
+    entity: "wellness_entries",
+    entityId: DEFAULT_CLUB_ID,
+    userId: "system",
+    clubId: DEFAULT_CLUB_ID,
+    meta: {
+      date: today,
+      channel: reminderConfig.channel,
+      missingCount: missingPlayers.length,
+      totalCount: players.length,
+    },
+  });
+
+  return {
+    success: true,
+    sentCount: missingPlayers.length,
+    missingPlayersCount: missingPlayers.length,
+    date: today,
   };
 }

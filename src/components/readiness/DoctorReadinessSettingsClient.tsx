@@ -44,6 +44,7 @@ export default function DoctorReadinessSettingsClient({
       const res = await saveClubReadinessConfigAction({
         thresholds,
         visibility,
+        morningReminder: config.morningReminder,
         approve,
       });
 
@@ -291,6 +292,30 @@ export default function DoctorReadinessSettingsClient({
                 })
               }
               className="w-full bg-slate-900 border border-amber-500/30 rounded-lg px-3 py-2 text-white text-xs mt-2 focus:border-amber-500 focus:outline-none"
+            />
+          </div>
+
+          {/* 8.5 Детекція монотонних відповідей N днів поспіль */}
+          <div className="p-4 rounded-xl bg-purple-950/20 border border-purple-500/30 space-y-1.5 sm:col-span-2">
+            <label className="text-xs font-bold text-purple-300 flex items-center gap-1.5">
+              <span>⚠️</span>
+              <span>Поріг однакових відповідей поспіль (Детекція монотонності N днів):</span>
+            </label>
+            <p className="text-[11px] text-slate-400">
+              Якщо гравець відповідає абсолютно однаково N днів поспіль (за замовчуванням 7), гравцю показується м&apos;яка підказка «Все гаразд? Можна додати нотатку», а лікарю відображається позначка на огляді. Тренеру не показується.
+            </p>
+            <input
+              type="number"
+              min={3}
+              max={30}
+              value={thresholds.monotonyThresholdDays || 7}
+              onChange={(e) =>
+                setThresholds({
+                  ...thresholds,
+                  monotonyThresholdDays: parseInt(e.target.value) || 7,
+                })
+              }
+              className="w-full bg-slate-900 border border-purple-500/40 rounded-lg px-3 py-2 text-white text-xs mt-2 focus:border-purple-400 focus:outline-none"
             />
           </div>
         </div>

@@ -72,15 +72,33 @@ export default async function WorkloadPage({
   const summaries: PlayerWorkloadSummary[] = (players || []).map((p: any) => {
     const pSessions = workloadEntries.filter((e) => e.player_id === p.id);
 
-    const acuteSessions = pSessions.filter((e) => e.date >= d7Ago);
-    const chronicSessions = pSessions.filter((e) => e.date >= d28Ago);
+    const acuteSessions = pSessions.filter((e) => e.date >= d7Ago && (e as any).attendance_status !== "absent");
+    const chronicSessions = pSessions.filter((e) => e.date >= d28Ago && (e as any).attendance_status !== "absent");
 
     const acuteLoad = acuteSessions.reduce((sum, s) => sum + (s.workload_au || 0), 0);
     const chronicLoad = chronicSessions.reduce((sum, s) => sum + (s.workload_au || 0), 0);
     const weeklyChronic = Math.round(chronicLoad > 0 ? chronicLoad / 4 : 0);
 
-    const acwrCalc = calculateAcwr(acuteLoad, chronicLoad);
+    const acwrCalc = calculateAcwr(acuteLoad, chronicLoad, {
+      chronicSessionsCount: chronicSessions.length,
+    });
     const lastSession = pSessions[0];
+
+    let rpeDiscrepancy: { coachRpe: number; playerRpe: number; diff: number } | null = null;
+    if (
+      lastSession &&
+      (lastSession as any).coach_rpe !== undefined &&
+      (lastSession as any).coach_rpe !== null &&
+      (lastSession as any).player_rpe !== undefined &&
+      (lastSession as any).player_rpe !== null
+    ) {
+      const diff = Number((lastSession as any).player_rpe) - Number((lastSession as any).coach_rpe);
+      rpeDiscrepancy = {
+        coachRpe: Number((lastSession as any).coach_rpe),
+        playerRpe: Number((lastSession as any).player_rpe),
+        diff,
+      };
+    }
 
     return {
       playerId: p.id,
@@ -92,10 +110,13 @@ export default async function WorkloadPage({
       weeklyChronicAverage: weeklyChronic,
       acwr: acwrCalc.acwr,
       riskZone: acwrCalc.riskZone,
+      isInsufficientData: acwrCalc.isInsufficientData,
       recentSessionsCount: pSessions.length,
       lastSessionDate: lastSession ? lastSession.date : null,
-      lastSessionRpe: lastSession ? lastSession.rpe_score : null,
+      lastSessionRpe: lastSession ? ((lastSession as any).coach_rpe ?? lastSession.rpe_score) : null,
       lastSessionWorkload: lastSession ? lastSession.workload_au : null,
+      attendanceStatus: (lastSession as any)?.attendance_status || "present",
+      rpeDiscrepancy,
     };
   });
 
@@ -125,7 +146,14 @@ export default async function WorkloadPage({
             </p>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <a
+              href="/training"
+              className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black transition-all flex items-center gap-1.5 shadow-md shadow-amber-500/20 active:scale-95"
+            >
+              <span>⏱️</span>
+              <span>Ввести тренування (10 с)</span>
+            </a>
             <a
               href="/wellness"
               className="px-3.5 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-xs font-bold text-sky-400 border border-sky-500/25 transition-all flex items-center gap-1.5 shadow-[0_0_12px_rgba(14,165,233,0.15)]"

@@ -14,11 +14,13 @@ import WearablesBiometricsCard from "@/components/players/WearablesBiometricsCar
 import PlayerSportsIntelligenceCard from "@/components/players/PlayerSportsIntelligenceCard";
 import PlayerRehabCheckinHistory from "@/components/players/PlayerRehabCheckinHistory";
 import PlayerDevicesCard from "@/components/players/PlayerDevicesCard";
+import TelegramBindingCard from "@/components/telegram/TelegramBindingCard";
 import { getPlayerActiveDevicesAction } from "@/actions/player-device-actions";
+import { getPlayerTelegramStatusAction } from "@/actions/telegram-actions";
 import { getOrGeneratePlayerPortalToken } from "@/actions/rehab-portal-action";
 import LsiSymmetryAssessmentCard from "@/components/injuries/LsiSymmetryAssessmentCard";
 import RehabExercisePlanBuilder from "@/components/injuries/RehabExercisePlanBuilder";
-import type { PreSeasonScreening } from "@/types/screening";
+import { isScreeningValid, type PreSeasonScreening } from "@/types/screening";
 import type { NutritionProfile } from "@/types/nutrition";
 import type { PlayerPhoto } from "@/types/photo";
 import type { WearableBiometricsEntry } from "@/types/wearables";
@@ -229,10 +231,12 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
     consentSummary,
     activeDocuments,
     devicesRes,
+    telegramRes,
   ] = await Promise.all([
     getPlayerConsentSummary(id, player.date_of_birth, player.club_id),
     getActiveConsentDocuments(player.club_id),
     getPlayerActiveDevicesAction(id),
+    getPlayerTelegramStatusAction(id),
   ]);
 
   const hasPhotoConsent = consentSummary.scopes.photo.allowed;
@@ -293,17 +297,34 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
             {/* Статус бойової готовності */}
             <div className="flex md:flex-col items-center md:items-end justify-between md:justify-center gap-2 pt-3 md:pt-0 border-t md:border-t-0 border-slate-800 shrink-0">
               <span className="text-[10px] uppercase font-mono tracking-wider text-slate-500">Медичний допуск:</span>
-              {activeInjuries.length === 0 ? (
-                <span className="px-3 py-1 rounded-xl text-xs font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shadow-sm shadow-emerald-500/10 flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  Готовий до гри
-                </span>
-              ) : (
+              {activeInjuries.length > 0 ? (
                 activeInjuries.map((inj: any) => (
                   <Badge key={inj.id} variant={vasVariant(inj.vas_score)}>
                     ВАШ {inj.vas_score}/10
                   </Badge>
                 ))
+              ) : !screenings[0] || !isScreeningValid(screenings[0]) ? (
+                screenings[0] && screenings[0].overall_status === "provisional" ? (
+                  <span className="px-3 py-1 rounded-xl text-xs font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30 shadow-sm shadow-amber-500/10 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-amber-400" />
+                    Умовний допуск
+                  </span>
+                ) : screenings[0] && screenings[0].overall_status === "disqualified" ? (
+                  <span className="px-3 py-1 rounded-xl text-xs font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30 shadow-sm shadow-rose-500/10 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-rose-400" />
+                    Відсторонений
+                  </span>
+                ) : (
+                  <span className="px-3 py-1 rounded-xl text-xs font-bold bg-slate-700/40 text-slate-400 border border-slate-600/50 shadow-sm flex items-center gap-1.5" title="Необхідно внести або оновити передсезонний медичний скринінг">
+                    <span className="w-2 h-2 rounded-full bg-slate-400" />
+                    Допуск не підтверджено
+                  </span>
+                )
+              ) : (
+                <span className="px-3 py-1 rounded-xl text-xs font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shadow-sm shadow-emerald-500/10 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  Готовий до гри
+                </span>
               )}
             </div>
           </div>
@@ -413,6 +434,14 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
           playerId={id}
           playerName={`${player.last_name} ${player.first_name}`}
           initialDevices={activeDevices}
+        />
+
+        {/* 8.7 Telegram-сповіщення та нагадування (deep-link, QR, відписка в 1 клік) */}
+        <TelegramBindingCard
+          playerId={id}
+          playerName={`${player.last_name} ${player.first_name}`}
+          initialBinding={telegramRes?.binding}
+          initialEligibility={telegramRes?.eligibility}
         />
 
         <PlayerRehabCheckinHistory

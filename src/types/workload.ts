@@ -1,4 +1,6 @@
-export type RpeScore = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
+export type RpeScore = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
+
+export type AttendanceStatus = "present" | "absent";
 
 export type TrainingSessionType =
   | "match"
@@ -10,14 +12,28 @@ export type TrainingSessionType =
 export type SessionRpeEntry = {
   id: string;
   player_id: string;
+  club_id?: string;
+  team_id?: string | null;
+  team_session_id?: string | null;
   date: string;
   session_type: TrainingSessionType;
   duration_minutes: number;
   rpe_score: RpeScore;
+  coach_rpe?: RpeScore | null;
+  player_rpe?: RpeScore | null;
+  attendance_status?: AttendanceStatus;
+  absence_reason?: string | null;
   workload_au: number;
   notes?: string | null;
   created_at: string;
 };
+
+export type AcwrRiskZone =
+  | "insufficient_data"
+  | "underload"
+  | "sweet_spot"
+  | "caution"
+  | "danger";
 
 export type PlayerWorkloadSummary = {
   playerId: string;
@@ -27,12 +43,48 @@ export type PlayerWorkloadSummary = {
   acuteLoad: number;
   chronicLoad: number;
   weeklyChronicAverage: number;
-  acwr: number;
-  riskZone: "underload" | "sweet_spot" | "caution" | "danger";
+  acwr: number | null;
+  riskZone: AcwrRiskZone;
+  isInsufficientData?: boolean;
   recentSessionsCount: number;
   lastSessionDate: string | null;
   lastSessionRpe: number | null;
   lastSessionWorkload: number | null;
+  attendanceStatus?: AttendanceStatus;
+  rpeDiscrepancy?: {
+    coachRpe: number;
+    playerRpe: number;
+    diff: number;
+  } | null;
+};
+
+export type TeamTrainingPlayerItem = {
+  playerId: string;
+  playerName: string;
+  position: string;
+  isPresent: boolean;
+  absenceReason?: string;
+  minutes: number;
+  rpeScore: RpeScore;
+  playerRpe?: RpeScore | null;
+  notes?: string;
+};
+
+export type SaveTeamTrainingInput = {
+  teamId: string;
+  date: string;
+  sessionType: TrainingSessionType;
+  defaultMinutes: number;
+  defaultRpe: RpeScore;
+  sessionNotes?: string;
+  players: {
+    playerId: string;
+    isPresent: boolean;
+    absenceReason?: string | null;
+    minutes: number;
+    rpeScore: RpeScore;
+    notes?: string | null;
+  }[];
 };
 
 export const SESSION_TYPE_UA: Record<TrainingSessionType, { label: string; icon: string }> = {
@@ -44,6 +96,7 @@ export const SESSION_TYPE_UA: Record<TrainingSessionType, { label: string; icon:
 };
 
 export const BORG_CR10_SCALE: Record<RpeScore, { label: string; desc: string; color: string }> = {
+  0: { label: "Спокій / Відпочинок", desc: "Без зусиль (відпочинок або відсутній)", color: "#64748b" },
   1: { label: "Дуже легко", desc: "Майже без зусиль (розминка, стретчинг)", color: "#10b981" },
   2: { label: "Легко", desc: "Комфортний темп, вільне спілкування", color: "#10b981" },
   3: { label: "Помірно", desc: "Відчутне навантаження, прискорене дихання", color: "#22c55e" },
@@ -56,19 +109,43 @@ export const BORG_CR10_SCALE: Record<RpeScore, { label: string; desc: string; co
   10: { label: "Максимум (All-out)", desc: "Абсолютна межа можливостей організму", color: "#b91c1c" },
 };
 
-export function calculateAcwr(acuteLoad7d: number, chronicLoad28d: number): {
-  acwr: number;
-  riskZone: "underload" | "sweet_spot" | "caution" | "danger";
+export const ABSENCE_REASONS = [
+  { id: "injury", label: "Травма / реабілітація" },
+  { id: "illness", label: "Хвороба / застуда" },
+  { id: "recovery", label: "Планове відновлення" },
+  { id: "personal", label: "Сімейні / особисті причини" },
+  { id: "school", label: "Навчання / іспити" },
+  { id: "unspecified", label: "Без пояснення" },
+] as const;
+
+/**
+ * Розрахунок коефіцієнта ACWR (Gabbett Acute:Chronic Workload Ratio).
+ * Враховує наукові правила задачі 3.1: якщо спостережень недостатньо (менше 14-28 днів
+ * або хронічне навантаження 0), повертається статус "insufficient_data".
+ */
+export function calculateAcwr(
+  acuteLoad7d: number,
+  chronicLoad28d: number,
+  options?: { chronicSessionsCount?: number }
+): {
+  acwr: number | null;
+  riskZone: AcwrRiskZone;
   titleUa: string;
   badgeClass: string;
+  isInsufficientData: boolean;
 } {
   const weeklyChronic = chronicLoad28d > 0 ? chronicLoad28d / 4 : 0;
-  if (weeklyChronic === 0) {
+  const sessionsCount = options?.chronicSessionsCount ?? (chronicLoad28d > 0 ? 4 : 0);
+
+  // Правило «недостатньо даних» (задача 3.1):
+  // Для розрахунку хронічного навантаження необхідно мінімум систематичних записів у 28-денному вікні.
+  if (weeklyChronic === 0 || sessionsCount < 3) {
     return {
-      acwr: acuteLoad7d > 0 ? 1.0 : 0,
-      riskZone: "sweet_spot",
-      titleUa: "Базовий стан (початок циклу)",
-      badgeClass: "bg-slate-800 text-slate-300 border-slate-700",
+      acwr: null,
+      riskZone: "insufficient_data",
+      titleUa: "Недостатньо даних (триває базовий збір навантажень)",
+      badgeClass: "bg-slate-800 text-slate-400 border-slate-700",
+      isInsufficientData: true,
     };
   }
 
@@ -80,6 +157,7 @@ export function calculateAcwr(acuteLoad7d: number, chronicLoad28d: number): {
       riskZone: "underload",
       titleUa: "Недонавантаження (ACWR < 0.8) — ризик деадаптації",
       badgeClass: "bg-blue-500/15 text-blue-400 border-blue-500/30",
+      isInsufficientData: false,
     };
   }
   if (ratio <= 1.3) {
@@ -88,6 +166,7 @@ export function calculateAcwr(acuteLoad7d: number, chronicLoad28d: number): {
       riskZone: "sweet_spot",
       titleUa: "Зона оптимуму (0.8 – 1.3) — Sweet Spot",
       badgeClass: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
+      isInsufficientData: false,
     };
   }
   if (ratio < 1.5) {
@@ -96,6 +175,7 @@ export function calculateAcwr(acuteLoad7d: number, chronicLoad28d: number): {
       riskZone: "caution",
       titleUa: "Підвищене навантаження (1.3 – 1.5) — моніторинг",
       badgeClass: "bg-amber-500/15 text-amber-400 border-amber-500/30",
+      isInsufficientData: false,
     };
   }
   return {
@@ -103,5 +183,6 @@ export function calculateAcwr(acuteLoad7d: number, chronicLoad28d: number): {
     riskZone: "danger",
     titleUa: "Небезпечна зона (ACWR >= 1.5) — ризик травми x2..4",
     badgeClass: "bg-red-500/15 text-red-400 border-red-500/30 font-bold",
+    isInsufficientData: false,
   };
 }

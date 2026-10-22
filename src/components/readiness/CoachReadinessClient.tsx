@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useTransition } from "react";
 import Link from "next/link";
 import {
   type PlayerReadinessResult,
@@ -11,6 +11,9 @@ import {
   READINESS_DISCLAIMER_TEXT,
   type ClubReadinessConfig,
 } from "@/lib/readiness-constants";
+import type { TeamComplianceStats } from "@/types/wellness";
+import { acknowledgeReadinessAction } from "@/actions/readiness-actions";
+import { DoctorPlayerReadinessModal } from "./DoctorPlayerReadinessModal";
 
 interface Props {
   initialPlayers: PlayerReadinessResult[];
@@ -19,6 +22,7 @@ interface Props {
   currentDate: string;
   userRole: "coach" | "doctor" | "admin";
   config: ClubReadinessConfig;
+  teamCompliance?: TeamComplianceStats;
 }
 
 export default function CoachReadinessClient({
@@ -28,15 +32,42 @@ export default function CoachReadinessClient({
   currentDate,
   userRole,
   config,
+  teamCompliance,
 }: Props) {
+  const [players, setPlayers] = useState<PlayerReadinessResult[]>(initialPlayers);
   const [selectedTeamId, setSelectedTeamId] = useState(currentTeamId);
   const [filterStatus, setFilterStatus] = useState<"all" | "attention" | "green" | "gray">("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [pendingPlayerId, setPendingPlayerId] = useState<string | null>(null);
+  const [selectedDoctorPlayer, setSelectedDoctorPlayer] = useState<PlayerReadinessResult | null>(null);
+  const [, startTransition] = useTransition();
 
   const isDoctorOrAdmin = userRole === "doctor" || userRole === "admin";
 
+  const handleAcknowledge = (playerId: string, date: string) => {
+    setPendingPlayerId(playerId);
+    startTransition(async () => {
+      const res = await acknowledgeReadinessAction({ playerId, date });
+      if (res.success) {
+        setPlayers((prev) =>
+          prev.map((p) =>
+            p.playerId === playerId
+              ? {
+                  ...p,
+                  isAcknowledged: true,
+                  reviewedByRole: res.reviewedByRole || (userRole as any),
+                  reviewedAt: res.reviewedAt || new Date().toISOString(),
+                }
+              : p
+          )
+        );
+      }
+      setPendingPlayerId(null);
+    });
+  };
+
   // Фільтрація списку гравців
-  const filteredPlayers = initialPlayers.filter((p) => {
+  const filteredPlayers = players.filter((p) => {
     // Пошук за ім'ям
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -58,36 +89,84 @@ export default function CoachReadinessClient({
   });
 
   // Лічильники
-  const totalCount = initialPlayers.length;
-  const greenCount = initialPlayers.filter((p) => p.status === "green").length;
-  const yellowCount = initialPlayers.filter((p) => p.status === "yellow").length;
-  const redCount = initialPlayers.filter((p) => p.status === "red").length;
-  const grayCount = initialPlayers.filter((p) => p.status === "gray").length;
+  const totalCount = players.length;
+  const greenCount = players.filter((p) => p.status === "green").length;
+  const yellowCount = players.filter((p) => p.status === "yellow").length;
+  const redCount = players.filter((p) => p.status === "red").length;
+  const grayCount = players.filter((p) => p.status === "gray").length;
 
   const attentionCount = yellowCount + redCount;
 
   return (
     <div className="space-y-6">
-      {/* 1. ОБОВ'ЯЗКОВИЙ ДИСКЛЕЙМЕР ДЛЯ ТРЕНЕРА */}
-      <div className="rounded-2xl border border-sky-500/20 bg-gradient-to-r from-sky-950/40 via-blue-950/30 to-slate-900/40 p-4 sm:p-5 backdrop-blur-md shadow-[0_0_25px_rgba(14,165,233,0.1)] flex items-start gap-3.5">
-        <span className="text-2xl mt-0.5">ℹ️</span>
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs uppercase font-extrabold tracking-wider px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/30">
-              Принцип моніторингу
-            </span>
-            <span className="text-xs text-slate-400">
-              Індивідуальний Z-score (28 днів)
-            </span>
+      {/* 1. ОБОВ'ЯЗКОВИЙ ДИСКЛЕЙМЕР ТА ПОСИЛАННЯ НА ПАМ'ЯТКУ ДЛЯ ТРЕНЕРА */}
+      <div className="rounded-2xl border border-sky-500/20 bg-gradient-to-r from-sky-950/40 via-blue-950/30 to-slate-900/40 p-4 sm:p-5 backdrop-blur-md shadow-[0_0_25px_rgba(14,165,233,0.1)] flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-start gap-3.5">
+          <span className="text-2xl mt-0.5">ℹ️</span>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs uppercase font-extrabold tracking-wider px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                Принцип моніторингу
+              </span>
+              <span className="text-xs text-slate-400">
+                Індивідуальний Z-score (28 днів)
+              </span>
+            </div>
+            <p className="text-sm sm:text-base font-bold text-white mt-1.5 leading-snug">
+              «{READINESS_DISCLAIMER_TEXT}»
+            </p>
+            <p className="text-xs text-slate-400 mt-1">
+              Кольори відображають відхилення від особистої норми гравця, а не команди. Жодних автоматичних відсторонень — система лише підказує теми для бесіди перед заняттям.
+            </p>
           </div>
-          <p className="text-sm sm:text-base font-bold text-white mt-1.5 leading-snug">
-            «{READINESS_DISCLAIMER_TEXT}»
-          </p>
-          <p className="text-xs text-slate-400 mt-1">
-            Кольори світлофора відображають відхилення від особистої норми гравця, а не команди. Жодних автоматичних відсторонень — система лише підказує теми для бесіди перед заняттям.
-          </p>
         </div>
+
+        <Link
+          href="/how-to-use"
+          className="self-start md:self-center px-4 py-2.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-300 text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap shadow-sm"
+        >
+          <span>📖</span>
+          <span>Пам&apos;ятка «Як користуватись» →</span>
+        </Link>
       </div>
+
+      {/* 8.5 КОМАНДНА СТАТИСТИКА ЗАПОВНЕННЯ (COMPLIANCE RATE) */}
+      {teamCompliance && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 rounded-2xl bg-slate-900/50 border border-slate-800">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">📋</span>
+            <div>
+              <div className="text-[11px] text-slate-400 font-medium">
+                Регулярність команди (7 днів)
+              </div>
+              <div className="text-lg font-black text-white flex items-center gap-1.5">
+                <span>{teamCompliance.rate7Days}%</span>
+                <span className="text-[10px] text-slate-400 font-normal">заповнення</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 border-t sm:border-t-0 sm:border-l border-slate-800 pt-2 sm:pt-0 sm:pl-4">
+            <span className="text-2xl">🗓️</span>
+            <div>
+              <div className="text-[11px] text-slate-400 font-medium">
+                Регулярність команди (28 днів)
+              </div>
+              <div className="text-lg font-black text-white flex items-center gap-1.5">
+                <span>{teamCompliance.rate28Days}%</span>
+                <span className="text-[10px] text-slate-400 font-normal">заповнення</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 border-t sm:border-t-0 sm:border-l border-slate-800 pt-2 sm:pt-0 sm:pl-4">
+            <span className="text-2xl">🛡️</span>
+            <div className="text-[11px] text-slate-400 leading-snug">
+              Тренер бачить відсоток заповнення для контролю дисципліни без розкриття чутливих відповідей.
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 2. ШАПКА ТА ФІЛЬТРИ */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-900/60 p-4 rounded-2xl border border-slate-800 backdrop-blur-sm">
@@ -230,10 +309,27 @@ export default function CoachReadinessClient({
           </div>
         ) : (
           filteredPlayers.map((player) => (
-            <PlayerReadinessCard key={player.playerId} player={player} />
+            <PlayerReadinessCard
+              key={player.playerId}
+              player={player}
+              userRole={userRole}
+              onAcknowledge={handleAcknowledge}
+              isPendingAck={pendingPlayerId === player.playerId}
+              onOpenDoctorModal={(p) => setSelectedDoctorPlayer(p)}
+            />
           ))
         )}
       </div>
+
+      {/* 8.8 МОДАЛЬНЕ ВІКНО МЕДИЧНИХ ДЕТАЛЕЙ ТА ГОДИННИКА (ТІЛЬКИ ДЛЯ ЛІКАРЯ ТА АДМІНА) */}
+      {selectedDoctorPlayer && isDoctorOrAdmin && (
+        <DoctorPlayerReadinessModal
+          player={selectedDoctorPlayer}
+          onClose={() => setSelectedDoctorPlayer(null)}
+          onAcknowledge={handleAcknowledge}
+          isPendingAck={pendingPlayerId === selectedDoctorPlayer.playerId}
+        />
+      )}
     </div>
   );
 }
@@ -241,7 +337,21 @@ export default function CoachReadinessClient({
 /**
  * Окрема картка готовності гравця
  */
-function PlayerReadinessCard({ player }: { player: PlayerReadinessResult }) {
+function PlayerReadinessCard({
+  player,
+  userRole,
+  onAcknowledge,
+  isPendingAck,
+  onOpenDoctorModal,
+}: {
+  player: PlayerReadinessResult;
+  userRole: "coach" | "doctor" | "admin";
+  onAcknowledge: (playerId: string, date: string) => void;
+  isPendingAck: boolean;
+  onOpenDoctorModal?: (player: PlayerReadinessResult) => void;
+}) {
+  const isDoctorOrAdmin = userRole === "doctor" || userRole === "admin";
+
   // Візуальні стилі для кольорів світлофора
   const colorStyles: Record<
     ReadinessColor,
@@ -335,6 +445,30 @@ function PlayerReadinessCard({ player }: { player: PlayerReadinessResult }) {
                   {player.position}
                 </span>
               )}
+
+              {/* 8.5 Дисципліна заповнення гравця (7 та 28 днів) - видно тренеру */}
+              <span className="text-[11px] px-2 py-0.5 rounded-md bg-slate-800/90 text-slate-300 border border-slate-700/60 font-mono">
+                7д: {player.compliance7Days}% · 28д: {player.compliance28Days}%
+              </span>
+
+              {/* 8.5 Серія заповнень поспіль */}
+              {player.currentStreakDays > 0 && (
+                <span className="text-[11px] px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-300 border border-amber-500/30 font-semibold flex items-center gap-1">
+                  <span>🔥</span>
+                  <span>{player.currentStreakDays} дн. поспіль</span>
+                </span>
+              )}
+
+              {/* 8.5 ДЕТЕКЦІЯ МОНОТОННОСТІ (ВИДНО ТІЛЬКИ ЛІКАРЮ ТА АДМІНУ!) */}
+              {isDoctorOrAdmin && player.hasMonotony && (
+                <span
+                  title="Гравець відповідає однаково кілька днів поспіль. Рекомендовано делікатно запитати на огляді."
+                  className="text-[11px] px-2 py-0.5 rounded-md bg-purple-500/15 border border-purple-500/40 text-purple-300 font-medium flex items-center gap-1 cursor-help"
+                >
+                  <span>⚠️</span>
+                  <span>Повторювані відповіді ({player.monotonyDays} дн.)</span>
+                </span>
+              )}
             </div>
 
             <div className="flex flex-wrap items-center gap-2 mt-1">
@@ -352,9 +486,9 @@ function PlayerReadinessCard({ player }: { player: PlayerReadinessResult }) {
           </div>
         </div>
 
-        {/* Прапорці фізичного стану та тренд */}
+        {/* Прапорці фізичного стану, тренд та кнопка «Взято до уваги» */}
         <div className="flex flex-col sm:flex-row sm:items-center gap-4 lg:justify-end">
-          {/* Категорії фізичних прапорців (ТІЛЬКИ узагальнені категорії: біль, втома, сон, нездужання) */}
+          {/* Категорії фізичних прапорців */}
           {player.flagCategories.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="text-[11px] text-slate-500 uppercase tracking-wider mr-1">
@@ -419,6 +553,45 @@ function PlayerReadinessCard({ player }: { player: PlayerReadinessResult }) {
               })}
             </div>
           </div>
+
+          {/* 8.8 КНОПКА «АНКЕТА ТА ГОДИННИК» ТІЛЬКИ ДЛЯ ЛІКАРЯ ТА АДМІНА */}
+          {isDoctorOrAdmin && onOpenDoctorModal && (
+            <button
+              type="button"
+              onClick={() => onOpenDoctorModal(player)}
+              className="px-3 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-700/80 shadow-sm whitespace-nowrap"
+            >
+              <span>🩺</span>
+              <span>Анкета та годинник</span>
+              {player.doctorDetails?.wearables && (
+                <span className="w-2 h-2 rounded-full bg-sky-400 inline-block ml-0.5" />
+              )}
+            </button>
+          )}
+
+          {/* 8.5 КНОПКА «ВЗЯТО ДО УВАГИ» ТА ЗВОРОТНИЙ ЗВ'ЯЗОК */}
+          {player.status !== "gray" && (
+            <div className="flex items-center">
+              {player.isAcknowledged ? (
+                <span className="px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap shadow-sm">
+                  <span>✓</span>
+                  <span>
+                    Взято до уваги ({player.reviewedByRole === "doctor" ? "лікар" : "тренер"})
+                  </span>
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  disabled={isPendingAck}
+                  onClick={() => onAcknowledge(player.playerId, player.date)}
+                  className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-bold transition-all shadow-md shadow-sky-600/20 active:scale-95 disabled:opacity-50 flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
+                >
+                  <span>👁️</span>
+                  <span>{isPendingAck ? "Збереження..." : "Взято до уваги"}</span>
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>

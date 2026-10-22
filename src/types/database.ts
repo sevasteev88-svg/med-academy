@@ -519,4 +519,19 @@ export type ConsentRequest = {
   otp_attempts: number;
 };
 
+// ─── Експозиції (exposures) ──────────────────────────────────────────
+export type ExposureType = "training" | "match" | "rehab" | "other";
+
+export type Exposure = {
+  id: string;
+  club_id: string;
+  player_id: string;
+  date: string;
+  exposure_type: ExposureType;
+  minutes: number;
+  workload_session_id?: string | null;
+  notes?: string | null;
+  created_at: string;
+};
+
 

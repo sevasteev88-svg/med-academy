@@ -23,6 +23,10 @@ export type AICallOptions = {
   maxTokens?: number;
   temperature?: number;
   model?: string;
+  image?: {
+    base64: string;
+    mediaType?: "image/jpeg" | "image/png" | "image/webp" | "image/gif";
+  };
 };
 
 export type AICallResult = {
@@ -52,11 +56,31 @@ export async function callAI(options: AICallOptions): Promise<AICallResult> {
   const maxTokens = options.maxTokens || 4000;
   const temperature = options.temperature ?? 0.3;
 
+  let userContent: unknown;
+  if (options.image?.base64) {
+    userContent = [
+      {
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: options.image.mediaType || "image/jpeg",
+          data: options.image.base64,
+        },
+      },
+      {
+        type: "text",
+        text: options.prompt,
+      },
+    ];
+  } else {
+    userContent = options.prompt;
+  }
+
   const requestBody: Record<string, unknown> = {
     model,
     max_tokens: maxTokens,
     temperature,
-    messages: [{ role: "user", content: options.prompt }],
+    messages: [{ role: "user", content: userContent }],
   };
 
   if (options.system) {

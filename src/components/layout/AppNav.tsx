@@ -20,8 +20,9 @@ const DOCTOR_NAV: NavItem[] = [
   { href: "/rtp", label: "Return-to-Play", icon: "🏃" },
   { href: "/rehab-portal", label: "Портал гравця (PIN)", icon: "📱" },
   { href: "/coach-briefing", label: "Брифінг тренера", icon: "🛡️" },
+  { href: "/training", label: "Тренування", icon: "⏱️" },
   { href: "/wellness", label: "Велнес", icon: "⚡" },
-  { href: "/workload", label: "Навантаження", icon: "⏱️" },
+  { href: "/workload", label: "Навантаження", icon: "📊" },
   { href: "/hydration", label: "Гідратація", icon: "💧" },
   { href: "/injuries", label: "Травми", icon: "🩹" },
   { href: "/pharmacy", label: "Аптека та склад", icon: "💊" },
@@ -37,6 +38,7 @@ const DOCTOR_NAV: NavItem[] = [
 
 const COACH_NAV: NavItem[] = [
   { href: "/", label: "Дашборд", icon: "🏠" },
+  { href: "/training", label: "Тренування", icon: "⏱️" },
   { href: "/team/readiness", label: "Готовність (Світлофор)", icon: "🚦" },
   { href: "/coach-briefing", label: "Брифінг тренера", icon: "🛡️" },
   { href: "/team/qr-cards", label: "QR-картки команди", icon: "🪪" },
@@ -44,7 +46,7 @@ const COACH_NAV: NavItem[] = [
   { href: "/rtp", label: "Return-to-Play", icon: "🏃" },
   { href: "/rehab-portal", label: "Портал гравця (PIN)", icon: "📱" },
   { href: "/wellness", label: "Велнес", icon: "⚡" },
-  { href: "/workload", label: "Навантаження", icon: "⏱️" },
+  { href: "/workload", label: "Навантаження", icon: "📊" },
   { href: "/hydration", label: "Гідратація", icon: "💧" },
   { href: "/reports/matchday", label: "Заявка на матч", icon: "📜" },
 ];

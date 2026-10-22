@@ -3,7 +3,82 @@
  * Типи для біометричних даних носимих пристроїв (WHOOP, Apple Watch, Garmin, Oura)
  */
 
-export type WearableDeviceType = "whoop" | "apple_watch" | "garmin" | "oura" | "other";
+export type WearableDeviceType = "whoop" | "apple_watch" | "garmin" | "other" | "oura";
+
+export type HrvMetricType = "rmssd" | "sdnn" | "unknown";
+
+export type WearableSource = "manual" | "screenshot" | "api_sync" | "apple_health";
+
+/**
+ * Запис таблиці wearable_entries (Задача 8.8)
+ */
+export interface WearableEntry {
+  id: string;
+  club_id: string;
+  player_id: string;
+  date: string; // YYYY-MM-DD
+  device_type: WearableDeviceType;
+  resting_hr_bpm: number | null;
+  hrv_ms: number | null;
+  hrv_metric: HrvMetricType;
+  sleep_duration_min: number | null; // У хвилинах
+  device_score: number | null;
+  device_score_name: string | null;
+  source: WearableSource;
+  created_at: string;
+}
+
+export interface WearableInputData {
+  device_type: WearableDeviceType;
+  resting_hr_bpm?: number | null;
+  hrv_ms?: number | null;
+  hrv_metric?: HrvMetricType;
+  sleep_duration_min?: number | null;
+  device_score?: number | null;
+  device_score_name?: string | null;
+  source?: WearableSource;
+}
+
+export type BaselineStatus = "collecting_baseline" | "ready" | "no_data";
+
+export interface MetricBaseline {
+  mean: number;
+  stdDev: number;
+  count: number;
+  min: number;
+  max: number;
+  normalBandLow: number; // mean - 1.0 * stdDev
+  normalBandHigh: number; // mean + 1.0 * stdDev
+}
+
+export interface WearableBaselineReport {
+  playerId: string;
+  deviceType: WearableDeviceType;
+  hrvMetric: HrvMetricType;
+  status: BaselineStatus;
+  statusLabel: string; // "Збір базових даних" або "Норма розрахована"
+  entriesCount: number; // Кількість валідних записів за 28 днів по цьому девайсу і метриці
+  requiredEntries: number; // 14
+
+  todayEntry: WearableEntry | null;
+
+  restingHrBaseline: MetricBaseline | null;
+  hrvBaseline: MetricBaseline | null;
+  sleepBaseline: MetricBaseline | null;
+
+  todayRestingHrZScore: number | null;
+  todayHrvZScore: number | null;
+
+  trendDays: {
+    date: string;
+    resting_hr_bpm: number | null;
+    hrv_ms: number | null;
+    sleep_duration_min: number | null;
+    device_score: number | null;
+  }[];
+
+  disclaimer: string; // "Дані внесені гравцем, не перевірені"
+}
 
 export type WearableBiometricsEntry = {
   id: string;

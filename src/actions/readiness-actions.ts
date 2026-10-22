@@ -16,18 +16,22 @@ import {
   DEFAULT_CLUB_READINESS_CONFIG,
   DEFAULT_READINESS_THRESHOLDS,
   DEFAULT_COACH_CATEGORY_VISIBILITY,
+  DEFAULT_MORNING_REMINDER_CONFIG,
   DRAFT_STATUS_LABEL,
   APPROVED_STATUS_LABEL,
   type ClubReadinessConfig,
   type ReadinessThresholds,
   type CoachCategoryVisibility,
+  type MorningReminderConfig,
 } from "@/lib/readiness-constants";
 import {
   evaluatePlayerReadiness,
   sanitizeReadinessForCoach,
   type PlayerReadinessResult,
 } from "@/lib/readiness";
-import type { WellnessEntry } from "@/types/wellness";
+import type { WellnessEntry, TeamComplianceStats } from "@/types/wellness";
+import { calculateWearableBaseline } from "@/lib/wearables-baseline";
+import type { WearableEntry, WearableBaselineReport } from "@/types/wearables";
 import { logAudit } from "@/lib/audit";
 
 /**
@@ -61,6 +65,11 @@ export async function getClubReadinessConfigAction(): Promise<ClubReadinessConfi
           ...DEFAULT_COACH_CATEGORY_VISIBILITY,
           ...(stored.visibility || {}),
         },
+        morningReminder: {
+          ...DEFAULT_MORNING_REMINDER_CONFIG,
+          ...(stored.morningReminder || {}),
+        },
+        wearablesAiScreenshotEnabled: Boolean(stored.wearablesAiScreenshotEnabled),
       };
     }
   } catch {}
@@ -74,6 +83,8 @@ export async function getClubReadinessConfigAction(): Promise<ClubReadinessConfi
 export async function saveClubReadinessConfigAction(input: {
   thresholds: ReadinessThresholds;
   visibility: CoachCategoryVisibility;
+  morningReminder?: MorningReminderConfig;
+  wearablesAiScreenshotEnabled?: boolean;
   approve: boolean; // true - затвердити лікарем, false - зберегти як чернетку
 }): Promise<{ success: boolean; config?: ClubReadinessConfig; error?: string }> {
   const authRes = await assertDoctor();
@@ -110,6 +121,8 @@ export async function saveClubReadinessConfigAction(input: {
       approvedAt: input.approve ? nowIso : null,
       thresholds: input.thresholds,
       visibility: input.visibility,
+      morningReminder: input.morningReminder || { ...DEFAULT_MORNING_REMINDER_CONFIG },
+      wearablesAiScreenshotEnabled: Boolean(input.wearablesAiScreenshotEnabled),
     };
 
     const updatedSettings = {
@@ -149,6 +162,121 @@ export async function saveClubReadinessConfigAction(input: {
 }
 
 /**
+ * 8.5 Фіксація перегляду та підтвердження звіту «Взято до уваги»
+ * Кнопка в інтерфейсі тренера і лікаря (без розкриття вмісту для тренера).
+ */
+export async function acknowledgeReadinessAction(input: {
+  playerId: string;
+  date?: string;
+}): Promise<{
+  success: boolean;
+  reviewedAt?: string;
+  reviewedByRole?: "coach" | "doctor" | "admin";
+  reviewedByName?: string;
+  error?: string;
+}> {
+  const authRes = await assertAuth();
+  if ("error" in authRes) {
+    return { success: false, error: authRes.error };
+  }
+
+  const { user } = authRes;
+  const role = (user.role as "coach" | "doctor" | "admin") || "coach";
+  const clubId = user.clubId || DEFAULT_CLUB_ID;
+  const timezone = await getClubTimezone(clubId);
+  const targetDate = input.date || getClubDate(timezone);
+  const nowIso = new Date().toISOString();
+  const staffName =
+    user.fullName ||
+    (role === "doctor" ? "Лікар" : role === "coach" ? "Тренер" : "Адміністратор");
+
+  const supabase = createAdminClient();
+
+  // 1. Оновлюємо wellness_entries якщо запис існує
+  try {
+    await supabase
+      .from("wellness_entries")
+      .update({
+        reviewed_at: nowIso,
+        reviewed_by_role: role,
+        reviewed_by_name: staffName,
+        acknowledged: true,
+      } as any)
+      .eq("player_id", input.playerId)
+      .eq("date", targetDate);
+  } catch {}
+
+  // 2. Резервна копія в injury_logs
+  try {
+    await supabase.from("injury_logs").insert({
+      club_id: clubId,
+      category: "examination",
+      date: targetDate,
+      note: `[WELLNESS_ACK] ${JSON.stringify({
+        player_id: input.playerId,
+        date: targetDate,
+        reviewed_at: nowIso,
+        reviewed_by_role: role,
+        reviewed_by_name: staffName,
+      })}`,
+    } as any);
+  } catch {}
+
+  // 3. Зберігаємо в clubs.settings.wellness_acknowledgements для гарантованої персистентності
+  try {
+    const { data: club } = await supabase
+      .from("clubs")
+      .select("settings")
+      .eq("id", clubId)
+      .maybeSingle();
+
+    const curr = (club as any)?.settings || {};
+    const acks = curr.wellness_acknowledgements || {};
+    acks[`${input.playerId}_${targetDate}`] = {
+      reviewed_at: nowIso,
+      reviewed_by_role: role,
+      reviewed_by_name: staffName,
+    };
+
+    await supabase
+      .from("clubs")
+      .update({
+        settings: {
+          ...curr,
+          wellness_acknowledgements: acks,
+        },
+      } as any)
+      .eq("id", clubId);
+  } catch {}
+
+  await logAudit({
+    action: "acknowledge_wellness",
+    entity: "wellness_entries",
+    entityId: input.playerId,
+    userId: user.id,
+    clubId,
+    meta: {
+      date: targetDate,
+      staffName,
+      role,
+    },
+  });
+
+  revalidatePath("/team/readiness");
+  revalidatePath("/rehab-portal");
+  revalidatePath("/coach-briefing");
+  revalidatePath("/availability");
+  revalidatePath(`/players/${input.playerId}`);
+
+  return {
+    success: true,
+    reviewedAt: nowIso,
+    reviewedByRole: role,
+    reviewedByName: staffName,
+  };
+}
+
+/**
  * Отримує статус готовності команди для екрана тренера (8.4)
  */
 export async function getTeamReadinessAction(params?: {
@@ -162,6 +290,7 @@ export async function getTeamReadinessAction(params?: {
   currentDate: string;
   userRole: "coach" | "doctor" | "admin";
   config: ClubReadinessConfig;
+  teamCompliance: TeamComplianceStats;
   error?: string;
 }> {
   const authRes = await assertAuth();
@@ -174,6 +303,7 @@ export async function getTeamReadinessAction(params?: {
       currentDate: "",
       userRole: "coach",
       config: DEFAULT_CLUB_READINESS_CONFIG,
+      teamCompliance: { rate7Days: 0, rate28Days: 0, activePlayersCount: 0 },
       error: authRes.error,
     };
   }
@@ -210,6 +340,7 @@ export async function getTeamReadinessAction(params?: {
       currentDate: "",
       userRole: effectiveRole,
       config: DEFAULT_CLUB_READINESS_CONFIG,
+      teamCompliance: { rate7Days: 0, rate28Days: 0, activePlayersCount: 0 },
       error: staffCheck.error,
     };
   }
@@ -220,6 +351,17 @@ export async function getTeamReadinessAction(params?: {
 
   // 3. Конфігурація клубу
   const config = await getClubReadinessConfigAction();
+
+  // Отримуємо збережені acknowledgements із налаштувань клубу для максимальної надійності
+  let clubAcknowledgements: Record<string, any> = {};
+  try {
+    const { data: clubData } = await supabase
+      .from("clubs")
+      .select("settings")
+      .eq("id", user.clubId || DEFAULT_CLUB_ID)
+      .maybeSingle();
+    clubAcknowledgements = (clubData as any)?.settings?.wellness_acknowledgements || {};
+  } catch {}
 
   // 4. Отримуємо гравців обраної команди
   let playersQuery = supabase
@@ -249,6 +391,7 @@ export async function getTeamReadinessAction(params?: {
       currentDate: today,
       userRole: effectiveRole,
       config,
+      teamCompliance: { rate7Days: 0, rate28Days: 0, activePlayersCount: 0 },
       error: playersError.message,
     };
   }
@@ -263,6 +406,7 @@ export async function getTeamReadinessAction(params?: {
       currentDate: today,
       userRole: effectiveRole,
       config,
+      teamCompliance: { rate7Days: 0, rate28Days: 0, activePlayersCount: 0 },
     };
   }
 
@@ -294,12 +438,42 @@ export async function getTeamReadinessAction(params?: {
     .lte("date", today)
     .order("date", { ascending: true });
 
-  // Групуємо анкети по player_id
+  // Групуємо анкети по player_id та накладаємо acknowledgements
   const entriesByPlayer = new Map<string, WellnessEntry[]>();
-  for (const entry of wellnessEntries ?? []) {
+  for (const rawEntry of wellnessEntries ?? []) {
+    const entry = { ...(rawEntry as WellnessEntry) };
+    const ackKey = `${entry.player_id}_${entry.date}`;
+    const clubAck = clubAcknowledgements[ackKey];
+    if (clubAck) {
+      entry.acknowledged = true;
+      entry.reviewed_at = entry.reviewed_at || clubAck.reviewed_at;
+      entry.reviewed_by_role = entry.reviewed_by_role || clubAck.reviewed_by_role;
+      entry.reviewed_by_name = entry.reviewed_by_name || clubAck.reviewed_by_name;
+    }
+
     const list = entriesByPlayer.get(entry.player_id) || [];
-    list.push(entry as WellnessEntry);
+    list.push(entry);
     entriesByPlayer.set(entry.player_id, list);
+  }
+
+  // 7b. Для лікаря та адміна: отримуємо wearable_entries за останні 28 днів (8.8)
+  const wearablesByPlayer = new Map<string, WearableEntry[]>();
+  if (!isCoachUser) {
+    try {
+      const { data: wEntries } = await supabase
+        .from("wearable_entries")
+        .select("*")
+        .in("player_id", playerIds)
+        .gte("date", minDateStr)
+        .lte("date", today)
+        .order("date", { ascending: true });
+
+      for (const w of wEntries ?? []) {
+        const list = wearablesByPlayer.get(w.player_id) || [];
+        list.push(w as WearableEntry);
+        wearablesByPlayer.set(w.player_id, list);
+      }
+    } catch {}
   }
 
   // 8. Перевірка згод та розрахунок світлофора для кожного гравця
@@ -319,6 +493,22 @@ export async function getTeamReadinessAction(params?: {
     const hasActiveDevice = activeDevicePlayerIds.has(p.id);
     const pEntries = entriesByPlayer.get(p.id) || [];
 
+    // Розрахунок особистої норми з носимих пристроїв для лікаря/адміна
+    let pWearablesReport: WearableBaselineReport | null = null;
+    if (!isCoachUser) {
+      const pWearables = wearablesByPlayer.get(p.id) || [];
+      if (pWearables.length > 0) {
+        const lastEntry = pWearables[pWearables.length - 1];
+        pWearablesReport = calculateWearableBaseline({
+          entries: pWearables,
+          targetDeviceType: lastEntry.device_type,
+          targetHrvMetric: lastEntry.hrv_metric,
+          todayDate: today,
+          playerId: p.id,
+        });
+      }
+    }
+
     const readiness = evaluatePlayerReadiness({
       todayDate: today,
       hasConsent,
@@ -334,6 +524,7 @@ export async function getTeamReadinessAction(params?: {
         teamId: p.team_id || undefined,
         teamName: (p.teams as any)?.name || undefined,
       },
+      wearablesReport: pWearablesReport,
     });
 
     if (isCoachUser) {
@@ -343,6 +534,28 @@ export async function getTeamReadinessAction(params?: {
     }
   }
 
+  // 8.5 Розрахунок командної статистики заповнення (7 та 28 днів)
+  const activeCount = results.length;
+  const avgCompliance7 =
+    activeCount > 0
+      ? Math.round(
+          results.reduce((acc, r) => acc + (r.compliance7Days || 0), 0) / activeCount
+        )
+      : 0;
+  const avgCompliance28 =
+    activeCount > 0
+      ? Math.round(
+          results.reduce((acc, r) => acc + (r.compliance28Days || 0), 0) / activeCount
+        )
+      : 0;
+
+  const teamCompliance: TeamComplianceStats = {
+    teamId: selectedTeamId,
+    rate7Days: avgCompliance7,
+    rate28Days: avgCompliance28,
+    activePlayersCount: activeCount,
+  };
+
   return {
     success: true,
     players: results,
@@ -351,5 +564,6 @@ export async function getTeamReadinessAction(params?: {
     currentDate: today,
     userRole: effectiveRole,
     config,
+    teamCompliance,
   };
 }
