@@ -5,6 +5,7 @@ import Badge from "@/components/ui/Badge";
 import PrintButton from "@/components/ui/PrintButton";
 import WeeklyReportAI from "@/components/reports/WeeklyReportAI";
 import { INJURY_TYPE_UA, LOCATION_UA, SEVERITY_UA, STATUS_UA, TEAM_CATEGORY_UA } from "@/lib/constants";
+import { getPlayerAvailability } from "@/lib/availability";
 
 function vasVariant(v: number): "ok"|"warn"|"danger" { if(v>=7)return"danger";if(v>=4)return"warn";return"ok"; }
 
@@ -13,25 +14,29 @@ export default async function WeeklyReportPage() {
   const now = new Date(); const weekAgo = new Date(now); weekAgo.setDate(weekAgo.getDate() - 7);
   const weekAgoStr = weekAgo.toISOString().split("T")[0];
 
-  const { data: teams } = await supabase.from("teams").select("id, name, category, sort_order, players ( id, first_name, last_name, position, injuries ( id, status, vas_score ) )").order("sort_order", { ascending: true });
-  const { data: newInjuries } = await supabase.from("injuries").select("*, players!inner ( first_name, last_name, teams!inner ( name ) )").gte("date_of_injury", weekAgoStr).order("date_of_injury", { ascending: false });
-  const { data: closedInjuries } = await supabase.from("injuries").select("*, players!inner ( first_name, last_name, teams!inner ( name ) )").eq("status", "closed").gte("actual_return_date", weekAgoStr).order("actual_return_date", { ascending: false });
-  const { data: activeInjuries } = await supabase.from("injuries").select("*, players!inner ( id, first_name, last_name, teams!inner ( name ) )").in("status", ["active", "rehabilitation"]).order("vas_score", { ascending: false });
-  const { data: weekExams } = await supabase.from("injury_examinations").select("id").gte("date", weekAgoStr);
-  const { data: weekLogs } = await supabase.from("injury_logs").select("id").gte("date", weekAgoStr);
+  const [teamsRes, newInjuriesRes, closedInjuriesRes, activeInjuriesRes, weekExamsRes, weekLogsRes, maturationRes, availability] = await Promise.all([
+    supabase.from("teams").select("id, name, category, sort_order").order("sort_order", { ascending: true }),
+    supabase.from("injuries").select("*, players!inner ( first_name, last_name, teams!inner ( name ) )").gte("date_of_injury", weekAgoStr).order("date_of_injury", { ascending: false }),
+    supabase.from("injuries").select("*, players!inner ( first_name, last_name, teams!inner ( name ) )").eq("status", "closed").gte("actual_return_date", weekAgoStr).order("actual_return_date", { ascending: false }),
+    supabase.from("injuries").select("*, players!inner ( id, first_name, last_name, teams!inner ( name ) )").in("status", ["active", "rehabilitation"]).order("vas_score", { ascending: false }),
+    supabase.from("injury_examinations").select("id").gte("date", weekAgoStr),
+    supabase.from("injury_logs").select("id").gte("date", weekAgoStr),
+    supabase.from("maturation_assessments").select("player_id, risk_zone, growth_phase, players!inner(first_name, last_name, teams!inner(name))").in("risk_zone", ["red", "yellow"]).order("created_at", { ascending: false }).limit(10),
+    getPlayerAvailability(),
+  ]);
 
-  const { data: maturationAlertsRaw } = await supabase
-    .from("maturation_assessments")
-    .select("player_id, risk_zone, growth_phase, players!inner(first_name, last_name, teams!inner(name))")
-    .in("risk_zone", ["red", "yellow"])
-    .order("created_at", { ascending: false })
-    .limit(10);
+  const teams = teamsRes.data;
+  const newInjuries = newInjuriesRes.data;
+  const closedInjuries = closedInjuriesRes.data;
+  const activeInjuries = activeInjuriesRes.data;
+  const weekExams = weekExamsRes.data;
+  const weekLogs = weekLogsRes.data;
+  const maturationAlertsRaw = maturationRes.data;
 
-  const allPlayers = (teams??[]).flatMap((t:any) => t.players??[]);
-  function playerStatus(p:any):"ok"|"warn"|"danger" { const a=(p.injuries??[]).filter((i:any)=>i.status==="active"||i.status==="rehabilitation"); if(!a.length)return"ok"; const m=Math.max(...a.map((i:any)=>i.vas_score??0)); if(m>=7)return"danger";if(m>=4)return"warn";return"ok"; }
-  const totalOk = allPlayers.filter((p:any) => playerStatus(p)==="ok").length;
-  const totalWarn = allPlayers.filter((p:any) => playerStatus(p)==="warn").length;
-  const totalDanger = allPlayers.filter((p:any) => playerStatus(p)==="danger").length;
+  const totalOk = availability.summary.available;
+  const totalWarn = availability.summary.restricted;
+  const totalDanger = availability.summary.unavailable;
+  const totalPlayersCount = availability.summary.total;
   const reportDate = now.toLocaleDateString("uk-UA", { day: "numeric", month: "long", year: "numeric" });
   const weekStart = weekAgo.toLocaleDateString("uk-UA", { day: "numeric", month: "long" });
 
@@ -40,7 +45,7 @@ export default async function WeeklyReportPage() {
     rehabInjuries: (activeInjuries ?? []).filter((i: any) => i.status === "rehabilitation"),
     upcomingReturns: (activeInjuries ?? []).filter((i: any) => i.expected_return_date),
     maturationAlerts: maturationAlertsRaw ?? [],
-    totalPlayers: allPlayers.length,
+    totalPlayers: totalPlayersCount,
     availablePlayers: totalOk,
     unavailablePlayers: totalDanger + totalWarn,
   };
@@ -64,12 +69,12 @@ export default async function WeeklyReportPage() {
 
       <section><h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Доступність складу</h2>
         <div className="grid grid-cols-4 gap-3">
-          <Card><div className="text-[10px] uppercase tracking-widest text-slate-600 mb-1">Всього</div><div className="text-2xl font-extrabold font-mono text-white">{allPlayers.length}</div></Card>
+          <Card><div className="text-[10px] uppercase tracking-widest text-slate-600 mb-1">Всього</div><div className="text-2xl font-extrabold font-mono text-white">{totalPlayersCount}</div></Card>
           <Card><div className="text-[10px] uppercase tracking-widest text-slate-600 mb-1">Готових</div><div className="text-2xl font-extrabold font-mono text-status-ok">{totalOk}</div></Card>
           <Card><div className="text-[10px] uppercase tracking-widest text-slate-600 mb-1">Обмежених</div><div className="text-2xl font-extrabold font-mono text-status-warn">{totalWarn}</div></Card>
           <Card><div className="text-[10px] uppercase tracking-widest text-slate-600 mb-1">Травмованих</div><div className="text-2xl font-extrabold font-mono text-status-danger">{totalDanger}</div></Card>
         </div>
-        <div className="mt-3 space-y-2">{(teams??[]).map((team:any)=>{const players=team.players??[];const ok=players.filter((p:any)=>playerStatus(p)==="ok").length;const pct=players.length>0?Math.round((ok/players.length)*100):100;return(<Card key={team.id}><div className="flex justify-between items-center"><div className="text-sm font-semibold text-white">{team.name}</div><div className="flex items-center gap-3"><div className="h-1.5 rounded-full bg-surface-raised w-24 overflow-hidden"><div className="h-full rounded-full bg-status-ok transition-all" style={{width:`${pct}%`}}/></div><span className="text-xs font-mono text-slate-400">{ok}/{players.length}</span></div></div></Card>);})}</div>
+        <div className="mt-3 space-y-2">{(teams??[]).map((team:any)=>{const teamAvail = availability.byTeam[team.id]; const ok = teamAvail?.available ?? 0; const teamTotal = teamAvail?.total ?? 0; const pct = teamTotal > 0 ? Math.round((ok/teamTotal)*100) : 100; return(<Card key={team.id}><div className="flex justify-between items-center"><div className="text-sm font-semibold text-white">{team.name}</div><div className="flex items-center gap-3"><div className="h-1.5 rounded-full bg-surface-raised w-24 overflow-hidden"><div className="h-full rounded-full bg-status-ok transition-all" style={{width:`${pct}%`}}/></div><span className="text-xs font-mono text-slate-400">{ok}/{teamTotal}</span></div></div></Card>);})}</div>
       </section>
 
       <section><h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Нові травми ({(newInjuries??[]).length})</h2>

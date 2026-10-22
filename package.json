@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --test tests/rehab-portal-8-0.test.ts tests/wellness-entries-8-1.test.ts tests/player-device-activation-8-2.test.ts tests/team-qr-cards-8-3.test.ts tests/readiness-traffic-light-8-4.test.ts tests/coach-training-8-6.test.ts tests/telegram-notifications-8-7.test.ts tests/wearables-8-8.test.ts tests/screening-and-clearance-2-1.test.ts"
+    "test": "node --test tests/rehab-portal-8-0.test.ts tests/wellness-entries-8-1.test.ts tests/player-device-activation-8-2.test.ts tests/team-qr-cards-8-3.test.ts tests/readiness-traffic-light-8-4.test.ts tests/coach-training-8-6.test.ts tests/telegram-notifications-8-7.test.ts tests/wearables-8-8.test.ts tests/screening-and-clearance-2-1.test.ts tests/availability-2-2.test.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.2",

@@ -1,24 +1,24 @@
 /**
- * player-status.ts — єдина логіка статусу готовності гравця.
- *
- * ВАЖЛИВО: наявність активної/реабілітаційної травми ЗАВЖДИ означає
- * мінімум "обмежений" статус, незалежно від ВАШ (навіть якщо ВАШ
- * не внесений або низький). "Готовий" можливий лише за відсутності
- * активних травм взагалі.
+ * player-status.ts — сумісний адаптер до єдиного джерела доступності availability-rules.ts
  */
 
-export type PlayerStatus = "ok" | "warn" | "danger";
+import {
+  calculatePlayerAvailability,
+  type LegacyPlayerStatus,
+} from "./availability-rules";
 
-export function playerStatus(player: { injuries?: { status: string; vas_score: number | null }[] }): PlayerStatus {
-  const active = (player.injuries ?? []).filter(
-    (i) => i.status === "active" || i.status === "rehabilitation"
-  );
+export type PlayerStatus = LegacyPlayerStatus;
 
-  if (active.length === 0) return "ok";
+export function playerStatus(player: any): PlayerStatus {
+  // Якщо об'єкт уже є результатом calculatePlayerAvailability / getPlayerAvailability
+  if (player?.legacyStatus) {
+    return player.legacyStatus;
+  }
+  if (player?.status === "available") return "ok";
+  if (player?.status === "restricted") return "warn";
+  if (player?.status === "unavailable") return "danger";
 
-  const maxVas = Math.max(...active.map((i) => i.vas_score ?? 0));
-  if (maxVas >= 7) return "danger";
-
-  // Будь-яка активна травма — мінімум "обмежений", навіть без ВАШ
-  return "warn";
+  // Розраховуємо через чисту функцію availability
+  const res = calculatePlayerAvailability(player);
+  return res.legacyStatus;
 }

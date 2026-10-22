@@ -447,35 +447,85 @@ export default function PreSeasonScreeningCard({
 
             {/* Ortho */}
             <div className="space-y-1.5">
-              <div className="font-bold text-slate-300 flex items-center gap-1.5">
-                <span>🦵</span> Опорно-руховий апарат
+              <div className="flex items-center justify-between font-bold text-slate-300">
+                <div className="flex items-center gap-1.5">
+                  <span>🦵</span> Опорно-руховий апарат
+                </div>
+                <button
+                  type="button"
+                  onClick={() => openGuide("wblt")}
+                  className="text-[10px] text-sky-400 hover:text-sky-300 hover:underline font-normal flex items-center gap-1"
+                  title="Відкрити довідник з біомеханічних тестів"
+                >
+                  <span>📖</span> Довідник тестів
+                </button>
               </div>
-              <div className="text-slate-400">
-                Тест Томаса (згиначі):{" "}
-                <span className="text-slate-200">
-                  L: {selectedScreening.ortho_thomas_test_left === "normal" ? "норм" : selectedScreening.ortho_thomas_test_left === "tight" ? "спазм" : "не обст."} · R: {selectedScreening.ortho_thomas_test_right === "normal" ? "норм" : selectedScreening.ortho_thomas_test_right === "tight" ? "спазм" : "не обст."}
+              <div className="text-slate-400 flex items-center justify-between">
+                <span>
+                  Тест Томаса (згиначі):{" "}
+                  <span className="text-slate-200">
+                    L: {selectedScreening.ortho_thomas_test_left === "normal" ? "норм" : selectedScreening.ortho_thomas_test_left === "tight" ? "спазм" : "не обст."} · R: {selectedScreening.ortho_thomas_test_right === "normal" ? "норм" : selectedScreening.ortho_thomas_test_right === "tight" ? "спазм" : "не обст."}
+                  </span>
                 </span>
+                <button
+                  type="button"
+                  onClick={() => openGuide("thomas")}
+                  className="text-slate-500 hover:text-sky-300 text-[10px] px-1 transition-colors"
+                  title="Методика тесту Томаса"
+                >
+                  ℹ️
+                </button>
               </div>
-              <div className="text-slate-400">
-                Ankle WBLT (гомілкостоп):{" "}
-                <span className="font-mono text-white font-bold">
-                  {selectedScreening.ortho_ankle_lunge_wblt_left != null ? `${selectedScreening.ortho_ankle_lunge_wblt_left} см` : "—"} / {selectedScreening.ortho_ankle_lunge_wblt_right != null ? `${selectedScreening.ortho_ankle_lunge_wblt_right} см` : "—"}
-                </span>{" "}
-                <span className="text-[10px] text-slate-500">(норм ≥ 10)</span>
-              </div>
-              <div className="text-slate-400">
-                Hamstrings 90-90 (дефіцит):{" "}
-                <span className="font-mono text-white font-bold">
-                  {selectedScreening.ortho_hamstrings_90_90_left != null ? `${selectedScreening.ortho_hamstrings_90_90_left}°` : "—"} / {selectedScreening.ortho_hamstrings_90_90_right != null ? `${selectedScreening.ortho_hamstrings_90_90_right}°` : "—"}
+              <div className="text-slate-400 flex items-center justify-between">
+                <span>
+                  Ankle WBLT (гомілкостоп):{" "}
+                  <span className="font-mono text-white font-bold">
+                    {selectedScreening.ortho_ankle_lunge_wblt_left != null ? `${selectedScreening.ortho_ankle_lunge_wblt_left} см` : "—"} / {selectedScreening.ortho_ankle_lunge_wblt_right != null ? `${selectedScreening.ortho_ankle_lunge_wblt_right} см` : "—"}
+                  </span>{" "}
+                  <span className="text-[10px] text-slate-500">(норм ≥ 10)</span>
                 </span>
+                <button
+                  type="button"
+                  onClick={() => openGuide("wblt")}
+                  className="text-slate-500 hover:text-sky-300 text-[10px] px-1 transition-colors"
+                  title="Методика WBLT"
+                >
+                  ℹ️
+                </button>
               </div>
-              <div className="text-slate-400">
-                Шкала Бейтона:{" "}
-                <span className="font-mono text-slate-200">
-                  {selectedScreening.ortho_beighton_hypermobility_score != null
-                    ? `${selectedScreening.ortho_beighton_hypermobility_score}/9`
-                    : "—"}
+              <div className="text-slate-400 flex items-center justify-between">
+                <span>
+                  Hamstrings 90-90 (дефіцит):{" "}
+                  <span className="font-mono text-white font-bold">
+                    {selectedScreening.ortho_hamstrings_90_90_left != null ? `${selectedScreening.ortho_hamstrings_90_90_left}°` : "—"} / {selectedScreening.ortho_hamstrings_90_90_right != null ? `${selectedScreening.ortho_hamstrings_90_90_right}°` : "—"}
+                  </span>
                 </span>
+                <button
+                  type="button"
+                  onClick={() => openGuide("hamstrings")}
+                  className="text-slate-500 hover:text-sky-300 text-[10px] px-1 transition-colors"
+                  title="Методика Hamstrings 90-90"
+                >
+                  ℹ️
+                </button>
+              </div>
+              <div className="text-slate-400 flex items-center justify-between">
+                <span>
+                  Шкала Бейтона:{" "}
+                  <span className="font-mono text-slate-200">
+                    {selectedScreening.ortho_beighton_hypermobility_score != null
+                      ? `${selectedScreening.ortho_beighton_hypermobility_score}/9`
+                      : "—"}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => openGuide("beighton")}
+                  className="text-slate-500 hover:text-sky-300 text-[10px] px-1 transition-colors"
+                  title="Шкала Бейтона (критерії)"
+                >
+                  ℹ️
+                </button>
               </div>
             </div>
 
@@ -723,12 +773,30 @@ export default function PreSeasonScreeningCard({
 
           {/* Section 3: Ortho */}
           <div className="border-t border-blue-900/20 pt-3 space-y-3">
-            <div className="font-bold text-slate-200">2. Ортопедо-біомеханічний скринінг</div>
+            <div className="flex items-center justify-between">
+              <div className="font-bold text-slate-200">2. Ортопедо-біомеханічний скринінг</div>
+              <button
+                type="button"
+                onClick={() => openGuide("wblt")}
+                className="text-[11px] text-sky-400 hover:text-sky-300 font-semibold flex items-center gap-1 hover:underline transition-colors"
+                title="Відкрити клінічне керівництво з біомеханічних тестів"
+              >
+                <span>📖</span> Методика тестів (FIFA / Aspetar)
+              </button>
+            </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div>
-                <label className="block text-slate-400 text-[10px] mb-1">
-                  WBLT Лівий гомілкостоп <span className="text-slate-500">(см)</span>
-                </label>
+                <div className="flex items-center justify-between text-slate-400 text-[10px] mb-1">
+                  <span>WBLT Лівий гомілкостоп (см)</span>
+                  <button
+                    type="button"
+                    onClick={() => openGuide("wblt")}
+                    className="text-slate-400 hover:text-sky-300 transition-colors"
+                    title="Методика та критерії WBLT"
+                  >
+                    ℹ️
+                  </button>
+                </div>
                 <input
                   type="number"
                   step="0.5"
@@ -742,9 +810,17 @@ export default function PreSeasonScreeningCard({
               </div>
 
               <div>
-                <label className="block text-slate-400 text-[10px] mb-1">
-                  WBLT Правий гомілкостоп <span className="text-slate-500">(см)</span>
-                </label>
+                <div className="flex items-center justify-between text-slate-400 text-[10px] mb-1">
+                  <span>WBLT Правий гомілкостоп (см)</span>
+                  <button
+                    type="button"
+                    onClick={() => openGuide("wblt")}
+                    className="text-slate-400 hover:text-sky-300 transition-colors"
+                    title="Методика та критерії WBLT"
+                  >
+                    ℹ️
+                  </button>
+                </div>
                 <input
                   type="number"
                   step="0.5"
@@ -758,7 +834,17 @@ export default function PreSeasonScreeningCard({
               </div>
 
               <div>
-                <label className="block text-slate-400 text-[10px] mb-1">Тест Томаса (згиначі L / R)</label>
+                <div className="flex items-center justify-between text-slate-400 text-[10px] mb-1">
+                  <span>Тест Томаса (згиначі L / R)</span>
+                  <button
+                    type="button"
+                    onClick={() => openGuide("thomas")}
+                    className="text-slate-400 hover:text-sky-300 transition-colors"
+                    title="Методика тесту Томаса"
+                  >
+                    ℹ️
+                  </button>
+                </div>
                 <div className="grid grid-cols-2 gap-1.5">
                   <select
                     value={thomasLeft}
@@ -782,9 +868,17 @@ export default function PreSeasonScreeningCard({
               </div>
 
               <div>
-                <label className="block text-slate-400 text-[10px] mb-1">
-                  Шкала Бейтона <span className="text-slate-500">(0-9)</span>
-                </label>
+                <div className="flex items-center justify-between text-slate-400 text-[10px] mb-1">
+                  <span>Шкала Бейтона (0-9)</span>
+                  <button
+                    type="button"
+                    onClick={() => openGuide("beighton")}
+                    className="text-slate-400 hover:text-sky-300 transition-colors"
+                    title="Шкала Бейтона (5 тестів)"
+                  >
+                    ℹ️
+                  </button>
+                </div>
                 <input
                   type="number"
                   min={0}
@@ -799,9 +893,17 @@ export default function PreSeasonScreeningCard({
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               <div>
-                <label className="block text-slate-400 text-[10px] mb-1">
-                  Hamstrings 90-90 дефіцит L (°)
-                </label>
+                <div className="flex items-center justify-between text-slate-400 text-[10px] mb-1">
+                  <span>Hamstrings 90-90 дефіцит L (°)</span>
+                  <button
+                    type="button"
+                    onClick={() => openGuide("hamstrings")}
+                    className="text-slate-400 hover:text-sky-300 transition-colors"
+                    title="Методика тесту Hamstrings 90-90"
+                  >
+                    ℹ️
+                  </button>
+                </div>
                 <input
                   type="number"
                   min={0}
@@ -813,9 +915,17 @@ export default function PreSeasonScreeningCard({
                 />
               </div>
               <div>
-                <label className="block text-slate-400 text-[10px] mb-1">
-                  Hamstrings 90-90 дефіцит R (°)
-                </label>
+                <div className="flex items-center justify-between text-slate-400 text-[10px] mb-1">
+                  <span>Hamstrings 90-90 дефіцит R (°)</span>
+                  <button
+                    type="button"
+                    onClick={() => openGuide("hamstrings")}
+                    className="text-slate-400 hover:text-sky-300 transition-colors"
+                    title="Методика тесту Hamstrings 90-90"
+                  >
+                    ℹ️
+                  </button>
+                </div>
                 <input
                   type="number"
                   min={0}
@@ -955,6 +1065,13 @@ export default function PreSeasonScreeningCard({
           </div>
         </form>
       )}
+
+      {/* Модальне клінічне керівництво з біомеханічних тестів (FIFA / Aspetar) */}
+      <BiomechanicsGuidanceModal
+        isOpen={guideModalOpen}
+        onClose={() => setGuideModalOpen(false)}
+        initialTestId={guideModalTestId}
+      />
     </div>
   );
 }

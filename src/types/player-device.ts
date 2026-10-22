@@ -35,6 +35,8 @@ export interface ActivationResult {
   requiresConsent?: boolean;
   lockedUntilMinutes?: number;
   playerId?: string;
+  deviceId?: string;
+  deviceSessionSecret?: string;
 }
 
 export type PlayerActivationStatus = "active" | "pending" | "revoked_or_expired" | "not_issued";

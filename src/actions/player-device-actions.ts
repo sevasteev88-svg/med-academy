@@ -372,6 +372,8 @@ export async function verifyAndActivateDeviceAction(
   return {
     success: true,
     playerId,
+    deviceId,
+    deviceSessionSecret,
   };
 }
 

@@ -11,6 +11,7 @@ import {
 import { LOCATION_UA, INJURY_TYPE_UA } from "@/lib/constants";
 import RiskAlertsCenter from "@/components/alerts/RiskAlertsCenter";
 import { getRiskAlerts } from "@/lib/get-risk-alerts";
+import { getPlayerAvailability } from "@/lib/availability";
 
 // ─── Типи ────────────────────────────────────────────────────────────────────
 type StatCard = {
@@ -121,30 +122,24 @@ export default async function Home() {
   const todayStr = new Date().toISOString().split("T")[0];
   const weekAgoStr = new Date(Date.now() - 7 * 86400000).toISOString().split("T")[0];
 
-  // ── Статистика (лічильники) ──
+  // ── Статистика (лічильники та доступність через єдине джерело) ──
   const [
     { count: activeInjuries },
     { count: onRehab },
     { count: examsThisWeek },
     alerts,
+    availability,
   ] = await Promise.all([
     supabase.from("injuries").select("*", { count: "exact", head: true }).eq("status", "active"),
     supabase.from("injuries").select("*", { count: "exact", head: true }).eq("status", "rehabilitation"),
     supabase.from("injury_examinations").select("*", { count: "exact", head: true }).gte("date", weekAgoStr),
     getRiskAlerts(),
+    getPlayerAvailability(),
   ]);
 
-  // ── Всі гравці (для підрахунку готових) ──
-  const { count: totalPlayers } = await supabase
-    .from("players").select("*", { count: "exact", head: true });
-
-  // Готові = всього гравців − ті, у кого є активна/реабілітаційна травма
-  const { data: injuredPlayerIds } = await supabase
-    .from("injuries")
-    .select("player_id")
-    .in("status", ["active", "rehabilitation"]);
-  const uniqueInjured = new Set((injuredPlayerIds ?? []).map((i) => i.player_id)).size;
-  const readyCount = Math.max((totalPlayers ?? 0) - uniqueInjured, 0);
+  // Єдине джерело правди для готових до матчу гравців
+  const readyCount = availability.summary.available;
+  const totalPlayers = availability.summary.total;
 
   const STAT_CARDS: StatCard[] = [
     { icon: <Bandage     size={14} />, value: activeInjuries ?? 0,  label: "Активні травми",  accent: "red",   href: "/injuries" },

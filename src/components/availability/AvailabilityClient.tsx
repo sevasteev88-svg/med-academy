@@ -14,6 +14,7 @@ import {
   vasColor,
 } from "@/lib/constants";
 import { playerStatus, type PlayerStatus } from "@/lib/player-status";
+import type { AvailabilitySummary } from "@/lib/availability-rules";
 
 type MaturationAssessment = {
   risk_zone: string | null;
@@ -53,6 +54,7 @@ type Team = {
 
 type Props = {
   teams: Team[];
+  summary?: AvailabilitySummary;
 };
 
 function growthZone(player: Player): "yellow" | "red" | null {
@@ -67,14 +69,14 @@ function growthZone(player: Player): "yellow" | "red" | null {
   return null;
 }
 
-export default function AvailabilityClient({ teams }: Props) {
+export default function AvailabilityClient({ teams, summary }: Props) {
   const [selectedTeam, setSelectedTeam] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<"all" | PlayerStatus>("all");
 
   const allPlayers = teams.flatMap((t) => t.players ?? []);
-  const totalOk = allPlayers.filter((p) => playerStatus(p) === "ok").length;
-  const totalWarn = allPlayers.filter((p) => playerStatus(p) === "warn").length;
-  const totalDanger = allPlayers.filter((p) => playerStatus(p) === "danger").length;
+  const totalOk = summary ? summary.available : allPlayers.filter((p) => playerStatus(p) === "ok").length;
+  const totalWarn = summary ? summary.restricted : allPlayers.filter((p) => playerStatus(p) === "warn").length;
+  const totalDanger = summary ? summary.unavailable : allPlayers.filter((p) => playerStatus(p) === "danger").length;
 
   // Формування тексту рапорту для Telegram (ТІЛЬКИ агрегати, п. 1.5.4)
   const todayStr = new Date().toLocaleDateString("uk-UA", {
