@@ -1,3 +1,4 @@
+import { DOMINANT_SIDE_UA } from "./dictionaries.ts";
 export * from "./dictionaries.ts";
 
 export const DOMINANT_UA = DOMINANT_SIDE_UA;
