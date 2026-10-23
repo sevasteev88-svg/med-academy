@@ -7,6 +7,7 @@ import { useTransition } from "react";
 import { logoutAction } from "@/actions/auth-actions";
 
 import RiskAlertsCenter, { type RiskAlertItem } from "@/components/alerts/RiskAlertsCenter";
+import OfflineSyncStatusBadge from "@/components/offline/OfflineSyncStatusBadge";
 
 type NavItem = { href: string; label: string; icon: string };
 
@@ -99,8 +100,9 @@ export default function AppNav({
         </Link>
 
         {/* Дзвінок сповіщень та ризиків */}
-        <div className="mb-2 shrink-0">
+        <div className="mb-2 shrink-0 flex flex-col items-center gap-2">
           <RiskAlertsCenter alerts={alerts} />
+          <OfflineSyncStatusBadge />
         </div>
 
         {/* Прокручуваний список пунктів меню */}
@@ -167,8 +169,9 @@ export default function AppNav({
         </button>
       </nav>
 
-      {/* Мобільна кнопка сповіщень (плаваюча справа вгорі) */}
-      <div className="md:hidden fixed top-3 right-3 z-40">
+      {/* Мобільна кнопка сповіщень та статус офлайн (плаваюча справа вгорі) */}
+      <div className="md:hidden fixed top-3 right-3 z-40 flex items-center gap-2">
+        <OfflineSyncStatusBadge />
         <RiskAlertsCenter alerts={alerts} />
       </div>
     </>

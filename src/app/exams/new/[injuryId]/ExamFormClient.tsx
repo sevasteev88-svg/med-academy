@@ -6,6 +6,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { addExaminationAction } from "@/actions/add-examination-action";
+import VoiceNoteTextarea from "@/components/voice/VoiceNoteTextarea";
 
 type StatusOption = "active" | "rehabilitation" | "closed";
 
@@ -303,15 +304,15 @@ export default function ExamFormClient({
           )}
         </div>
 
-        {/* Об'єктивні нотатки */}
+        {/* Об'єктивні нотатки з підтримкою голосу uk-UA */}
         <div className="mb-4">
-          <SectionLabel>Об'єктивні нотатки (лікар)</SectionLabel>
-          <textarea
+          <VoiceNoteTextarea
+            id="objectiveNote"
+            label="Об'єктивні нотатки (лікар)"
             value={objectiveNote}
-            onChange={(e) => setObjectiveNote(e.target.value)}
-            placeholder="Що бачить лікар: пальпація, тести, спостереження..."
+            onChange={setObjectiveNote}
+            placeholder="Що бачить лікар: пальпація, тести, спостереження... (диктуйте або друкуйте)"
             rows={3}
-            className="w-full bg-slate-900/82 border border-blue-900/20 rounded-lg px-3 py-2 text-[12px] text-slate-300 outline-none resize-none leading-relaxed"
           />
         </div>
 
