@@ -23,7 +23,7 @@ export type EhrExportActionResult =
       pdfBase64: string;
       filename: string;
     }
-  | { success: false; error: string };
+  | { success: false; error: string; requiresMfa?: boolean };
 
 export type EhrImportValidationResult =
   | { success: true; report: EhrImportValidationReport }
@@ -53,6 +53,34 @@ export async function exportPlayerEhrAction(
   }
 
   const supabase = await createClient();
+
+  // Step-Up 2FA перевірка перед експортом медичної картки
+  const { data: factorsData } = await supabase.auth.mfa.listFactors();
+  const hasMfa = factorsData?.totp?.some((f) => f.status === "verified");
+
+  if (hasMfa) {
+    if (!options.mfa_code) {
+      return {
+        success: false,
+        error: "Для експорту медичної картки потрібен 6-значний код 2FA (Step-up)",
+        requiresMfa: true,
+      };
+    }
+
+    const { verifyMfaChallengeAction } = await import("@/actions/mfa-actions");
+    const verifyRes = await verifyMfaChallengeAction({
+      code: options.mfa_code,
+      isRecoveryCode: options.is_recovery_code,
+    });
+
+    if (!verifyRes.success) {
+      return {
+        success: false,
+        error: verifyRes.error || "Невірний код 2FA. Експорт заблоковано.",
+        requiresMfa: true,
+      };
+    }
+  }
 
   // 2. Отримання даних гравця та клубу
   const { data: player, error: playerError } = await supabase

@@ -103,6 +103,8 @@ export type EhrExportOptions = {
   start_date?: string;
   end_date?: string;
   consent: EhrExportConsent;
+  mfa_code?: string;
+  is_recovery_code?: boolean;
 };
 
 /**

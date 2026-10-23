@@ -23,6 +23,7 @@ import {
   type TransferPurpose,
 } from "@/types/ehr-transfer";
 import { exportPlayerEhrAction } from "@/actions/ehr-transfer-actions";
+import MfaStepUpModal from "@/components/auth/MfaStepUpModal";
 
 interface EhrExportModalProps {
   playerId: string;
@@ -58,6 +59,8 @@ export function EhrExportModal({
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [isStepUpOpen, setIsStepUpOpen] = useState(false);
+  const [pendingFormat, setPendingFormat] = useState<"pdf" | "json">("pdf");
 
   if (!isOpen) return null;
 
@@ -67,7 +70,7 @@ export function EhrExportModal({
     );
   };
 
-  const handleExport = (format: "pdf" | "json") => {
+  const executeExport = (format: "pdf" | "json", mfaCode?: string, isRecovery?: boolean) => {
     setErrorMessage(null);
     setSuccessMessage(null);
 
@@ -103,10 +106,17 @@ export function EhrExportModal({
         start_date: startDate || undefined,
         end_date: endDate || undefined,
         consent,
+        mfa_code: mfaCode,
+        is_recovery_code: isRecovery,
       });
 
       if (!res.success) {
-        setErrorMessage(res.error);
+        if (res.requiresMfa) {
+          setPendingFormat(format);
+          setIsStepUpOpen(true);
+        } else {
+          setErrorMessage(res.error);
+        }
         return;
       }
 
@@ -358,7 +368,7 @@ export function EhrExportModal({
             <button
               type="button"
               disabled={isPending || !consentConfirmed || !recipientClub.trim()}
-              onClick={() => handleExport("json")}
+              onClick={() => executeExport("json")}
               className="flex items-center gap-2 text-xs font-semibold px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sky-300 disabled:opacity-40 transition"
               title="Експорт транспортного пакету версії 1.0.0"
             >
@@ -369,7 +379,7 @@ export function EhrExportModal({
             <button
               type="button"
               disabled={isPending || !consentConfirmed || !recipientClub.trim()}
-              onClick={() => handleExport("pdf")}
+              onClick={() => executeExport("pdf")}
               className="flex items-center gap-2 text-xs font-semibold px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white disabled:opacity-40 shadow-sm transition"
               title="Експорт офіційного витягу з водяним знаком"
             >
@@ -383,6 +393,14 @@ export function EhrExportModal({
           </div>
         </div>
       </div>
+
+      <MfaStepUpModal
+        isOpen={isStepUpOpen}
+        onClose={() => setIsStepUpOpen(false)}
+        onSuccess={(code, isRec) => executeExport(pendingFormat, code, isRec)}
+        title="Підтвердження 2FA перед експортом"
+        description="Для експорту персональної медичної карти гравця підтвердіть операцію кодом 2FA:"
+      />
     </div>
   );
 }

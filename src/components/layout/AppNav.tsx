@@ -34,6 +34,7 @@ const DOCTOR_NAV: NavItem[] = [
   { href: "/reports/patterns", label: "Патерни", icon: "🔍" },
   { href: "/growth", label: "Ріст", icon: "📈" },
   { href: "/consents", label: "Згоди батьків", icon: "✍️" },
+  { href: "/admin/security", label: "Безпека (2FA)", icon: "🔐" },
   { href: "/privacy", label: "Конфіденційність", icon: "🔒" },
 ];
 

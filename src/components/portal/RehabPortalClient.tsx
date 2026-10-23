@@ -20,6 +20,7 @@ import {
   URGENT_CASE_WARNING,
 } from "@/lib/constants";
 import PwaInstallPromptModal from "@/components/portal/PwaInstallPromptModal";
+import PlayerWellnessQuiz from "@/components/wellness/PlayerWellnessQuiz";
 
 interface Props {
   initialSessionData?: any;
@@ -59,6 +60,17 @@ export default function RehabPortalClient({
 
   // Active Tab inside Player Cabinet
   const [activeTab, setActiveTab] = useState<"plan" | "checkin" | "progress">("checkin");
+
+  // Режим відображення щоденної анкети: Quiz (інтерактивний покроковий) або швидка компактна форма
+  const [checkinMode, setCheckinMode] = useState<"quiz" | "compact">(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("med_player_checkin_mode");
+        if (saved === "compact" || saved === "quiz") return saved;
+      } catch {}
+    }
+    return "quiz";
+  });
 
   // Exercises & Quests state
   const [exercises, setExercises] = useState<RehabExerciseItem[]>([]);
@@ -955,7 +967,57 @@ export default function RehabPortalClient({
 
         {/* TAB 2: Чек-ін щоденного самопочуття */}
         {activeTab === "checkin" && (
-          <form onSubmit={handleSubmitCheckin} className="space-y-4 animate-fadeIn">
+          <div className="space-y-4 animate-fadeIn">
+            {/* Перемикач режимів: Quiz vs Швидка форма (як у розділі велнес) */}
+            <div className="flex items-center justify-between p-1 bg-slate-950/80 rounded-2xl border border-sky-500/20 shadow-md">
+              <button
+                type="button"
+                onClick={() => {
+                  setCheckinMode("quiz");
+                  try {
+                    localStorage.setItem("med_player_checkin_mode", "quiz");
+                  } catch {}
+                }}
+                className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                  checkinMode === "quiz"
+                    ? "bg-gradient-to-r from-sky-500 to-indigo-500 text-white shadow-md shadow-sky-500/30 scale-[1.02]"
+                    : "text-slate-400 hover:text-white"
+                }`}
+              >
+                <span>📱</span>
+                <span>Режим Quiz</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setCheckinMode("compact");
+                  try {
+                    localStorage.setItem("med_player_checkin_mode", "compact");
+                  } catch {}
+                }}
+                className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                  checkinMode === "compact"
+                    ? "bg-slate-800 text-white border border-slate-700 shadow-sm scale-[1.02]"
+                    : "text-slate-400 hover:text-white"
+                }`}
+              >
+                <span>📋</span>
+                <span>Швидка форма</span>
+              </button>
+            </div>
+
+            {checkinMode === "quiz" ? (
+              <PlayerWellnessQuiz
+                key={authenticatedPlayer.id}
+                playerId={authenticatedPlayer.id}
+                playerName={`${authenticatedPlayer.last_name || ""} ${authenticatedPlayer.first_name || ""}`.trim()}
+                source="player"
+                onSuccess={() => {
+                  setIsSubmitted(true);
+                }}
+              />
+            ) : (
+              <form onSubmit={handleSubmitCheckin} className="space-y-4 animate-fadeIn">
             {/* Тільки для травмованих гравців: ВАШ, Набряк, Скутість, Впевненість */}
             {primaryInjury && (
               <div className="space-y-3 p-3.5 rounded-2xl bg-slate-950/70 border border-rose-500/20">
@@ -1574,6 +1636,8 @@ export default function RehabPortalClient({
               )}
             </div>
           </form>
+            )}
+          </div>
         )}
 
         {/* TAB 3: Екран «Мій тиждень» (Власні відповіді, графік, зворотний зв'язок) */}
