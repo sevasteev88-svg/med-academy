@@ -427,12 +427,15 @@ export type AuditAction =
   | "archive_injury_attachment"
   | "restore_injury_attachment"
   | "export_player_ehr"
-  | "import_player_ehr";
+  | "import_player_ehr"
+  | "create_tue_case"
+  | "update_tue_case";
 
 export type AuditEntity =
   | "player"
   | "injury"
   | "injury_attachment"
+  | "tue_case"
   | "examination"
   | "screening"
   | "pharmacy"

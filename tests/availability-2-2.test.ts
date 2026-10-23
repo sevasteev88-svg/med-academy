@@ -300,7 +300,7 @@ describe("Етап 2.2 — Єдине джерело доступності (ava
       assert.equal(result.max_minutes, 90);
     });
 
-    it("RTP Фаза 5 або здоровий гравець БЕЗ діючого скринінгу (прострочений) → 'unavailable'", () => {
+    it("RTP Фаза 5 або здоровий гравець БЕЗ діючого скринінгу (прострочений) при обов'язковому скринінгу → 'unavailable'", () => {
       const player: RawPlayerInput = {
         id: "p-expired",
         first_name: "Георгій",
@@ -310,7 +310,7 @@ describe("Етап 2.2 — Єдине джерело доступності (ava
         screening: expiredScreening,
       };
 
-      const result = calculatePlayerAvailability(player, { date: targetDate });
+      const result = calculatePlayerAvailability(player, { date: targetDate, requireScreening: true });
 
       assert.equal(result.status, "unavailable");
       assert.equal(result.max_minutes, 0);
@@ -318,7 +318,7 @@ describe("Етап 2.2 — Єдине джерело доступності (ava
       assert.match(result.restriction_notes, /Відсутній або прострочений/);
     });
 
-    it("гравець без скринінгу взагалі (null) → 'unavailable'", () => {
+    it("гравець без скринінгу взагалі (null) при обов'язковому скринінгу → 'unavailable'", () => {
       const player: RawPlayerInput = {
         id: "p-noscreening",
         first_name: "Анатолій",
@@ -328,11 +328,28 @@ describe("Етап 2.2 — Єдине джерело доступності (ava
         screening: null,
       };
 
-      const result = calculatePlayerAvailability(player, { date: targetDate });
+      const result = calculatePlayerAvailability(player, { date: targetDate, requireScreening: true });
 
       assert.equal(result.status, "unavailable");
       assert.equal(result.max_minutes, 0);
       assert.equal(result.hasValidScreening, false);
+    });
+
+    it("пілотний проєкт (середина сезону): гравець без внесеного скринінгу має допуск за літнім скринінгом федерації → 'available'", () => {
+      const player: RawPlayerInput = {
+        id: "p-pilot-healthy",
+        first_name: "Анатолій",
+        last_name: "Трубін",
+        position: "ВР",
+        injuries: [],
+        screening: null,
+      };
+
+      const result = calculatePlayerAvailability(player, { date: targetDate });
+
+      assert.equal(result.status, "available");
+      assert.equal(result.max_minutes, 90);
+      assert.equal(result.hasValidScreening, true);
     });
 
     it("гравець з дискваліфікацією за скринінгом → 'unavailable' (0 хв)", () => {
@@ -501,9 +518,9 @@ describe("Етап 2.2 — Єдине джерело доступності (ava
         i13b: { phase: 4 },
       };
 
-      // Розрахунок через єдину функцію
+      // Розрахунок через єдину функцію (з урахуванням обов'язкового скринінгу для базового тестового загону)
       const evaluatedPlayers: PlayerAvailabilityItem[] = mockSquad.map((p) =>
-        calculatePlayerAvailability(p, { date: targetDate, rtpLogsByInjury: rtpLogs })
+        calculatePlayerAvailability(p, { date: targetDate, rtpLogsByInjury: rtpLogs, requireScreening: true })
       );
 
       // Агрегація

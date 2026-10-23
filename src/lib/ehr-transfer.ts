@@ -56,10 +56,30 @@ export function validateEhrExportConsent(consent?: EhrExportConsent | null): {
 }
 
 /**
+ * Канонічна детермінована серіалізація JSON із рекурсивним сортуванням ключів
+ */
+export function canonicalizeJson(obj: unknown): string {
+  if (obj === null || typeof obj !== "object") {
+    return JSON.stringify(obj);
+  }
+  if (Array.isArray(obj)) {
+    return "[" + obj.map(canonicalizeJson).join(",") + "]";
+  }
+  const sortedKeys = Object.keys(obj as Record<string, unknown>).sort();
+  return (
+    "{" +
+    sortedKeys
+      .map((k) => JSON.stringify(k) + ":" + canonicalizeJson((obj as Record<string, unknown>)[k]))
+      .join(",") +
+    "}"
+  );
+}
+
+/**
  * Обчислення контрольного хешу цілісності SHA-256 від даних медичної карти
  */
 export function computeEhrPayloadHash(data: EhrTransferPayload["data"]): string {
-  const serialized = JSON.stringify(data, Object.keys(data).sort());
+  const serialized = canonicalizeJson(data);
   return crypto.createHash("sha256").update(serialized, "utf8").digest("hex");
 }
 

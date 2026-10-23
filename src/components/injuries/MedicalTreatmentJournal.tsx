@@ -9,6 +9,8 @@ import {
   WADA_META,
 } from "@/types/pharmacy";
 import { saveMedicalTreatmentAction } from "@/actions/save-medical-treatment-action";
+import { verifySubstanceOrBrand } from "@/lib/wada-prohibited-list";
+import { CreateTueCaseModal } from "@/components/tue/CreateTueCaseModal";
 
 type Props = {
   injuryId?: string;
@@ -43,8 +45,11 @@ export default function MedicalTreatmentJournal({
   const [doctor, setDoctor] = useState("Лікар штабу ФК Чорноморець");
   const [wadaStatus, setWadaStatus] = useState<WadaStatus>("allowed");
   const [notes, setNotes] = useState("");
+  const [isTueModalOpen, setIsTueModalOpen] = useState(false);
 
   const [isPending, startTransition] = useTransition();
+
+  const wadaCheck = verifySubstanceOrBrand(title);
 
   const handleApplyPreset = (p: typeof COMMON_PRESETS[0]) => {
     setTitle(p.title);
@@ -195,6 +200,46 @@ export default function MedicalTreatmentJournal({
             </div>
           </div>
 
+          {/* WADA Smart Shield Trigger */}
+          {title.trim().length >= 2 && wadaCheck.status !== "permitted" && (
+            <div className="p-3 rounded-lg bg-amber-950/40 border border-amber-500/50 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-amber-300 flex items-center gap-1.5">
+                  ⚠️ WADA Alert: {wadaCheck.status_label}
+                </span>
+                {wadaCheck.record && (
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-300">
+                    Клас {wadaCheck.record.wada_class}
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-300">{wadaCheck.recommendation}</p>
+              <div className="flex items-center gap-2 pt-1 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setIsTueModalOpen(true)}
+                  className="px-2.5 py-1 rounded bg-rose-600 hover:bg-rose-500 text-white font-semibold text-[11px] flex items-center gap-1 shadow-sm"
+                >
+                  <span>📋</span> Створити заявку на TUE
+                </button>
+                {wadaCheck.record?.washout_period_hours && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const washoutNote = `[WASHOUT] Рекомендований кліренс: ${wadaCheck.record?.washout_period_hours} год (~${Math.round(
+                        (wadaCheck.record?.washout_period_hours || 0) / 24
+                      )} дн.)`;
+                      setNotes((prev) => (prev ? `${prev} · ${washoutNote}` : washoutNote));
+                    }}
+                    className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-600/40 font-semibold text-[11px]"
+                  >
+                    ⏱️ Вказати період виведення ({wadaCheck.record.washout_period_hours} год)
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           <div>
             <label className="block text-slate-400 uppercase text-[10px] font-bold mb-1">
               WADA Антидопінговий статус
@@ -292,6 +337,15 @@ export default function MedicalTreatmentJournal({
           })}
         </div>
       )}
+      {/* Модальне вікно створення TUE при призначенні забороненого препарату */}
+      <CreateTueCaseModal
+        isOpen={isTueModalOpen}
+        onClose={() => setIsTueModalOpen(false)}
+        initialPlayerId={playerId}
+        initialSubstance={wadaCheck.record?.name_uk || title}
+        initialWadaClass={wadaCheck.record?.wada_class || "S-препарат"}
+        playersList={[{ id: playerId, first_name: playerName.split(" ")[1] || "", last_name: playerName.split(" ")[0] || playerName, position: "Футболіст" }]}
+      />
     </div>
   );
 }

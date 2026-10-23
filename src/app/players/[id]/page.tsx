@@ -28,6 +28,7 @@ import type { RehabCheckinData } from "@/types/rehab-portal";
 import type { LsiAssessmentRecord } from "@/types/lsi";
 import type { PlayerCustomRehabPlan } from "@/types/exercise-library";
 import PrintButton from "@/components/ui/PrintButton";
+import { PlayerEhrTransferButton } from "@/components/players/PlayerEhrTransferButton";
 import PlayerArchiveControl from "@/components/players/PlayerArchiveControl";
 import { getCurrentUser } from "@/lib/auth";
 import { POSITION_LABELS, POSITION_FULL, DOMINANT_UA, LOCATION_UA, SEVERITY_UA, INJURY_TYPE_UA, STATUS_UA } from "@/lib/constants";
@@ -466,6 +467,11 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
                 ✏️ Редагувати
               </Link>
               <PrintButton label="PDF Паспорт" entity="player" entityId={id} playerId={id} />
+              <PlayerEhrTransferButton
+                playerId={id}
+                playerName={`${player.last_name} ${player.first_name}`}
+                doctorName={currentUser?.fullName || "Лікар клубу"}
+              />
             </div>
             <PlayerArchiveControl
               playerId={id}

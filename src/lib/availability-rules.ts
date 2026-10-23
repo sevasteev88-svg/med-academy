@@ -24,6 +24,13 @@ export const AVAILABILITY_RULES = {
   DEFAULT_RESTRICTED_MAX_MINUTES: 45,
   DEFAULT_AVAILABLE_MAX_MINUTES: 90,
   DEFAULT_UNAVAILABLE_MAX_MINUTES: 0,
+  /**
+   * Обов'язковість наявності електронного скринінгу в базі для допуску.
+   * false для пілотного проєкту в середині сезону: усі футболісти пройшли літній офіційний
+   * скринінг через диспансер та федерацію футболу і допущені до змагань.
+   * Наступний обов'язковий скринінг буде введено взимку перед 2-м колом чемпіонату.
+   */
+  REQUIRE_SCREENING_MANDATORY: false,
 } as const;
 
 export const STATUS_TO_LEGACY: Record<AvailabilityStatus, LegacyPlayerStatus> = {
@@ -152,11 +159,17 @@ export interface RawPlayerInput {
     description?: string | null;
   }>;
   screening?: PreSeasonScreening | null;
+  concussionCase?: {
+    status: "active" | "recovering" | "closed";
+    current_stage: number;
+    notes?: string;
+  } | null;
 }
 
 export interface CalculationOptions {
   date?: string | Date;
   rtpLogsByInjury?: Record<string, Partial<RtpPhaseLog> | { phase: number; max_minutes?: number }>;
+  requireScreening?: boolean;
 }
 
 export function calculatePlayerAvailability(
@@ -201,6 +214,33 @@ export function calculatePlayerAvailability(
   const injurySummariesList: string[] = [];
   let worstRtpPhase: number | null = null;
 
+  // ─── ПРАВИЛО 0: СТРУС МОЗКУ (SCAT6 / FIFA Concussion Protocol) ─────────────
+  // Гравець із відкритим випадком струсу або активним ступенем < 6 автоматично «недоступний» (0 хв).
+  const hasOpenConcussion = Boolean(
+    (player.concussionCase &&
+      player.concussionCase.status !== "closed" &&
+      player.concussionCase.current_stage < 6) ||
+    enrichedInjuries.some(
+      (inj) =>
+        inj.injury_type === "concussion" &&
+        (inj.status === "active" || (inj.rtp_phase ?? 1) < 6)
+    )
+  );
+
+  const concussionStage =
+    player.concussionCase?.current_stage ||
+    enrichedInjuries.find((i) => i.injury_type === "concussion")?.rtp_phase ||
+    1;
+
+  if (hasOpenConcussion) {
+    worstStatus = "unavailable";
+    maxMinutes = AVAILABILITY_RULES.DEFAULT_UNAVAILABLE_MAX_MINUTES;
+    restrictionNotesList.push(
+      `Сотрус мозку: Протокол відновлення SCAT6 (Ступінь ${concussionStage}/6). Захисний режим без допуску.`
+    );
+    injurySummariesList.push(`Сотрус мозку (Ступінь ${concussionStage}/6)`);
+  }
+
   // Оцінюємо травми
   for (const inj of enrichedInjuries) {
     if (inj.status === "active") {
@@ -240,27 +280,49 @@ export function calculatePlayerAvailability(
   }
 
   // Правило 4: Перевірка діючого скринінгу для фінального «готовий»
+  const requireScreening = options.requireScreening ?? AVAILABILITY_RULES.REQUIRE_SCREENING_MANDATORY;
+
   if (worstStatus === "available") {
-    if (!validScreening) {
-      if (screeningStatus === "disqualified") {
-        worstStatus = "unavailable";
-        maxMinutes = AVAILABILITY_RULES.DEFAULT_UNAVAILABLE_MAX_MINUTES;
-        restrictionNotesList.push("Медичне відсторонення за результатами передсезонного скринінгу.");
-        injurySummariesList.push("Відсторонений (скринінг)");
-      } else if (screeningStatus === "provisional") {
-        worstStatus = "restricted";
-        maxMinutes = AVAILABILITY_RULES.DEFAULT_RESTRICTED_MAX_MINUTES;
-        restrictionNotesList.push("Умовний допуск за скринінгом: потребує додаткового медичного контролю.");
-        injurySummariesList.push("Умовний допуск (скринінг)");
+    if (screening) {
+      if (!validScreening) {
+        if (screeningStatus === "disqualified") {
+          worstStatus = "unavailable";
+          maxMinutes = AVAILABILITY_RULES.DEFAULT_UNAVAILABLE_MAX_MINUTES;
+          restrictionNotesList.push("Медичне відсторонення за результатами передсезонного скринінгу.");
+          injurySummariesList.push("Відсторонений (скринінг)");
+        } else if (screeningStatus === "provisional") {
+          worstStatus = "restricted";
+          maxMinutes = AVAILABILITY_RULES.DEFAULT_RESTRICTED_MAX_MINUTES;
+          restrictionNotesList.push("Умовний допуск за скринінгом: потребує додаткового медичного контролю.");
+          injurySummariesList.push("Умовний допуск (скринінг)");
+        } else {
+          // Прострочений скринінг
+          if (requireScreening) {
+            worstStatus = "unavailable";
+            maxMinutes = AVAILABILITY_RULES.DEFAULT_UNAVAILABLE_MAX_MINUTES;
+            restrictionNotesList.push("Відсутній або прострочений щорічний медичний скринінг. Не допущений до змагань.");
+            injurySummariesList.push("Без діючого скринінгу");
+          } else {
+            restrictionNotesList.push("Повний допуск до тренувань та матчів без обмежень (літній допуск федерації).");
+            injurySummariesList.push("Повний допуск");
+          }
+        }
       } else {
+        restrictionNotesList.push("Повний допуск до тренувань та матчів без обмежень.");
+        injurySummariesList.push("Повний допуск");
+      }
+    } else {
+      // Скринінг взагалі відсутній в базі
+      if (requireScreening) {
         worstStatus = "unavailable";
         maxMinutes = AVAILABILITY_RULES.DEFAULT_UNAVAILABLE_MAX_MINUTES;
         restrictionNotesList.push("Відсутній або прострочений щорічний медичний скринінг. Не допущений до змагань.");
         injurySummariesList.push("Без діючого скринінгу");
+      } else {
+        // Пілотний проєкт: усі футболісти пройшли літній офіційний скринінг федерації (до зимового скринінгу)
+        restrictionNotesList.push("Повний допуск до тренувань та матчів без обмежень (літній допуск федерації).");
+        injurySummariesList.push("Повний допуск");
       }
-    } else {
-      restrictionNotesList.push("Повний допуск до тренувань та матчів без обмежень.");
-      injurySummariesList.push("Повний допуск");
     }
   } else if (worstStatus === "restricted" && (!validScreening && screeningStatus === "disqualified")) {
     worstStatus = "unavailable";
@@ -288,7 +350,7 @@ export function calculatePlayerAvailability(
     injury_summary: injurySummariesList.join(" | ") || "Повний допуск",
     openInjuriesCount: enrichedInjuries.length,
     worstRtpPhase,
-    hasValidScreening: validScreening,
+    hasValidScreening: validScreening || (!requireScreening && !screening),
     screeningStatus,
     screeningDate: screening?.date || null,
     screeningValidUntil: screening?.valid_until || null,

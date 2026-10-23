@@ -5,6 +5,7 @@ import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
 import PlayerFilters from "@/components/players/PlayerFilters";
 import QuickRestoreButton from "@/components/players/QuickRestoreButton";
+import { EhrImportButton } from "@/components/players/EhrImportButton";
 import { POSITION_LABELS, TEAM_CATEGORY_UA, LOCATION_UA, INJURY_TYPE_UA, formatPosition, formatInjuryType, formatLocation } from "@/lib/constants";
 import { playerStatus } from "@/lib/player-status";
 
@@ -120,10 +121,10 @@ export default async function PlayersPage({
   const academy = filterPlayers(rawTeams.filter((t: any) => t.category === "academy"));
   const totalFiltered = [...youth, ...academy].reduce((s, t: any) => s + (t.players?.length ?? 0), 0);
 
-  function statusLabel(s: "ok" | "warn" | "danger"): string {
+  function statusLabel(s: "ok" | "warn" | "danger", hasInj?: boolean): string {
     if (s === "ok") return "Готовий";
     if (s === "warn") return "Обмежений";
-    return "Травмований";
+    return hasInj ? "Травмований" : "Не допущений";
   }
 
   function renderTeamGroup(label: string, teamList: any[]) {
@@ -208,7 +209,7 @@ export default async function PlayersPage({
                                   📦 В архіві
                                 </span>
                               ) : (
-                                <Badge variant={status}>{statusLabel(status)}</Badge>
+                                <Badge variant={status}>{statusLabel(status, !!activeInj)}</Badge>
                               )}
                               {gZone && !isArchiveView && (
                                 <span
@@ -297,6 +298,7 @@ export default async function PlayersPage({
             </p>
           </div>
           <div className="w-full sm:w-auto flex flex-wrap items-center gap-2.5">
+            <EhrImportButton />
             <Link
               href="/team/qr-cards"
               className="bg-slate-900/80 hover:bg-slate-800 text-sky-400 hover:text-white border border-sky-500/25 font-bold py-2.5 px-3.5 rounded-xl text-xs transition-all shadow-md active:scale-95 whitespace-nowrap flex items-center justify-center gap-1.5"
