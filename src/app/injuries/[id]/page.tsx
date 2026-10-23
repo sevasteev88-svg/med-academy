@@ -19,6 +19,8 @@ import Scat6ConcussionAssessment from "@/components/injuries/Scat6ConcussionAsse
 import type { ConcussionAssessment } from "@/types/concussion";
 import LsiSymmetryAssessmentCard from "@/components/injuries/LsiSymmetryAssessmentCard";
 import type { LsiAssessmentRecord } from "@/types/lsi";
+import { InjuryAttachmentsSection } from "@/components/injuries/InjuryAttachmentsSection";
+import type { InjuryAttachment } from "@/types/injury-attachment";
 import { hasConsent } from "@/lib/consents";
 
 type Props = { params: Promise<{ id: string }> };
@@ -60,7 +62,7 @@ export default async function InjuryDetailPage({ params }: Props) {
   const { id } = await params;
   const supabase = await createClient();
 
-  const [injuryRes, examsRes, logsRes, treatmentsRes, concussionsRes, lsiRes, clearanceRes] = await Promise.all([
+  const [injuryRes, examsRes, logsRes, treatmentsRes, concussionsRes, lsiRes, clearanceRes, attachmentsRes] = await Promise.all([
     supabase
       .from("injuries")
       .select(`*, players(id, first_name, last_name, date_of_birth, position, teams(name))`)
@@ -101,6 +103,12 @@ export default async function InjuryDetailPage({ params }: Props) {
       .like("note", "[RTP_CLEARANCE]%")
       .order("created_at", { ascending: false })
       .limit(1),
+    supabase
+      .from("injury_attachments")
+      .select("*")
+      .eq("injury_id", id)
+      .order("examination_date", { ascending: false })
+      .order("created_at", { ascending: false }),
   ]);
 
   const { data: injury } = injuryRes;
@@ -173,6 +181,8 @@ export default async function InjuryDetailPage({ params }: Props) {
       }
     })
     .filter(Boolean) as LsiAssessmentRecord[];
+
+  const initialAttachments: InjuryAttachment[] = (attachmentsRes?.data || []) as unknown as InjuryAttachment[];
 
   const isHeadInjury = injury.location === "head" || injury.injury_type === "concussion";
 
@@ -351,6 +361,15 @@ export default async function InjuryDetailPage({ params }: Props) {
             injuryId={injury.id}
             initialStudies={imagingStudies}
             playerName={playerName}
+          />
+        </div>
+
+        {/* Клінічні вкладення (Supabase Storage: МРТ, УЗД, Рентген, Висновки) */}
+        <div className="mb-4">
+          <InjuryAttachmentsSection
+            injuryId={injury.id}
+            playerId={injury.player_id}
+            initialAttachments={initialAttachments}
           />
         </div>
 

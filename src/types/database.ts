@@ -425,7 +425,9 @@ export type AuditAction =
   | "upload_injury_attachment"
   | "view_injury_attachment"
   | "archive_injury_attachment"
-  | "restore_injury_attachment";
+  | "restore_injury_attachment"
+  | "export_player_ehr"
+  | "import_player_ehr";
 
 export type AuditEntity =
   | "player"
