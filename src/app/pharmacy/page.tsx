@@ -21,7 +21,7 @@ export default async function PharmacyPage() {
       .order("date", { ascending: false }),
     supabase
       .from("players")
-      .select("id, first_name, last_name, teams(name), injuries(id, status)")
+      .select("id, first_name, last_name, date_of_birth, teams(name), injuries(id, injury_type, description, status)")
       .order("last_name"),
   ]);
 
@@ -29,7 +29,9 @@ export default async function PharmacyPage() {
     .map((l) => {
       try {
         const rawJson = l.note.replace("[TREATMENT] ", "");
-        return JSON.parse(rawJson) as MedicalTreatmentEntry;
+        const parsed = JSON.parse(rawJson) as MedicalTreatmentEntry;
+        parsed.log_id = l.id;
+        return parsed;
       } catch {
         return null;
       }
@@ -37,13 +39,23 @@ export default async function PharmacyPage() {
     .filter(Boolean) as MedicalTreatmentEntry[];
 
   const players = (playersRes.data || []).map((p: any) => {
-    const activeInjury = p.injuries?.find((inj: any) => inj.status === "active");
+    const activeInjuries = (p.injuries || []).filter(
+      (inj: any) => inj.status === "active" || inj.status === "rehabilitation"
+    );
+    const primaryInjury = activeInjuries[0] || null;
+
     return {
       id: p.id,
       first_name: p.first_name,
       last_name: p.last_name,
+      date_of_birth: p.date_of_birth || null,
       team_name: p.teams?.name || "Основний склад",
-      active_injury_id: activeInjury ? activeInjury.id : null,
+      active_injury_id: primaryInjury ? primaryInjury.id : null,
+      active_injuries: activeInjuries.map((inj: any) => ({
+        id: inj.id,
+        injury_type: inj.injury_type,
+        description: inj.description,
+      })),
     };
   });
 

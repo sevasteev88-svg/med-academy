@@ -119,14 +119,28 @@ export const ABSENCE_REASONS = [
 ] as const;
 
 /**
+ * Науково-методичні константи моніторингу навантаження (Gabbett ACWR).
+ * Пороги є емпіричними орієнтирами контролю тренувального стресу та втоми,
+ * а не детермінованими гарантіями або прямими прогнозами травм.
+ */
+export const ACWR_THRESHOLDS = {
+  UNDERLOAD_MAX: 0.8,  // < 0.8: Знижене навантаження (орієнтир ризику деадаптації)
+  SWEET_SPOT_MAX: 1.3, // 0.8 – 1.3: Оптимальний коридор навантаження (Sweet Spot)
+  CAUTION_MAX: 1.5,    // 1.3 – 1.5: Зона підвищеної уваги та моніторингу відновлення
+  // >= 1.5: Зона високого спайку навантаження
+  NOTE: "Пороги ACWR (0.8–1.3 та ≥1.5) є емпіричними орієнтирами моніторингу динаміки тренувань і не є абсолютним прогнозом виникнення травм.",
+} as const;
+
+/**
  * Розрахунок коефіцієнта ACWR (Gabbett Acute:Chronic Workload Ratio).
- * Враховує наукові правила задачі 3.1: якщо спостережень недостатньо (менше 14-28 днів
- * або хронічне навантаження 0), повертається статус "insufficient_data".
+ * Суворе наукове правило (3.1): якщо період спостережень менше 28 днів
+ * або хронічне навантаження дорівнює 0, повертається статус "insufficient_data".
+ * Гравці з недостатніми даними рахуються окремо і не потрапляють до Sweet Spot.
  */
 export function calculateAcwr(
   acuteLoad7d: number,
   chronicLoad28d: number,
-  options?: { chronicSessionsCount?: number }
+  options?: { chronicSessionsCount?: number; daysMonitored?: number }
 ): {
   acwr: number | null;
   riskZone: AcwrRiskZone;
@@ -136,14 +150,19 @@ export function calculateAcwr(
 } {
   const weeklyChronic = chronicLoad28d > 0 ? chronicLoad28d / 4 : 0;
   const sessionsCount = options?.chronicSessionsCount ?? (chronicLoad28d > 0 ? 4 : 0);
+  const daysMonitored = options?.daysMonitored;
 
   // Правило «недостатньо даних» (задача 3.1):
-  // Для розрахунку хронічного навантаження необхідно мінімум систематичних записів у 28-денному вікні.
-  if (weeklyChronic === 0 || sessionsCount < 3) {
+  // Потрібно щонайменше 28 днів моніторингу або систематична присутність записів у 28-денному вікні.
+  if (
+    (daysMonitored !== undefined && daysMonitored < 28) ||
+    weeklyChronic === 0 ||
+    sessionsCount < 3
+  ) {
     return {
       acwr: null,
       riskZone: "insufficient_data",
-      titleUa: "Недостатньо даних (триває базовий збір навантажень)",
+      titleUa: "Недостатньо даних (потрібно ≥28 днів моніторингу)",
       badgeClass: "bg-slate-800 text-slate-400 border-slate-700",
       isInsufficientData: true,
     };
@@ -151,29 +170,29 @@ export function calculateAcwr(
 
   const ratio = Math.round((acuteLoad7d / weeklyChronic) * 100) / 100;
 
-  if (ratio < 0.8) {
+  if (ratio < ACWR_THRESHOLDS.UNDERLOAD_MAX) {
     return {
       acwr: ratio,
       riskZone: "underload",
-      titleUa: "Недонавантаження (ACWR < 0.8) — ризик деадаптації",
+      titleUa: "Недонавантаження (ACWR < 0.8) — орієнтир: ризик деадаптації",
       badgeClass: "bg-blue-500/15 text-blue-400 border-blue-500/30",
       isInsufficientData: false,
     };
   }
-  if (ratio <= 1.3) {
+  if (ratio <= ACWR_THRESHOLDS.SWEET_SPOT_MAX) {
     return {
       acwr: ratio,
       riskZone: "sweet_spot",
-      titleUa: "Зона оптимуму (0.8 – 1.3) — Sweet Spot",
+      titleUa: "Зона оптимуму (0.8 – 1.3) — Sweet Spot (орієнтир)",
       badgeClass: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
       isInsufficientData: false,
     };
   }
-  if (ratio < 1.5) {
+  if (ratio < ACWR_THRESHOLDS.CAUTION_MAX) {
     return {
       acwr: ratio,
       riskZone: "caution",
-      titleUa: "Підвищене навантаження (1.3 – 1.5) — моніторинг",
+      titleUa: "Підвищене навантаження (1.3 – 1.5) — орієнтир: моніторинг",
       badgeClass: "bg-amber-500/15 text-amber-400 border-amber-500/30",
       isInsufficientData: false,
     };
@@ -181,7 +200,7 @@ export function calculateAcwr(
   return {
     acwr: ratio,
     riskZone: "danger",
-    titleUa: "Небезпечна зона (ACWR >= 1.5) — ризик травми x2..4",
+    titleUa: "Високе навантаження (ACWR ≥ 1.5) — орієнтир: спайк втоми",
     badgeClass: "bg-red-500/15 text-red-400 border-red-500/30 font-bold",
     isInsufficientData: false,
   };

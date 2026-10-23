@@ -2,14 +2,37 @@
 
 import { useState, useTransition, useMemo } from "react";
 import type { PharmacyItem, PharmacyCategory, WadaStatus, MedicalTreatmentEntry } from "@/types/pharmacy";
-import { PHARMACY_CATEGORY_LABELS, WADA_META, TREATMENT_CATEGORY_META } from "@/types/pharmacy";
-import { adjustPharmacyStockCountAction, updatePharmacyItemAction, prescribeTreatmentWithStockAction } from "@/actions/pharmacy-actions";
+import { PHARMACY_CATEGORY_LABELS, WADA_META, TREATMENT_CATEGORY_META, getExpiryStatus } from "@/types/pharmacy";
+import {
+  adjustPharmacyStockCountAction,
+  updatePharmacyItemAction,
+  prescribeTreatmentWithStockAction,
+  deleteTreatmentAndRollbackStockAction,
+} from "@/actions/pharmacy-actions";
+
+type PlayerOption = {
+  id: string;
+  first_name: string;
+  last_name: string;
+  date_of_birth?: string | null;
+  team_name: string;
+  active_injury_id?: string | null;
+  active_injuries?: { id: string; injury_type: string; description?: string }[];
+};
 
 type Props = {
   initialStock: PharmacyItem[];
   allTreatments: MedicalTreatmentEntry[];
-  players: { id: string; first_name: string; last_name: string; team_name: string; active_injury_id?: string | null }[];
+  players: PlayerOption[];
 };
+
+function calcAge(dob?: string | null): number | null {
+  if (!dob) return null;
+  const birth = new Date(dob);
+  const diff = Date.now() - birth.getTime();
+  if (isNaN(diff)) return null;
+  return Math.floor(diff / (365.25 * 24 * 3600 * 1000));
+}
 
 export default function ClubPharmacyClient({ initialStock, allTreatments, players }: Props) {
   const [stock, setStock] = useState<PharmacyItem[]>(initialStock);
@@ -20,6 +43,7 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
   const [selectedCategory, setSelectedCategory] = useState<PharmacyCategory | "all">("all");
   const [wadaFilter, setWadaFilter] = useState<WadaStatus | "all">("all");
   const [lowStockOnly, setLowStockOnly] = useState(false);
+  const [expiryFilter, setExpiryFilter] = useState<"all" | "expired" | "crit7" | "warn30" | "notice60">("all");
   const [activeTab, setActiveTab] = useState<"stock" | "ledger" | "wada_guide">("stock");
 
   // Prescription Modal State
@@ -30,12 +54,48 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
   const [quantityToDeduct, setQuantityToDeduct] = useState<number>(1);
   const [treatmentNotes, setTreatmentNotes] = useState<string>("");
   const [treatmentDosage, setTreatmentDosage] = useState<string>("");
+  const [treatmentDurationDays, setTreatmentDurationDays] = useState<number>(5);
+  const [treatmentDurationNote, setTreatmentDurationNote] = useState<string>("5 днів");
+  const [selectedInjuryId, setSelectedInjuryId] = useState<string>("");
+  const [customReason, setCustomReason] = useState<string>("");
+
+  // WADA S-Drug Doctor Confirmation State
+  const [doctorWadaConfirmed, setDoctorWadaConfirmed] = useState(false);
+  const [doctorWadaNote, setDoctorWadaNote] = useState("");
+
+  // Delete / Rollback State
+  const [deletingTreatmentId, setDeletingTreatmentId] = useState<string | null>(null);
 
   // Edit/Add Item Modal State
   const [itemModalOpen, setItemModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<PharmacyItem | null>(null);
 
   const [isPending, startTransition] = useTransition();
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 4000);
+  };
+
+  // Expiry statistics
+  const expiryStats = useMemo(() => {
+    let expired = 0;
+    let crit7 = 0;
+    let warn30 = 0;
+    let notice60 = 0;
+
+    for (const item of stock) {
+      if (!item.expiry_date) continue;
+      const exp = getExpiryStatus(item.expiry_date);
+      if (exp.tier === "expired") expired++;
+      else if (exp.tier === "critical_7") crit7++;
+      else if (exp.tier === "warning_30") warn30++;
+      else if (exp.tier === "notice_60") notice60++;
+    }
+
+    return { expired, crit7, warn30, notice60, totalAtRisk: expired + crit7 + warn30 + notice60 };
+  }, [stock]);
 
   // Low stock stats
   const lowStockCount = useMemo(
@@ -48,16 +108,45 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
       if (selectedCategory !== "all" && item.category !== selectedCategory) return false;
       if (wadaFilter !== "all" && item.wada_status !== wadaFilter) return false;
       if (lowStockOnly && item.stock_count > item.min_alert_threshold) return false;
+
+      if (expiryFilter !== "all") {
+        const exp = getExpiryStatus(item.expiry_date);
+        if (expiryFilter === "expired" && exp.tier !== "expired") return false;
+        if (expiryFilter === "crit7" && exp.tier !== "critical_7" && exp.tier !== "expired") return false;
+        if (expiryFilter === "warn30" && !["warning_30", "critical_7", "expired"].includes(exp.tier)) return false;
+        if (expiryFilter === "notice60" && exp.tier === "ok") return false;
+      }
+
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matchesName = item.name.toLowerCase().includes(q);
         const matchesActive = item.active_substance?.toLowerCase().includes(q);
         const matchesLocation = item.storage_location?.toLowerCase().includes(q);
-        if (!matchesName && !matchesActive && !matchesLocation) return false;
+        const matchesIndication = item.indications?.toLowerCase().includes(q);
+        if (!matchesName && !matchesActive && !matchesLocation && !matchesIndication) return false;
       }
       return true;
     });
-  }, [stock, selectedCategory, wadaFilter, lowStockOnly, searchQuery]);
+  }, [stock, selectedCategory, wadaFilter, lowStockOnly, expiryFilter, searchQuery]);
+
+  // Selected player details for prescription modal
+  const selectedPlayer = useMemo(() => {
+    return players.find((p) => p.id === selectedPlayerId) || null;
+  }, [players, selectedPlayerId]);
+
+  const selectedPlayerAge = useMemo(() => {
+    return calcAge(selectedPlayer?.date_of_birth);
+  }, [selectedPlayer]);
+
+  // Is selected item an S-drug requiring doctor confirmation?
+  const isSelectedDrugProhibited = useMemo(() => {
+    if (!selectedItemForPrescription) return false;
+    return (
+      selectedItemForPrescription.wada_status === "prohibited_in_competition" ||
+      selectedItemForPrescription.wada_status === "prohibited_always" ||
+      selectedItemForPrescription.wada_status === "requires_tue"
+    );
+  }, [selectedItemForPrescription]);
 
   // Adjust stock count directly (+ / -)
   const handleQuickAdjust = (itemId: string, delta: number) => {
@@ -65,6 +154,9 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
       const res = await adjustPharmacyStockCountAction(itemId, delta);
       if (res.success && res.newStock) {
         setStock(res.newStock);
+        showToast(delta > 0 ? "Залишок збільшено (+1)" : "Залишок списано (-1)");
+      } else if (res.error) {
+        showToast(`Помилка: ${res.error}`);
       }
     });
   };
@@ -73,6 +165,20 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
   const handleOpenPrescribe = (item: PharmacyItem) => {
     setSelectedItemForPrescription(item);
     setTreatmentDosage(item.notes || `1 ${item.unit}`);
+    setDoctorWadaConfirmed(false);
+    setDoctorWadaNote("");
+    setTreatmentDurationDays(5);
+    setTreatmentDurationNote("5 днів");
+    setQuantityToDeduct(1);
+    setTreatmentNotes("");
+
+    // default to player's primary injury if available
+    const curPlayer = players.find((p) => p.id === selectedPlayerId) || players[0];
+    if (curPlayer) {
+      setSelectedPlayerId(curPlayer.id);
+      setSelectedInjuryId(curPlayer.active_injury_id || "");
+    }
+    setCustomReason("");
     setPrescribeModalOpen(true);
   };
 
@@ -84,7 +190,11 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
     const player = players.find((p) => p.id === selectedPlayerId);
     if (!player) return;
 
-    // determine category mapping
+    if (isSelectedDrugProhibited && (!doctorWadaConfirmed || !doctorWadaNote.trim())) {
+      alert("Для S-препаратів WADA обов'язкове підтвердження лікаря та внесення обґрунтування / TUE!");
+      return;
+    }
+
     let treatCat: any = "medication";
     if (selectedItemForPrescription.category === "injections") treatCat = "injection";
     else if (selectedItemForPrescription.category === "tapes_bandages") treatCat = "taping";
@@ -95,13 +205,18 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
           player_id: player.id,
           player_name: `${player.last_name} ${player.first_name}`,
           team_name: player.team_name,
-          injury_id: player.active_injury_id || null,
+          injury_id: selectedInjuryId || null,
           date: prescriptionDate,
           category: treatCat,
           title: selectedItemForPrescription.name,
           dosage_or_params: treatmentDosage,
+          duration_days: treatmentDurationDays,
+          duration_note: treatmentDurationNote,
+          reason: customReason || (selectedInjuryId ? "Травма в процесі лікування" : "Планова терапія"),
           doctor_name: "Медичний штаб клубу",
           wada_status: selectedItemForPrescription.wada_status,
+          doctor_wada_confirmed: isSelectedDrugProhibited ? doctorWadaConfirmed : undefined,
+          doctor_confirmation_note: isSelectedDrugProhibited ? doctorWadaNote.trim() : undefined,
           notes: treatmentNotes || `Списано зі складу: ${quantityToDeduct} ${selectedItemForPrescription.unit}`,
         },
         selectedItemForPrescription.id,
@@ -122,6 +237,39 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
         setPrescribeModalOpen(false);
         setSelectedItemForPrescription(null);
         setTreatmentNotes("");
+        showToast(`Призначено гравцю ${player.last_name}! Списано ${quantityToDeduct} ${selectedItemForPrescription.unit}`);
+      } else if (res.error) {
+        showToast(`Помилка: ${res.error}`);
+      }
+    });
+  };
+
+  // Rollback / delete treatment
+  const handleRollbackTreatment = (treatment: MedicalTreatmentEntry) => {
+    if (!confirm(`Скасувати призначення "${treatment.title}" для гравця ${treatment.player_name || ""}? ${treatment.units_deducted ? `Списані одиниці (${treatment.units_deducted}) будуть автоматично повернуті на склад клубу.` : ""}`)) {
+      return;
+    }
+
+    setDeletingTreatmentId(treatment.id);
+    startTransition(async () => {
+      const res = await deleteTreatmentAndRollbackStockAction(treatment.id);
+      setDeletingTreatmentId(null);
+      if (res.success) {
+        setTreatments((prev) => prev.filter((t) => t.id !== treatment.id));
+        if (res.newStock) {
+          setStock(res.newStock);
+        } else if (res.rolledBackUnits && treatment.pharmacy_item_id) {
+          setStock((prev) =>
+            prev.map((item) =>
+              item.id === treatment.pharmacy_item_id
+                ? { ...item, stock_count: item.stock_count + res.rolledBackUnits! }
+                : item
+            )
+          );
+        }
+        showToast(`Призначення скасовано! ${res.rolledBackUnits ? `Повернуто на склад: +${res.rolledBackUnits} од.` : ""}`);
+      } else {
+        showToast(`Помилка: ${res.error}`);
       }
     });
   };
@@ -131,10 +279,17 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
     e.preventDefault();
     if (!editingItem || !editingItem.name.trim()) return;
 
+    if (!editingItem.wada_status) {
+      alert("Будь ласка, вкажіть офіційний статус WADA (Заповніть за актуальним списком WADA)!");
+      return;
+    }
+
     startTransition(async () => {
       const itemToSave: PharmacyItem = {
         ...editingItem,
         id: editingItem.id || `ph-${Date.now()}`,
+        min_alert_threshold: Math.max(1, editingItem.min_alert_threshold || 1),
+        stock_count: Math.max(0, editingItem.stock_count || 0),
       };
 
       const res = await updatePharmacyItemAction(itemToSave);
@@ -142,30 +297,41 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
         setStock(res.stock);
         setItemModalOpen(false);
         setEditingItem(null);
+        showToast("Дані препарату успішно збережено на складі");
+      } else if (res.error) {
+        showToast(`Помилка: ${res.error}`);
       }
     });
   };
 
   return (
     <div className="space-y-6">
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 bg-sky-600 text-white px-4 py-3 rounded-2xl shadow-2xl border border-sky-400 flex items-center gap-3 animate-fade-in">
+          <span>🔔</span>
+          <span className="text-sm font-semibold">{toastMessage}</span>
+        </div>
+      )}
+
       {/* Top Header Card */}
       <div className="rounded-2xl border border-sky-500/20 bg-slate-900/60 backdrop-blur-xl p-5 md:p-6 shadow-xl relative overflow-hidden">
         <div className="absolute -top-12 -right-12 w-48 h-48 bg-sky-500/10 rounded-full blur-3xl pointer-events-none" />
 
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="text-2xl md:text-3xl">💊</span>
               <h1 className="text-xl md:text-2xl font-black text-white tracking-wide">
                 Аптека та Медичний Склад Клубу
               </h1>
               <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-sky-500/15 text-sky-300 border border-sky-500/30">
-                PRO СКЛАД
+                PRO СКЛАД & WADA
               </span>
             </div>
-            <p className="text-slate-400 text-sm mt-1">
-              Централізований облік медикаментів, ін&apos;єкцій PRP, тейпів з контролем антидопінгового статусу WADA та
-              списанням гравцям.
+            <p className="text-slate-400 text-sm mt-1 max-w-3xl">
+              Облік сертифікованих медикаментів, ін&apos;єкційних матеріалів та виробів із контролем вікових обмежень (min_age),
+              застережень WADA (S-list / TUE), термінів придатності (60/30/7 днів) та відкатом списання при видаленні.
             </p>
           </div>
 
@@ -181,7 +347,13 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
                   unit: "ампул",
                   min_alert_threshold: 5,
                   expiry_date: new Date(Date.now() + 365 * 24 * 3600 * 1000).toISOString().split("T")[0],
-                  wada_status: "allowed",
+                  wada_status: "" as any, // Жодних медичних значень за замовчуванням
+                  wada_source_note: "",
+                  washout_note: "",
+                  min_age: null,
+                  age_note: "",
+                  requires_review: false,
+                  indications: "",
                   storage_location: "Медкабінет база",
                   notes: "",
                 });
@@ -193,6 +365,44 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
             </button>
           </div>
         </div>
+
+        {/* Expiry Risk Banner (if any items expired or expiring soon) */}
+        {expiryStats.totalAtRisk > 0 && (
+          <div className="mt-5 p-4 rounded-xl border border-amber-500/30 bg-amber-950/20 flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl animate-pulse">
+                {expiryStats.expired > 0 ? "🛑" : "⚠️"}
+              </span>
+              <div>
+                <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                  <span>Контроль термінів придатності медикаментів</span>
+                  {expiryStats.expired > 0 && (
+                    <span className="px-2 py-0.5 rounded-full text-xs bg-rose-500/20 text-rose-300 border border-rose-500/40">
+                      {expiryStats.expired} прострочено!
+                    </span>
+                  )}
+                </h4>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  Потребують ревізії: {expiryStats.crit7 > 0 && `🔴 ≤7 днів: ${expiryStats.crit7} од. `}
+                  {expiryStats.warn30 > 0 && `🟠 ≤30 днів: ${expiryStats.warn30} од. `}
+                  {expiryStats.notice60 > 0 && `🟡 ≤60 днів: ${expiryStats.notice60} од.`}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  setActiveTab("stock");
+                  setExpiryFilter(expiryStats.expired > 0 ? "expired" : "warn30");
+                }}
+                className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-200 text-xs font-bold transition-colors"
+              >
+                Показати препарати на контролі →
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Quick Stock Metrics */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-6">
@@ -206,27 +416,27 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
             <div className={`text-2xl font-black mt-1 ${lowStockCount > 0 ? "text-rose-400" : "text-emerald-400"}`}>
               {lowStockCount}
             </div>
-            <div className="text-[11px] text-slate-500 mt-0.5">Потребують поповнення</div>
+            <div className="text-[11px] text-slate-500 mt-0.5">Поріг налаштовується індивідуально</div>
           </div>
           <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800">
             <div className="text-slate-400 text-xs font-semibold">WADA Особливий контроль</div>
             <div className="text-2xl font-black text-amber-400 mt-1">
-              {stock.filter((i) => i.wada_status !== "allowed").length}
+              {stock.filter((i) => i.wada_status && i.wada_status !== "allowed").length}
             </div>
-            <div className="text-[11px] text-slate-500 mt-0.5">Заборонено або TUE</div>
+            <div className="text-[11px] text-slate-500 mt-0.5">Заборонено або TUE (S-list)</div>
           </div>
           <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800">
             <div className="text-slate-400 text-xs font-semibold">Видано / Проведено процедур</div>
             <div className="text-2xl font-black text-sky-400 mt-1">{treatments.length}</div>
-            <div className="text-[11px] text-slate-500 mt-0.5">Зафіксовано в журналі</div>
+            <div className="text-[11px] text-slate-500 mt-0.5">З можливістю відкату залишків</div>
           </div>
         </div>
 
         {/* Tab Switcher */}
-        <div className="flex items-center gap-2 border-b border-slate-800 mt-6 pt-2">
+        <div className="flex items-center gap-2 border-b border-slate-800 mt-6 pt-2 overflow-x-auto">
           <button
             onClick={() => setActiveTab("stock")}
-            className={`pb-3 px-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${
+            className={`pb-3 px-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 shrink-0 ${
               activeTab === "stock"
                 ? "border-sky-400 text-sky-400"
                 : "border-transparent text-slate-400 hover:text-slate-200"
@@ -237,24 +447,24 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
           </button>
           <button
             onClick={() => setActiveTab("ledger")}
-            className={`pb-3 px-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${
+            className={`pb-3 px-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 shrink-0 ${
               activeTab === "ledger"
                 ? "border-sky-400 text-sky-400"
                 : "border-transparent text-slate-400 hover:text-slate-200"
             }`}
           >
-            <span>📜 Журнал призначень та списання</span>
+            <span>📜 Журнал призначень та відкат</span>
             <span className="px-2 py-0.5 rounded-full text-xs bg-slate-800 text-slate-300">{treatments.length}</span>
           </button>
           <button
             onClick={() => setActiveTab("wada_guide")}
-            className={`pb-3 px-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${
+            className={`pb-3 px-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 shrink-0 ${
               activeTab === "wada_guide"
                 ? "border-sky-400 text-sky-400"
                 : "border-transparent text-slate-400 hover:text-slate-200"
             }`}
           >
-            <span>🛡️ Антидопінговий довідник WADA</span>
+            <span>🛡️ Антидопінговий регламент WADA</span>
           </button>
         </div>
       </div>
@@ -269,7 +479,7 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Пошук за назвою, діючою речовиною або локацією..."
+                placeholder="Пошук за назвою, діючою речовиною, показанням або локацією..."
                 className="w-full bg-slate-950/80 border border-slate-700/60 rounded-xl px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-sky-500"
               />
             </div>
@@ -297,9 +507,22 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
               >
                 <option value="all">WADA: Усі статуси</option>
                 <option value="allowed">✓ Дозволено</option>
-                <option value="prohibited_in_competition">⚠️ Заборонено у змаганнях</option>
+                <option value="prohibited_in_competition">⚠️ Заборонено у змаганнях (S-List)</option>
                 <option value="prohibited_always">🛑 Заборонено завжди</option>
                 <option value="requires_tue">📋 Потребує TUE</option>
+              </select>
+
+              <select
+                value={expiryFilter}
+                onChange={(e) => setExpiryFilter(e.target.value as any)}
+                aria-label="Фільтр терміну придатності"
+                className="bg-slate-950/80 border border-slate-700/60 rounded-xl px-3 py-2 text-xs font-semibold text-slate-200 focus:outline-none focus:border-sky-500"
+              >
+                <option value="all">Термін: Усі позиції</option>
+                <option value="expired">🛑 Тільки прострочені</option>
+                <option value="crit7">🔴 Спливає ≤ 7 діб</option>
+                <option value="warn30">🟠 Спливає ≤ 30 діб</option>
+                <option value="notice60">🟡 Контроль ≤ 60 діб</option>
               </select>
 
               <button
@@ -324,63 +547,114 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredStock.map((item) => {
               const catMeta = PHARMACY_CATEGORY_LABELS[item.category] || { label: "Інше", icon: "💊" };
-              const wadaMeta = WADA_META[item.wada_status] || WADA_META.allowed;
+              const wadaMeta = item.wada_status ? WADA_META[item.wada_status] : null;
               const isLowStock = item.stock_count <= item.min_alert_threshold;
+              const expiry = getExpiryStatus(item.expiry_date);
 
               return (
                 <div
                   key={item.id}
                   className={`rounded-2xl border bg-slate-900/60 backdrop-blur-md p-4 transition-all hover:border-sky-500/40 flex flex-col justify-between ${
-                    isLowStock ? "border-rose-500/30 shadow-lg shadow-rose-950/20" : "border-slate-800"
+                    expiry.tier === "expired"
+                      ? "border-rose-500/50 bg-rose-950/10 shadow-lg shadow-rose-950/30"
+                      : isLowStock
+                      ? "border-rose-500/30 shadow-lg shadow-rose-950/20"
+                      : "border-slate-800"
                   }`}
                 >
-                  <div>
+                  <div className="space-y-3">
                     {/* Header: Category & WADA badge */}
-                    <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-start justify-between gap-2 flex-wrap">
                       <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-800/80 text-slate-300 border border-slate-700/50 flex items-center gap-1.5">
                         <span>{catMeta.icon}</span>
                         <span>{catMeta.label}</span>
                       </span>
 
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[11px] font-bold border flex items-center gap-1 shrink-0 ${wadaMeta.badgeClass}`}
-                        title={wadaMeta.label}
-                      >
-                        <span>{wadaMeta.icon}</span>
-                        <span>
-                          {item.wada_status === "allowed"
-                            ? "WADA OK"
-                            : item.wada_status === "prohibited_in_competition"
-                            ? "S-List"
-                            : item.wada_status === "requires_tue"
-                            ? "TUE"
-                            : "Бан"}
+                      {wadaMeta ? (
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[11px] font-bold border flex items-center gap-1 shrink-0 ${wadaMeta.badgeClass}`}
+                          title={wadaMeta.label}
+                        >
+                          <span>{wadaMeta.icon}</span>
+                          <span>
+                            {item.wada_status === "allowed"
+                              ? "WADA OK"
+                              : item.wada_status === "prohibited_in_competition"
+                              ? "S-List"
+                              : item.wada_status === "requires_tue"
+                              ? "TUE"
+                              : "Бан"}
+                          </span>
                         </span>
-                      </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                          ⚠️ Не заповнено WADA
+                        </span>
+                      )}
                     </div>
 
                     {/* Title & Active Substance */}
-                    <div className="mt-3">
+                    <div>
                       <h2 className="text-base font-bold text-white leading-tight">{item.name}</h2>
                       {item.active_substance && (
                         <p className="text-xs text-sky-400 font-mono mt-0.5">{item.active_substance}</p>
                       )}
                     </div>
 
-                    {/* Metadata & Storage */}
-                    <div className="mt-3 space-y-1 text-xs text-slate-400">
+                    {/* Indications (Показання за інструкцією) */}
+                    {item.indications && (
+                      <div className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800 text-xs">
+                        <span className="text-[10px] uppercase font-mono font-bold text-slate-400 block mb-0.5">
+                          Показання (за інструкцією):
+                        </span>
+                        <p className="text-slate-300 leading-relaxed line-clamp-3">{item.indications}</p>
+                      </div>
+                    )}
+
+                    {/* Safety tags: min_age & requires_review */}
+                    <div className="flex flex-wrap gap-1.5">
+                      {item.min_age !== null && item.min_age !== undefined && (
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
+                          👶 Вік: від {item.min_age} р.
+                        </span>
+                      )}
+                      {item.requires_review && (
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-yellow-500/15 text-yellow-300 border border-yellow-500/30">
+                          🔍 Потребує ревізії лікарем
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Age note / WADA washout notes */}
+                    {(item.age_note || item.washout_note) && (
+                      <div className="space-y-1 text-[11px] text-slate-400 bg-slate-950/40 p-2 rounded-lg border border-slate-800/60">
+                        {item.age_note && (
+                          <div className="text-amber-300/90 leading-tight">
+                            <span className="font-semibold">Вікові особливості:</span> {item.age_note}
+                          </div>
+                        )}
+                        {item.washout_note && (
+                          <div className="text-sky-300/90 leading-tight">
+                            <span className="font-semibold">Період виведення:</span> {item.washout_note}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Expiry status badge & Location */}
+                    <div className="space-y-1.5 text-xs text-slate-400">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-slate-500">📅 Термін придатності:</span>
+                        <span className={`px-2 py-0.5 rounded text-[10px] border ${expiry.badgeClass}`}>
+                          {item.expiry_date} · {expiry.label}
+                        </span>
+                      </div>
+
                       {item.storage_location && (
                         <div className="flex items-center gap-1.5">
                           <span className="text-slate-500">📍 Локація:</span>
                           <span className="text-slate-200">{item.storage_location}</span>
                         </div>
-                      )}
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-slate-500">📅 Термін дії:</span>
-                        <span className="text-slate-200 font-mono">{item.expiry_date}</span>
-                      </div>
-                      {item.notes && (
-                        <p className="text-[11px] text-slate-400 italic line-clamp-2 mt-1">{item.notes}</p>
                       )}
                     </div>
                   </div>
@@ -388,21 +662,30 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
                   {/* Stock Level & Actions */}
                   <div className="mt-4 pt-3 border-t border-slate-800/80">
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs text-slate-400 font-medium">Залишок:</span>
+                      <span className="text-xs text-slate-400 font-medium">Залишок на складі:</span>
                       <div className="flex items-center gap-1.5">
                         <span
                           className={`text-lg font-black ${
-                            isLowStock ? "text-rose-400 animate-pulse" : "text-emerald-400"
+                            item.stock_count === 0
+                              ? "text-slate-500"
+                              : isLowStock
+                              ? "text-rose-400 animate-pulse"
+                              : "text-emerald-400"
                           }`}
                         >
                           {item.stock_count}
                         </span>
                         <span className="text-xs text-slate-400">{item.unit}</span>
-                        {isLowStock && (
-                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                            MIN: {item.min_alert_threshold}
-                          </span>
-                        )}
+                        <span
+                          className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${
+                            isLowStock
+                              ? "bg-rose-500/20 text-rose-300 border-rose-500/30"
+                              : "bg-slate-800 text-slate-400 border-slate-700"
+                          }`}
+                          title="Індивідуальний поріг низького залишку для даного препарату"
+                        >
+                          Мін. поріг: {item.min_alert_threshold}
+                        </span>
                       </div>
                     </div>
 
@@ -440,7 +723,7 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
                           setEditingItem(item);
                           setItemModalOpen(true);
                         }}
-                        title="Редагувати параметри позиції"
+                        title="Редагувати параметри препарату"
                         className="w-8 h-8 rounded-xl bg-slate-800/60 hover:bg-slate-700/60 border border-slate-700/50 text-slate-300 flex items-center justify-center text-xs"
                       >
                         ✏️
@@ -454,14 +737,19 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
         </div>
       )}
 
-      {/* TAB 2: TREATMENTS & DEDUCTIONS LEDGER */}
+      {/* TAB 2: TREATMENTS & DEDUCTIONS LEDGER (WITH ROLLBACK) */}
       {activeTab === "ledger" && (
         <div className="rounded-2xl border border-slate-800 bg-slate-900/60 backdrop-blur-md p-5 shadow-xl">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <span>📜</span> Журнал виконаних призначень та медичних втручань
-            </h2>
-            <span className="text-xs text-slate-400">Усього записів: {treatments.length}</span>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+            <div>
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <span>📜</span> Журнал виконаних призначень та медичних втручань
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Кожне призначення фіксує дозу, тривалість, причину та лікаря. При скасуванні списані медикаменти повертаються на склад.
+              </p>
+            </div>
+            <span className="text-xs text-slate-400 font-mono">Усього записів: {treatments.length}</span>
           </div>
 
           {treatments.length === 0 ? (
@@ -473,11 +761,13 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
                   <tr className="border-b border-slate-800 text-slate-400 text-xs uppercase tracking-wider">
                     <th className="py-3 px-3">Дата</th>
                     <th className="py-3 px-3">Гравець / Команда</th>
-                    <th className="py-3 px-3">Препарат / Процедура</th>
-                    <th className="py-3 px-3">Дозування / Параметри</th>
-                    <th className="py-3 px-3">WADA</th>
+                    <th className="py-3 px-3">Препарат / Втручання</th>
+                    <th className="py-3 px-3">Доза / Тривалість</th>
+                    <th className="py-3 px-3">Причина / Травма</th>
+                    <th className="py-3 px-3">WADA Статус</th>
                     <th className="py-3 px-3">Списано</th>
                     <th className="py-3 px-3">Лікар</th>
+                    <th className="py-3 px-3 text-right">Дія</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
@@ -487,7 +777,7 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
                       icon: "💊",
                       badgeClass: "",
                     };
-                    const wada = WADA_META[tr.wada_status] || WADA_META.allowed;
+                    const wada = tr.wada_status ? WADA_META[tr.wada_status] : WADA_META.allowed;
 
                     return (
                       <tr key={tr.id} className="hover:bg-slate-800/30 transition-colors">
@@ -503,14 +793,38 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
                           </div>
                           <span className="text-[10px] text-slate-400">{catMeta.label}</span>
                         </td>
-                        <td className="py-3 px-3 text-slate-300 text-xs">{tr.dosage_or_params || "—"}</td>
+                        <td className="py-3 px-3 text-slate-300 text-xs">
+                          <div className="font-semibold">{tr.dosage_or_params || "—"}</div>
+                          {tr.duration_note && (
+                            <div className="text-[10px] text-sky-400 font-mono">
+                              Курс: {tr.duration_note}
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 text-slate-300 text-xs">
+                          <div className="max-w-xs truncate" title={tr.reason || ""}>
+                            {tr.reason || "Планова терапія"}
+                          </div>
+                          {tr.injury_id && (
+                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-red-500/15 text-red-300 border border-red-500/20">
+                              Пов&apos;язана травма
+                            </span>
+                          )}
+                        </td>
                         <td className="py-3 px-3">
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold border inline-flex items-center gap-1 ${wada.badgeClass}`}
-                          >
-                            <span>{wada.icon}</span>
-                            <span>{wada.label.split(":")[0]}</span>
-                          </span>
+                          <div className="space-y-1">
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold border inline-flex items-center gap-1 ${wada.badgeClass}`}
+                            >
+                              <span>{wada.icon}</span>
+                              <span>{wada.label.split(":")[0]}</span>
+                            </span>
+                            {tr.doctor_wada_confirmed && (
+                              <div className="text-[9px] text-emerald-400 font-semibold" title={tr.doctor_confirmation_note || ""}>
+                                ✓ Лікар підтвердив S-list
+                              </div>
+                            )}
+                          </div>
                         </td>
                         <td className="py-3 px-3">
                           {tr.units_deducted ? (
@@ -522,6 +836,16 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
                           )}
                         </td>
                         <td className="py-3 px-3 text-slate-400 text-xs">{tr.doctor_name}</td>
+                        <td className="py-3 px-3 text-right">
+                          <button
+                            onClick={() => handleRollbackTreatment(tr)}
+                            disabled={deletingTreatmentId === tr.id || isPending}
+                            title="Скасувати призначення та повернути списані одиниці на склад"
+                            className="px-2.5 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 text-xs font-bold transition-all disabled:opacity-40"
+                          >
+                            {deletingTreatmentId === tr.id ? "Відкат..." : "✕ Відкат"}
+                          </button>
+                        </td>
                       </tr>
                     );
                   })}
@@ -540,7 +864,7 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
             <div>
               <h2 className="text-lg font-bold text-white">Регламент антидопінгового контролю WADA у футболі</h2>
               <p className="text-slate-400 text-xs">
-                Офіційні вимоги УАФ, UEFA та WADA щодо використання фармакологічних препаратів для медичного штабу.
+                Офіційні вимоги УАФ, UEFA та WADA щодо застосування фармакологічних препаратів для медичного штабу.
               </p>
             </div>
           </div>
@@ -552,8 +876,7 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
               </div>
               <p className="text-xs text-slate-300 leading-relaxed">
                 НПЗЗ (Німесулід, Ібупрофен, Диклофенак), парацетамол, хондропротектори, гіалуронова кислота,
-                PRP-терапія (за умови відсутності фактору росту ззовні), вітамінно-мінеральні комплекси без
-                заборонених прекурсорів.
+                PRP-терапія (за умови відсутності факторів росту ззовні), сертифіковані вітамінні комплекси без заборонених домішок.
               </p>
             </div>
 
@@ -562,9 +885,9 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
                 <span>⚠️</span> Глюкокортикоїди (S9) — Змагальний період
               </div>
               <p className="text-xs text-slate-300 leading-relaxed">
-                Дексаметазон, бетаметазон, дипроспан заборонені до ін&apos;єкційного введення під час змагань. Період
-                виведення становить від 3 до 10 днів залежно від форми. У разі термінового клінічного застосування
-                необхідне оформлення <strong>TUE (Therapeutic Use Exemption)</strong>.
+                Дексаметазон, бетаметазон, тріамцинолон заборонені до будь-якого ін&apos;єкційного введення під час змагань.
+                Період виведення становить від 7 до 14 днів. У разі ургентного застосування обов&apos;язкове оформлення{" "}
+                <strong>TUE (Therapeutic Use Exemption)</strong>.
               </p>
             </div>
 
@@ -573,8 +896,8 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
                 <span>🛑</span> Заборонено завжди (S1 - S5)
               </div>
               <p className="text-xs text-slate-300 leading-relaxed">
-                Анаболічні андрогенні стероїди, пептидні гормони, модулятори метаболізму, діуретики та маскуючі
-                агенти. Суворо заборонено в будь-який час, як на змаганнях, так і у відновлювальний період.
+                Анаболічні стероїди, пептидні гормони, модулятори метаболізму, діуретики та маскуючі агенти.
+                Суворо заборонено як на змаганнях, так і у тренувальний чи відновний період.
               </p>
             </div>
 
@@ -583,8 +906,8 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
                 <span>📋</span> Внутрішньовенні інфузії (Крапельниці M2.2)
               </div>
               <p className="text-xs text-slate-300 leading-relaxed">
-                Внутрішньовенні інфузії та/або ін&apos;єкції в обсязі понад 100 мл за 12-годинний період заборонені, крім
-                тих випадків, коли вони правомірно отримані в стаціонарі або при хірургічних втручаннях.
+                Інфузії в обсязі понад 100 мл за 12-годинний період заборонені, крім випадків стаціонарної медичної допомоги
+                або хірургічних втручань з офіційною випискою.
               </p>
             </div>
           </div>
@@ -593,33 +916,76 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
 
       {/* MODAL: PRESCRIBE ITEM TO PLAYER */}
       {prescribeModalOpen && selectedItemForPrescription && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="w-full max-w-lg rounded-2xl bg-slate-900 border border-sky-500/30 p-6 shadow-2xl relative">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
+          <div className="w-full max-w-lg rounded-2xl bg-slate-900 border border-sky-500/30 p-6 shadow-2xl relative my-8">
             <h3 className="text-lg font-bold text-white flex items-center gap-2">
-              <span>📋</span> Призначити препарат та списати залишки
+              <span>📋</span> Призначити препарат та списати зі складу
             </h3>
             <p className="text-xs text-slate-400 mt-1">
-              Обрано: <strong className="text-white">{selectedItemForPrescription.name}</strong> (Залишок:{" "}
+              Обрано: <strong className="text-white">{selectedItemForPrescription.name}</strong> (Доступний залишок:{" "}
               {selectedItemForPrescription.stock_count} {selectedItemForPrescription.unit})
             </p>
 
             <form onSubmit={handleSubmitPrescription} className="mt-4 space-y-4">
+              {/* Player selection & Age warning */}
               <div>
                 <label className="block text-xs font-medium text-slate-400 mb-1">Оберіть футболіста:</label>
                 <select
                   value={selectedPlayerId}
-                  onChange={(e) => setSelectedPlayerId(e.target.value)}
+                  onChange={(e) => {
+                    const pid = e.target.value;
+                    setSelectedPlayerId(pid);
+                    const pl = players.find((p) => p.id === pid);
+                    if (pl) setSelectedInjuryId(pl.active_injury_id || "");
+                  }}
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500"
                 >
-                  {players.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.last_name} {p.first_name} ({p.team_name}){" "}
-                      {p.active_injury_id ? "— 🩹 На реабілітації" : ""}
-                    </option>
-                  ))}
+                  {players.map((p) => {
+                    const pAge = calcAge(p.date_of_birth);
+                    return (
+                      <option key={p.id} value={p.id}>
+                        {p.last_name} {p.first_name} {pAge !== null ? `(${pAge} р.)` : ""} — {p.team_name}{" "}
+                        {p.active_injury_id ? "— 🩹 Є травма" : ""}
+                      </option>
+                    );
+                  })}
                 </select>
+
+                {/* 2. REAL-TIME AGE VERIFICATION WARNING */}
+                {selectedItemForPrescription.min_age !== null &&
+                  selectedItemForPrescription.min_age !== undefined &&
+                  selectedPlayerAge !== null &&
+                  selectedPlayerAge < selectedItemForPrescription.min_age && (
+                    <div className="mt-2.5 p-3 rounded-xl bg-rose-500/20 border border-rose-500/40 text-xs text-rose-200 space-y-1">
+                      <div className="font-bold flex items-center gap-1.5 text-rose-300">
+                        <span>⚠️</span> КЛІНІЧНЕ ВІКОВЕ ЗАСТЕРЕЖЕННЯ:
+                      </div>
+                      <p>
+                        Вік гравця <strong>{selectedPlayerAge} р.</strong> менший за мінімальний рекомендований для даного препарату (<strong>{selectedItemForPrescription.min_age} р.</strong>).
+                      </p>
+                      {selectedItemForPrescription.age_note && (
+                        <p className="text-[11px] text-rose-300/90 italic pt-1 border-t border-rose-500/20">
+                          {selectedItemForPrescription.age_note}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                {/* Generic age note notice if player satisfies min_age or age unknown */}
+                {selectedItemForPrescription.age_note &&
+                  !(
+                    selectedItemForPrescription.min_age !== null &&
+                    selectedItemForPrescription.min_age !== undefined &&
+                    selectedPlayerAge !== null &&
+                    selectedPlayerAge < selectedItemForPrescription.min_age
+                  ) && (
+                    <div className="mt-2 p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-xs text-amber-200">
+                      <span className="font-bold">Вікова примітка:</span> {selectedItemForPrescription.age_note}
+                    </div>
+                  )}
               </div>
 
+              {/* Date & Quantity */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-slate-400 mb-1">Дата призначення:</label>
@@ -632,7 +998,7 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-400 mb-1">
-                    Кількість для списання ({selectedItemForPrescription.unit}):
+                    Списати зі складу ({selectedItemForPrescription.unit}):
                   </label>
                   <input
                     type="number"
@@ -645,24 +1011,117 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
                 </div>
               </div>
 
+              {/* Dosage & Duration */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">Дозування / схема:</label>
+                  <input
+                    type="text"
+                    required
+                    value={treatmentDosage}
+                    onChange={(e) => setTreatmentDosage(e.target.value)}
+                    placeholder="Напр., 100 мг 2 р/добу"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">Тривалість курсу:</label>
+                  <input
+                    type="text"
+                    required
+                    value={treatmentDurationNote}
+                    onChange={(e) => {
+                      setTreatmentDurationNote(e.target.value);
+                      const parsed = parseInt(e.target.value);
+                      if (!isNaN(parsed)) setTreatmentDurationDays(parsed);
+                    }}
+                    placeholder="Напр., 5 днів"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500"
+                  />
+                </div>
+              </div>
+
+              {/* Reason / Related Injury */}
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Схема прийому / Дозування:</label>
+                <label className="block text-xs font-medium text-slate-400 mb-1">Причина / пов&apos;язана травма:</label>
+                {selectedPlayer?.active_injuries && selectedPlayer.active_injuries.length > 0 ? (
+                  <select
+                    value={selectedInjuryId}
+                    onChange={(e) => setSelectedInjuryId(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-500 mb-2"
+                  >
+                    <option value="">Без прив&apos;язки до травми (планова терапія)</option>
+                    {selectedPlayer.active_injuries.map((inj) => (
+                      <option key={inj.id} value={inj.id}>
+                        Травма: {inj.injury_type} {inj.description ? `(${inj.description})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
+
                 <input
                   type="text"
-                  value={treatmentDosage}
-                  onChange={(e) => setTreatmentDosage(e.target.value)}
-                  placeholder="Напр., 1 пакетик 2 р/день або 2.0 мл внутрішньосуглобово"
+                  value={customReason}
+                  onChange={(e) => setCustomReason(e.target.value)}
+                  placeholder="Вкажіть клінічний діагноз або причину призначення (напр., міозит, артралгія)..."
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500"
                 />
               </div>
 
+              {/* 2. WADA S-DRUG CONFIRMATION & JOURNAL ENTRY */}
+              {isSelectedDrugProhibited && (
+                <div className="p-4 rounded-xl bg-amber-950/30 border border-amber-500/40 space-y-3">
+                  <div className="flex items-center gap-2 text-amber-300 font-bold text-xs">
+                    <span>⚠️</span>
+                    <span>КОНТРОЛЬ WADA: Препарат належить до списку S-моніторингу або заборонених</span>
+                  </div>
+
+                  {selectedItemForPrescription.wada_source_note && (
+                    <p className="text-[11px] text-slate-300">
+                      <strong>Джерело:</strong> {selectedItemForPrescription.wada_source_note}
+                    </p>
+                  )}
+                  {selectedItemForPrescription.washout_note && (
+                    <p className="text-[11px] text-sky-300">
+                      <strong>Період виведення:</strong> {selectedItemForPrescription.washout_note}
+                    </p>
+                  )}
+
+                  <label className="flex items-start gap-2.5 text-xs text-slate-200 cursor-pointer pt-1">
+                    <input
+                      type="checkbox"
+                      checked={doctorWadaConfirmed}
+                      onChange={(e) => setDoctorWadaConfirmed(e.target.checked)}
+                      className="mt-0.5 rounded border-amber-500 text-sky-500 focus:ring-sky-500"
+                    />
+                    <span>
+                      Я як лікар підтверджую медичну необхідність призначення субстанції з моніторингу WADA / наявність чи оформлення TUE / облік періоду виведення перед змаганнями.
+                    </span>
+                  </label>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-amber-300 mb-1">
+                      Клінічне обґрунтування лікаря / номер TUE (обов&apos;язково для запису в журнал):
+                    </label>
+                    <textarea
+                      rows={2}
+                      required
+                      value={doctorWadaNote}
+                      onChange={(e) => setDoctorWadaNote(e.target.value)}
+                      placeholder="Вкажіть підставу для введення, вичерпаність альтернативних дозволених засобів або номер заявки TUE..."
+                      className="w-full bg-slate-950 border border-amber-500/40 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
+                    />
+                  </div>
+                </div>
+              )}
+
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Примітки лікаря:</label>
+                <label className="block text-xs font-medium text-slate-400 mb-1">Додаткові примітки лікаря:</label>
                 <textarea
                   rows={2}
                   value={treatmentNotes}
                   onChange={(e) => setTreatmentNotes(e.target.value)}
-                  placeholder="Особливості введення, динаміка симптомів тощо..."
+                  placeholder="Особливості введення, рекомендації щодо прийому..."
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500"
                 />
               </div>
@@ -677,10 +1136,13 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
                 </button>
                 <button
                   type="submit"
-                  disabled={isPending}
-                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold text-xs shadow-lg shadow-sky-500/20"
+                  disabled={
+                    isPending ||
+                    (isSelectedDrugProhibited && (!doctorWadaConfirmed || !doctorWadaNote.trim()))
+                  }
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold text-xs shadow-lg shadow-sky-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  {isPending ? "Фіксація..." : "Підтвердити та списати"}
+                  {isPending ? "Фіксація..." : "Підтвердити призначення та списати"}
                 </button>
               </div>
             </form>
@@ -690,21 +1152,26 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
 
       {/* MODAL: ADD / EDIT PHARMACY ITEM */}
       {itemModalOpen && editingItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="w-full max-w-lg rounded-2xl bg-slate-900 border border-sky-500/30 p-6 shadow-2xl relative">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
+          <div className="w-full max-w-xl rounded-2xl bg-slate-900 border border-sky-500/30 p-6 shadow-2xl relative my-8">
             <h3 className="text-lg font-bold text-white flex items-center gap-2">
               <span>{editingItem.id ? "✏️ Редагувати засіб" : "➕ Нова позиція складу"}</span>
             </h3>
+            <p className="text-xs text-slate-400 mt-1">
+              Заповнюється лікарем клубу. Усі медичні дані мають бути об&apos;єктивними, без рекламних формулювань.
+            </p>
 
             <form onSubmit={handleSaveItem} className="mt-4 space-y-3.5">
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Торгова назва препарату / виробу:</label>
+                <label className="block text-xs font-medium text-slate-400 mb-1">
+                  Торгова назва препарату / виробу: <span className="text-rose-400">*</span>
+                </label>
                 <input
                   type="text"
                   required
                   value={editingItem.name}
                   onChange={(e) => setEditingItem({ ...editingItem, name: e.target.value })}
-                  placeholder="Напр., PRP Набори Autologous"
+                  placeholder="Напр., Німесулід 100 мг або Кінезіотейп K-Active"
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500"
                 />
               </div>
@@ -715,8 +1182,22 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
                   type="text"
                   value={editingItem.active_substance || ""}
                   onChange={(e) => setEditingItem({ ...editingItem, active_substance: e.target.value })}
-                  placeholder="Напр., Натрію гіалуронат або Німесулід"
+                  placeholder="Напр., Nimesulide або Dexamethasone"
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500"
+                />
+              </div>
+
+              {/* 6. NEUTRAL CLINICAL INDICATIONS */}
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1">
+                  Показання (за інструкцією):
+                </label>
+                <textarea
+                  rows={2}
+                  value={editingItem.indications || ""}
+                  onChange={(e) => setEditingItem({ ...editingItem, indications: e.target.value })}
+                  placeholder="Офіційні показання з інструкції до медичного застосування..."
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-500"
                 />
               </div>
 
@@ -735,21 +1216,110 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
                     ))}
                   </select>
                 </div>
+
+                {/* 1. WADA STATUS - NO DEFAULT VALUES */}
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Статус WADA:</label>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">
+                    Статус WADA: <span className="text-rose-400">*</span>
+                  </label>
                   <select
-                    value={editingItem.wada_status}
+                    required
+                    value={editingItem.wada_status || ""}
                     onChange={(e) => setEditingItem({ ...editingItem, wada_status: e.target.value as any })}
                     className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-500"
                   >
-                    <option value="allowed">✓ Дозволено</option>
-                    <option value="prohibited_in_competition">⚠️ Заборонено у змаганнях</option>
-                    <option value="prohibited_always">🛑 Заборонено завжди</option>
-                    <option value="requires_tue">📋 Потребує TUE</option>
+                    <option value="" disabled>
+                      Заповніть за актуальним списком WADA
+                    </option>
+                    <option value="allowed">✓ Дозволено без обмежень</option>
+                    <option value="prohibited_in_competition">⚠️ Заборонено у змагальний період (S-list)</option>
+                    <option value="prohibited_always">🛑 Заборонено завжди (S1-S5)</option>
+                    <option value="requires_tue">📋 Потребує TUE (Терапевтичний виняток)</option>
                   </select>
                 </div>
               </div>
 
+              {/* WADA Source Note & Washout Note */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">
+                    Пункт списку WADA (джерело):
+                  </label>
+                  <input
+                    type="text"
+                    value={editingItem.wada_source_note || ""}
+                    onChange={(e) => setEditingItem({ ...editingItem, wada_source_note: e.target.value })}
+                    placeholder="WADA 2026 клас S9..."
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">
+                    Період виведення (Washout note):
+                  </label>
+                  <input
+                    type="text"
+                    value={editingItem.washout_note || ""}
+                    onChange={(e) => setEditingItem({ ...editingItem, washout_note: e.target.value })}
+                    placeholder="7-14 діб до матчу..."
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-500"
+                  />
+                </div>
+              </div>
+
+              {/* 1. MIN AGE & AGE NOTE */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">
+                    Мінімальний вік (років):
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={99}
+                    value={editingItem.min_age !== null && editingItem.min_age !== undefined ? editingItem.min_age : ""}
+                    onChange={(e) =>
+                      setEditingItem({
+                        ...editingItem,
+                        min_age: e.target.value === "" ? null : parseInt(e.target.value),
+                      })
+                    }
+                    placeholder="Без обмежень (або 12, 16, 18)"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">
+                    Потребує ревізії лікарем:
+                  </label>
+                  <div className="pt-2">
+                    <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(editingItem.requires_review)}
+                        onChange={(e) => setEditingItem({ ...editingItem, requires_review: e.target.checked })}
+                        className="rounded border-slate-700 text-sky-500 focus:ring-sky-500"
+                      />
+                      <span>Курсове призначення під наглядом</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1">
+                  Вікові застереження (Age note):
+                </label>
+                <input
+                  type="text"
+                  value={editingItem.age_note || ""}
+                  onChange={(e) => setEditingItem({ ...editingItem, age_note: e.target.value })}
+                  placeholder="Особливості застосування у юніорів або протипоказання..."
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-500"
+                />
+              </div>
+
+              {/* 5. Stock Count, Unit, Min Threshold */}
               <div className="grid grid-cols-3 gap-2">
                 <div>
                   <label className="block text-xs font-medium text-slate-400 mb-1">Кількість:</label>
@@ -765,14 +1335,17 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
                   <label className="block text-xs font-medium text-slate-400 mb-1">Од. виміру:</label>
                   <input
                     type="text"
+                    required
                     value={editingItem.unit}
                     onChange={(e) => setEditingItem({ ...editingItem, unit: e.target.value })}
-                    placeholder="ампул, табл."
+                    placeholder="ампул, табл., рулонів"
                     className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Поріг дефіциту:</label>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">
+                    Поріг дефіциту:
+                  </label>
                   <input
                     type="number"
                     min={1}
@@ -785,11 +1358,13 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
                 </div>
               </div>
 
+              {/* Expiry Date & Location */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-slate-400 mb-1">Термін придатності:</label>
                   <input
                     type="date"
+                    required
                     value={editingItem.expiry_date}
                     onChange={(e) => setEditingItem({ ...editingItem, expiry_date: e.target.value })}
                     className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500"
@@ -807,6 +1382,17 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
                 </div>
               </div>
 
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1">Примітки лікаря:</label>
+                <textarea
+                  rows={2}
+                  value={editingItem.notes || ""}
+                  onChange={(e) => setEditingItem({ ...editingItem, notes: e.target.value })}
+                  placeholder="Особливості введення, умови зберігання..."
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-500"
+                />
+              </div>
+
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
                 <button
                   type="button"
@@ -820,7 +1406,7 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
                   disabled={isPending}
                   className="px-5 py-2 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold text-xs shadow-lg shadow-sky-500/20"
                 >
-                  {isPending ? "Збереження..." : "Зберегти"}
+                  {isPending ? "Збереження..." : "Зберегти препарат"}
                 </button>
               </div>
             </form>

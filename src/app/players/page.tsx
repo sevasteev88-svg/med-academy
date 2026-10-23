@@ -5,7 +5,7 @@ import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
 import PlayerFilters from "@/components/players/PlayerFilters";
 import QuickRestoreButton from "@/components/players/QuickRestoreButton";
-import { POSITION_LABELS, TEAM_CATEGORY_UA, LOCATION_UA, INJURY_TYPE_UA } from "@/lib/constants";
+import { POSITION_LABELS, TEAM_CATEGORY_UA, LOCATION_UA, INJURY_TYPE_UA, formatPosition, formatInjuryType, formatLocation } from "@/lib/constants";
 import { playerStatus } from "@/lib/player-status";
 
 function calcAge(dob: string): number {
@@ -193,7 +193,7 @@ export default async function PlayersPage({
                                 <div className="flex items-center gap-1.5 text-xs text-slate-400 mt-0.5">
                                   {player.position && (
                                     <span className="font-mono text-sky-300 px-1.5 py-0.2 rounded bg-sky-500/10 text-[10px] font-semibold border border-sky-500/20">
-                                      {POSITION_LABELS[player.position] ?? player.position}
+                                      {formatPosition(player.position)}
                                     </span>
                                   )}
                                   <span>·</span>
@@ -229,8 +229,8 @@ export default async function PlayersPage({
                         {!isArchiveView && activeInj && (
                           <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-slate-400">
                             <span className="truncate pr-2">
-                              🩹 {INJURY_TYPE_UA[activeInj.injury_type] ?? activeInj.injury_type} (
-                              {LOCATION_UA[activeInj.location] ?? activeInj.location})
+                              🩹 {formatInjuryType(activeInj.injury_type)} (
+                              {formatLocation(activeInj.location)})
                             </span>
                             {activeInj.vas_score != null && (
                               <span

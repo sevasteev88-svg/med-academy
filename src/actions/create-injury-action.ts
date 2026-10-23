@@ -10,6 +10,8 @@ import type {
   InjurySeverity,
   InjurySide,
   InjuryType,
+  InjuryOnset,
+  InjuryOccurrence,
 } from "@/types/database";
 
 export type CreateInjuryState = {
@@ -28,6 +30,11 @@ type CreateInjuryInput = {
   vasScore?: number | null;
   expectedReturnDate?: string;
   description?: string;
+  osiicsCode?: string | null;
+  onset?: InjuryOnset;
+  occurrence?: InjuryOccurrence;
+  activityType?: "training" | "match" | "other" | null;
+  previousInjuryId?: string | null;
 };
 
 async function insertInjury(input: CreateInjuryInput) {
@@ -50,6 +57,11 @@ async function insertInjury(input: CreateInjuryInput) {
       vas_score: input.vasScore ?? null,
       expected_return_date: input.expectedReturnDate ?? null,
       description: input.description ?? null,
+      osiics_code: input.osiicsCode?.trim() || null,
+      onset: input.onset || "acute",
+      occurrence: input.occurrence || "new",
+      activity_type: input.activityType || "training",
+      previous_injury_id: input.previousInjuryId || null,
       status: "active",
       // Класифікація (MLG-R/BAMIC/Munich) додається окремо через
       // класифікатор у картці травми — classify-injury-action.
@@ -67,6 +79,9 @@ async function insertInjury(input: CreateInjuryInput) {
     meta: {
       location: input.location,
       side: input.side,
+      osiics_code: input.osiicsCode,
+      onset: input.onset,
+      occurrence: input.occurrence,
     },
     userId: auth.user.id,
     clubId: auth.user.clubId,
@@ -98,14 +113,32 @@ export async function createInjuryAction(
   const vasScore = vasScoreRaw !== null && vasScoreRaw !== "" ? Number(vasScoreRaw) : null;
   const expectedReturnDate = (formData.get("expectedReturnDate") as string) || undefined;
   const description = (formData.get("description") as string) || undefined;
+  const osiicsCode = (formData.get("osiicsCode") as string) || undefined;
+  const onset = (formData.get("onset") as InjuryOnset) || "acute";
+  const occurrence = (formData.get("occurrence") as InjuryOccurrence) || "new";
+  const activityType = (formData.get("activityType") as "training" | "match" | "other") || "training";
+  const previousInjuryId = (formData.get("previousInjuryId") as string) || undefined;
 
   if (!playerId || !injuryType || !location || !severity || !dateOfInjury) {
     return { error: "Заповніть усі обов'язкові поля" };
   }
 
   const result = await insertInjury({
-    playerId, injuryType, location, side, severity, mechanism,
-    dateOfInjury, vasScore, expectedReturnDate, description,
+    playerId,
+    injuryType,
+    location,
+    side,
+    severity,
+    mechanism,
+    dateOfInjury,
+    vasScore,
+    expectedReturnDate,
+    description,
+    osiicsCode,
+    onset,
+    occurrence,
+    activityType,
+    previousInjuryId,
   });
 
   if ("error" in result && result.error) return { error: result.error };

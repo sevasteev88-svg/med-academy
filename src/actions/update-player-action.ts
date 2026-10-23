@@ -4,6 +4,7 @@ import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { assertDoctor } from "@/lib/auth";
+import { normalizePosition } from "@/lib/dictionaries";
 
 export type UpdatePlayerState = {
   error?: string;
@@ -40,7 +41,7 @@ export async function updatePlayerAction(
       last_name: lastName.trim(),
       date_of_birth: dateOfBirth,
       sex: sex === "female" ? "female" : "male",
-      position,
+      position: normalizePosition(position),
       dominant_leg: dominantLeg || "right",
       dominant_arm: dominantArm || "right",
     })

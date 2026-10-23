@@ -142,9 +142,10 @@ export async function prescribeTreatmentWithStockAction(
   }
 
   // 2. Створюємо запис лікування гравця
+  const generatedId = `rx_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const entry: MedicalTreatmentEntry = {
     ...treatmentData,
-    id: `rx_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    id: generatedId,
     created_at: new Date().toISOString(),
     pharmacy_item_id: pharmacyItemId || null,
     units_deducted: quantityToDeduct > 0 ? quantityToDeduct : null,
@@ -152,15 +153,17 @@ export async function prescribeTreatmentWithStockAction(
 
   const payload = `[TREATMENT] ${JSON.stringify(entry)}`;
 
-  const { error: treatmentError } = await supabase.from("injury_logs").insert({
+  const { data: insertedLog, error: treatmentError } = await supabase.from("injury_logs").insert({
     club_id: auth.user.clubId,
     injury_id: treatmentData.injury_id || (null as any),
     date: treatmentData.date,
     category: "treatment",
     note: payload,
-  } as any);
+  } as any).select("id").single();
 
   if (treatmentError) return { error: treatmentError.message };
+
+  entry.log_id = insertedLog?.id;
 
   await logAudit({
     action: "prescribe_treatment",
@@ -172,6 +175,9 @@ export async function prescribeTreatmentWithStockAction(
       category: treatmentData.category,
       has_stock_item: Boolean(pharmacyItemId),
       units: quantityToDeduct,
+      duration_days: treatmentData.duration_days,
+      reason: treatmentData.reason,
+      doctor_wada_confirmed: treatmentData.doctor_wada_confirmed,
     },
     userId: auth.user.id,
     clubId: auth.user.clubId,
@@ -184,4 +190,92 @@ export async function prescribeTreatmentWithStockAction(
   revalidatePath("/pharmacy");
 
   return { success: true, treatment: entry };
+}
+
+/**
+ * Видалити медикаментозне призначення та автоматично повернути списані залишки на склад (Rollback)
+ */
+export async function deleteTreatmentAndRollbackStockAction(treatmentId: string) {
+  const auth = await assertDoctor();
+  if ("error" in auth) return { error: auth.error };
+
+  const supabase = await createClient();
+
+  // Знаходимо запис у injury_logs
+  const { data: logs, error: findError } = await supabase
+    .from("injury_logs")
+    .select("id, note, injury_id")
+    .like("note", `[TREATMENT] %"id":"${treatmentId}"%`)
+    .limit(1);
+
+  if (findError || !logs || logs.length === 0) {
+    return { error: "Запис призначення не знайдено в базі даних" };
+  }
+
+  const targetLog = logs[0];
+  let treatmentEntry: MedicalTreatmentEntry | null = null;
+  try {
+    const rawJson = targetLog.note.replace("[TREATMENT] ", "");
+    treatmentEntry = JSON.parse(rawJson);
+  } catch {
+    return { error: "Помилка структури запису призначення" };
+  }
+
+  if (!treatmentEntry) {
+    return { error: "Не вдалося розпарсити дані призначення" };
+  }
+
+  let rolledBackUnits = 0;
+  let newStockList: PharmacyItem[] | undefined;
+
+  // Якщо були списані одиниці зі складу — повертаємо їх
+  if (treatmentEntry.pharmacy_item_id && (treatmentEntry.units_deducted ?? 0) > 0) {
+    rolledBackUnits = treatmentEntry.units_deducted!;
+    const currentStock = await getPharmacyStockAction();
+    const item = currentStock.find((i) => i.id === treatmentEntry!.pharmacy_item_id);
+
+    if (item) {
+      const restoredCount = item.stock_count + rolledBackUnits;
+      const updatedItem = { ...item, stock_count: restoredCount };
+      newStockList = currentStock.map((i) => (i.id === item.id ? updatedItem : i));
+
+      await supabase.from("injury_logs").insert({
+        club_id: auth.user.clubId,
+        injury_id: null as any,
+        date: new Date().toISOString().split("T")[0],
+        category: "treatment",
+        note: `[PHARMACY_STOCK_UPDATE] ${JSON.stringify(newStockList)}`,
+      } as any);
+    }
+  }
+
+  // Видаляємо запис призначення
+  const { error: deleteError } = await supabase
+    .from("injury_logs")
+    .delete()
+    .eq("id", targetLog.id);
+
+  if (deleteError) return { error: deleteError.message };
+
+  await logAudit({
+    action: "delete_treatment_and_rollback_stock",
+    entity: "pharmacy",
+    entityId: treatmentId,
+    playerId: treatmentEntry.player_id,
+    meta: {
+      treatment_title: treatmentEntry.title,
+      units_restored: rolledBackUnits,
+      pharmacy_item_id: treatmentEntry.pharmacy_item_id,
+    },
+    userId: auth.user.id,
+    clubId: auth.user.clubId,
+  });
+
+  if (treatmentEntry.injury_id) {
+    revalidatePath(`/injuries/${treatmentEntry.injury_id}`);
+  }
+  revalidatePath(`/players/${treatmentEntry.player_id}`);
+  revalidatePath("/pharmacy");
+
+  return { success: true, rolledBackUnits, newStock: newStockList };
 }

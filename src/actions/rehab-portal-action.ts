@@ -479,7 +479,7 @@ export async function getAuthorizedPlayerCabinetData() {
     } catch {}
   }
 
-  // 5. План ЛФК
+  // 5. План ЛФК (гравець бачить ТІЛЬКИ затверджені лікарем плани зі статусом "approved")
   const { data: customPlanLogs } = await supabase
     .from("injury_logs")
     .select("note")
@@ -494,8 +494,11 @@ export async function getAuthorizedPlayerCabinetData() {
         const raw = log.note.replace("[CUSTOM_REHAB_PLAN] ", "");
         const parsed = JSON.parse(raw);
         if (parsed.player_id === playerId) {
-          customRehabPlan = parsed;
-          break;
+          // Якщо план у статусі "draft" — ігноруємо для гравця, шукаємо останній затверджений
+          if (parsed.status === "approved" || parsed.status === undefined) {
+            customRehabPlan = parsed;
+            break;
+          }
         }
       } catch {}
     }

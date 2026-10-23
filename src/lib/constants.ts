@@ -1,20 +1,55 @@
-export const POSITION_LABELS: Record<string, string> = { GK: "ВР", CB: "ЦЗ", LB: "ЛЗ", RB: "ПЗ", CDM: "ЦПЗ", CAM: "ЦАП", LW: "ЛВ", RW: "ПВ", ST: "НП", CF: "ЦН" };
-export const POSITION_FULL: Record<string, string> = { GK: "Воротар", CB: "Центральний захисник", LB: "Лівий захисник", RB: "Правий захисник", CDM: "Опорний півзахисник", CAM: "Атакуючий півзахисник", LW: "Лівий вінгер", RW: "Правий вінгер", ST: "Нападник", CF: "Центральний нападник" };
-export const LOCATION_UA: Record<string, string> = { knee: "Коліно", ankle: "Гомілковостоп", thigh: "Стегно", calf: "Литка", foot: "Стопа", groin: "Пах", shoulder: "Плече", elbow: "Лікоть", wrist: "Кисть", spine: "Хребет", head: "Голова", other: "Інше" };
-export const INJURY_TYPE_UA: Record<string, string> = { muscular: "М'язова", ligament: "Зв'язки", bone: "Кісткова", cartilage: "Хрящова", tendon: "Сухожилля", concussion: "Струс мозку", contusion: "Забій", other: "Інше" };
-export const SEVERITY_UA: Record<string, string> = { minimal: "Мінімальна", mild: "Легка", moderate: "Середня", severe: "Тяжка", career_threatening: "Критична" };
-export const MECHANISM_UA: Record<string, string> = { contact: "Контактна", non_contact: "Безконтактна", overuse: "Перенавантаження" };
-export const SIDE_UA: Record<string, string> = { left: "Ліва", right: "Права", bilateral: "Двостороння" };
-export const STATUS_UA: Record<string, string> = { active: "Гостра", rehabilitation: "Реабілітація", closed: "Закрита" };
-export const DOMINANT_UA: Record<string, string> = { left: "Ліва", right: "Права", both: "Обидві" };
-export const TEAM_CATEGORY_UA: Record<string, string> = { youth: "Молодіжка", academy: "Академія" };
-export const EXAM_GRADE_UA: Record<string, string> = { none: "Відсутній", mild: "Незначний", moderate: "Помірний", severe: "Виражений" };
-export const ROM_GRADE_UA: Record<string, string> = { full: "Повний", slightly_limited: "Незначно обмежений", moderately_limited: "Помірно обмежений", severely_limited: "Значно обмежений" };
-export const MUSCLE_TONE_UA: Record<string, string> = { normal: "Нормальний", hypotonic: "Знижений", hypertonic: "Підвищений" };
-export const REHAB_STATUS_UA: Record<string, string> = { planned: "Заплановано", in_progress: "В процесі", completed: "Завершено", skipped: "Пропущено" };
-export const LOG_CATEGORY_UA: Record<string, string> = { examination: "Огляд", investigation: "Обстеження", prescription: "Призначення", procedure: "Процедура", note: "Примітка" };
-export const LOG_CATEGORY_ICONS: Record<string, string> = { examination: "🩺", investigation: "📋", prescription: "💊", procedure: "⚕️", note: "📝" };
-export const REHAB_TEMPLATE = [ "Спокій / іммобілізація", "Ізометричні вправи", "Концентричні вправи", "Ексцентричні вправи", "Бігова робота", "Робота з м'ячем", "Загальна група" ];
+export * from "./dictionaries.ts";
+
+export const DOMINANT_UA = DOMINANT_SIDE_UA;
+
+export const POSITION_LABELS: Record<string, string> = {
+  GK: "ВР", CB: "ЦЗ", LB: "ЛЗ", RB: "ПЗ", CDM: "ОП", CM: "ЦП", CAM: "ЦАП", LW: "ЛВ", RW: "ПВ", ST: "НП", CF: "НП",
+  ВР: "ВР", ЦЗ: "ЦЗ", ЛЗ: "ЛЗ", ПЗ: "ПЗ", ОП: "ОП", ЦОП: "ОП", ЦП: "ЦП", ЦАП: "ЦАП", ЛВ: "ЛВ", ПВ: "ПВ", НП: "НП", ЦН: "НП"
+};
+
+export const POSITION_FULL: Record<string, string> = {
+  ВР: "Воротар",
+  ЦЗ: "Центральний захисник",
+  ЛЗ: "Лівий захисник",
+  ПЗ: "Правий захисник",
+  ОП: "Опорний півзахисник",
+  ЦОП: "Опорний півзахисник",
+  ЦП: "Центральний півзахисник",
+  ЦАП: "Центральний атакуючий півзахисник",
+  ЛВ: "Лівий вінгер",
+  ПВ: "Правий вінгер",
+  НП: "Нападник",
+  ЦН: "Центральний нападник",
+  GK: "Воротар",
+  CB: "Центральний захисник",
+  LB: "Лівий захисник",
+  RB: "Правий захисник",
+  CDM: "Опорний півзахисник",
+  CM: "Центральний півзахисник",
+  CAM: "Атакуючий півзахисник",
+  LW: "Лівий вінгер",
+  RW: "Правий вінгер",
+  ST: "Нападник",
+  CF: "Центральний нападник"
+};
+
+export const LOG_CATEGORY_ICONS: Record<string, string> = {
+  examination: "🩺",
+  investigation: "📋",
+  prescription: "💊",
+  procedure: "⚕️",
+  note: "📝"
+};
+
+export const REHAB_TEMPLATE = [
+  "Спокій / іммобілізація",
+  "Ізометричні вправи",
+  "Концентричні вправи",
+  "Ексцентричні вправи",
+  "Бігова робота",
+  "Робота з м'ячем",
+  "Загальна група"
+];
 
 export const VAS_ALERT_THRESHOLD = 7;
 export const URGENT_CASE_WARNING =
@@ -56,3 +91,4 @@ export function fmtDate(iso: string | null | undefined): string {
     year: "numeric",
   });
 }
+

@@ -3,13 +3,19 @@
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
 import { assertDoctor } from "@/lib/auth";
-import type { LsiAssessmentRecord } from "@/types/lsi";
+import { type LsiAssessmentRecord, validateLsiRecord } from "@/types/lsi";
 
 export async function saveLsiAssessmentAction(
   assessmentData: Omit<LsiAssessmentRecord, "id" | "created_at">
 ) {
   const auth = await assertDoctor();
   if ("error" in auth) return { error: auth.error };
+
+  // Валідація обов'язкових полів: кінцівка та тип травми
+  const validation = validateLsiRecord(assessmentData);
+  if (!validation.valid) {
+    return { error: validation.error };
+  }
 
   const supabase = await createClient();
 
@@ -39,11 +45,12 @@ export async function saveLsiAssessmentAction(
         .insert({
           player_id: assessmentData.player_id,
           date_of_injury: assessmentData.date,
-          injury_type: "illness",
-          location: "other",
-          severity: "minor",
-          status: "closed",
-          description: "Тестування симетрії LSI / Динамометрія",
+          injury_type: assessmentData.injury_type || "ligament",
+          location: "knee",
+          side: assessmentData.tested_limb,
+          severity: "moderate",
+          status: "rehabilitation",
+          description: "Протокол функціонального тестування симетрії LSI / Динамометрія",
           vas_score: 0,
         } as any)
         .select("id")

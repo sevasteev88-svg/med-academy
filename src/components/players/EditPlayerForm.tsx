@@ -1,9 +1,9 @@
-﻿"use client";
+"use client";
 
 import { useActionState } from "react";
 import { updatePlayerAction, type UpdatePlayerState } from "@/actions/update-player-action";
 import Card from "@/components/ui/Card";
-import { POSITION_LABELS, POSITION_FULL, TEAM_CATEGORY_UA } from "@/lib/constants";
+import { CANONICAL_POSITIONS, POSITION_FULL_UA, TEAM_CATEGORY_UA, normalizePosition } from "@/lib/constants";
 
 type Team = { id: string; name: string; category: string };
 type Player = {
@@ -11,7 +11,6 @@ type Player = {
   date_of_birth: string; sex: string | null; position: string; dominant_leg: string; dominant_arm: string;
 };
 
-const positions = Object.entries(POSITION_LABELS);
 const sides = [
   { value: "right", label: "Права" },
   { value: "left",  label: "Ліва" },
@@ -78,9 +77,9 @@ export default function EditPlayerForm({ player, teams }: { player: Player; team
 
         <div>
           <label className={labelClass}>Позиція *</label>
-          <select name="position" required className={inputClass} defaultValue={player.position}>
-            {positions.map(([code, short]) => (
-              <option key={code} value={code}>{short} — {POSITION_FULL[code]}</option>
+          <select name="position" required className={inputClass} defaultValue={normalizePosition(player.position)}>
+            {CANONICAL_POSITIONS.map((code) => (
+              <option key={code} value={code}>{code} — {POSITION_FULL_UA[code]}</option>
             ))}
           </select>
         </div>

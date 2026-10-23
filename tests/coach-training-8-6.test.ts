@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   calculateAcwr,
+  ACWR_THRESHOLDS,
   BORG_CR10_SCALE,
   ABSENCE_REASONS,
   type RpeScore,
@@ -23,6 +24,22 @@ describe("8.6 Навантаження тренера (session-RPE за 10 се�
       assert.strictEqual(res.isInsufficientData, true);
       assert.strictEqual(res.riskZone, "insufficient_data");
       assert.strictEqual(res.acwr, null);
+    });
+
+    it("повертає 'insufficient_data', якщо період спостережень менше 28 днів (правило задачі 3.1)", () => {
+      // Навіть якщо є високі значення, але дні спостереження < 28, не можна ставити Оптимум
+      const res = calculateAcwr(500, 2000, { daysMonitored: 14, chronicSessionsCount: 10 });
+      assert.strictEqual(res.isInsufficientData, true);
+      assert.strictEqual(res.riskZone, "insufficient_data");
+      assert.strictEqual(res.acwr, null);
+      assert.match(res.titleUa, /Недостатньо даних/);
+    });
+
+    it("експортує константи порогових значень ACWR_THRESHOLDS", () => {
+      assert.strictEqual(ACWR_THRESHOLDS.UNDERLOAD_MAX, 0.8);
+      assert.strictEqual(ACWR_THRESHOLDS.SWEET_SPOT_MAX, 1.3);
+      assert.strictEqual(ACWR_THRESHOLDS.CAUTION_MAX, 1.5);
+      assert.match(ACWR_THRESHOLDS.NOTE, /орієнтир/i);
     });
 
     it("розраховує Sweet Spot (0.8 - 1.3) при достатніх даних", () => {

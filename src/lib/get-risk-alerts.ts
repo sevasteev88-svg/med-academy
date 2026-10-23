@@ -1,11 +1,13 @@
 import { createClient } from "@/utils/supabase/server";
 import type { RiskAlertItem } from "@/components/alerts/RiskAlertsCenter";
 import type { WearableBiometricsEntry } from "@/types/wearables";
+import { getPharmacyStockAction } from "@/actions/pharmacy-actions";
+import { getExpiryStatus } from "@/types/pharmacy";
 
 export async function getRiskAlerts(): Promise<RiskAlertItem[]> {
   const supabase = await createClient();
 
-  const [playersRes, injuriesRes, maturationRes, wearableLogsRes] = await Promise.all([
+  const [playersRes, injuriesRes, maturationRes, wearableLogsRes, pharmacyStock] = await Promise.all([
     supabase
       .from("players")
       .select("id, first_name, last_name, position, team_id, teams ( id, name )"),
@@ -23,6 +25,7 @@ export async function getRiskAlerts(): Promise<RiskAlertItem[]> {
       .like("note", "[WEARABLE]%")
       .order("date", { ascending: false })
       .limit(30),
+    getPharmacyStockAction(),
   ]);
 
   const players = playersRes.data || [];
@@ -145,6 +148,74 @@ export async function getRiskAlerts(): Promise<RiskAlertItem[]> {
           timestamp: today,
         });
       }
+    }
+  }
+
+  // 5. Pharmacy Stock Expiry Alerts (Expired / 7 / 30 / 60 days)
+  for (const item of pharmacyStock || []) {
+    if (!item.expiry_date) continue;
+    const expiry = getExpiryStatus(item.expiry_date);
+
+    if (expiry.tier === "expired") {
+      alerts.push({
+        id: `ph-exp-${item.id}`,
+        type: "pharmacy",
+        severity: "critical",
+        playerId: "",
+        playerName: item.name,
+        teamName: "Склад Аптеки",
+        position: item.storage_location || "Медкабінет",
+        title: "Критично: Препарат прострочено!",
+        metric: `Сплив (${Math.abs(expiry.daysLeft)} дн. тому)`,
+        mechanism: `Препарат "${item.name}" (${item.stock_count} ${item.unit}) прострочений з ${item.expiry_date}. Використання спортсменам заборонено.`,
+        actionRequired: "Негайно списати та утилізувати партію згідно з регламентом клубу.",
+        timestamp: today,
+      });
+    } else if (expiry.tier === "critical_7") {
+      alerts.push({
+        id: `ph-crit-${item.id}`,
+        type: "pharmacy",
+        severity: "critical",
+        playerId: "",
+        playerName: item.name,
+        teamName: "Склад Аптеки",
+        position: item.storage_location || "Медкабінет",
+        title: "Критичний термін придатності (≤ 7 діб)",
+        metric: `${expiry.daysLeft} дн. до кінця`,
+        mechanism: `Термін придатності закінчується ${item.expiry_date}. Залишок: ${item.stock_count} ${item.unit}.`,
+        actionRequired: "Використати препарат або підготувати дострокову заміну.",
+        timestamp: today,
+      });
+    } else if (expiry.tier === "warning_30") {
+      alerts.push({
+        id: `ph-warn-${item.id}`,
+        type: "pharmacy",
+        severity: "warning",
+        playerId: "",
+        playerName: item.name,
+        teamName: "Склад Аптеки",
+        position: item.storage_location || "Медкабінет",
+        title: "Закінчується термін придатності (≤ 30 діб)",
+        metric: `${expiry.daysLeft} дн. до кінця`,
+        mechanism: `Термін препарату спливає ${item.expiry_date}. Залишок: ${item.stock_count} ${item.unit}.`,
+        actionRequired: "Внести до найближчого замовлення постачальнику медикаментів.",
+        timestamp: today,
+      });
+    } else if (expiry.tier === "notice_60") {
+      alerts.push({
+        id: `ph-not-${item.id}`,
+        type: "pharmacy",
+        severity: "warning",
+        playerId: "",
+        playerName: item.name,
+        teamName: "Склад Аптеки",
+        position: item.storage_location || "Медкабінет",
+        title: "Плановий контроль придатності (≤ 60 діб)",
+        metric: `${expiry.daysLeft} дн.`,
+        mechanism: `Препарат "${item.name}" придатний до ${item.expiry_date}. Залишок: ${item.stock_count} ${item.unit}.`,
+        actionRequired: "Врахувати у плані закупівель на наступний місяць.",
+        timestamp: today,
+      });
     }
   }
 

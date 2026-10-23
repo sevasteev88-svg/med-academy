@@ -1,50 +1,133 @@
+export type ReinjuryRiskCategory = "low" | "moderate" | "high" | "insufficient_data";
+
+export type ReinjuryRiskInput = {
+  // 1. Зріст / PHV (мінімум: ≥2 замірів зросту за 12 міс. або зафіксований PHV)
+  heightMeasurementsCount12m?: number;
+  growthPhase?: string | null; // "phv", "pre_phv", "post_phv"
+  hasPhvRecorded?: boolean;
+
+  // 2. Навантаження (мінімум: ≥28 днів історії навантажень)
+  workloadDaysMonitored?: number;
+  acwr?: number | null;
+
+  // 3. Велнес (мінімум: велнес за ≥7 днів)
+  wellnessDaysRecorded?: number;
+  wellnessScore?: number | null; // 4 - 20 балів
+
+  // Додаткові клінічні фактори
+  previousInjuriesCount?: number;
+  hasActiveDiscomfort?: boolean;
+};
+
+export type ReinjuryRiskFactor = {
+  title: string;
+  description: string;
+  severity: "info" | "warning" | "danger";
+};
+
 export type ReinjuryRiskAssessment = {
-  score: number; // 0 - 100%
-  riskLevel: "low" | "moderate" | "high" | "critical";
-  factors: { title: string; impact: string; severity: "info" | "warning" | "danger" }[];
+  isInsufficientData: boolean;
+  missingDataReasons: string[];
+  riskCategory: ReinjuryRiskCategory;
+  categoryLabelUa: "Низький" | "Помірний" | "Підвищений" | "Недостатньо даних";
+  disclaimer: string;
+  factors: ReinjuryRiskFactor[];
   recommendation: string;
   badgeClass: string;
 };
 
-/**
- * Розраховує багатофакторний предиктивний ризик отримання / рецидиву травми:
- * 1. ACWR (гостре до хронічного навантаження)
- * 2. Hooper-Mackinnon Wellness score
- * 3. Фаза стрибка росту PHV (ризик апофізитів та тендинопатій)
- * 4. Анамнез попередніх травм цієї ж анатомічної зони (Re-injury count)
- */
-export function calculateReinjuryRisk(input: {
-  acwr?: number | null;
-  wellnessScore?: number | null; // 4 - 20
-  growthPhase?: string | null; // "phv", "pre_phv", "post_phv"
-  previousInjuriesCount?: number;
-  hasActiveDiscomfort?: boolean;
-}): ReinjuryRiskAssessment {
-  let score = 15; // базовий ризик контактного спорту
-  const factors: ReinjuryRiskAssessment["factors"] = [];
+export const REINJURY_RISK_DISCLAIMER = "Орієнтовна оцінка, не прогноз";
 
-  // Фактор 1: ACWR
+/**
+ * AI-аналітик ризику / функціонального стану.
+ * Правило задачі 3.1: чесні індикатори.
+ * Розраховується ТІЛЬКИ при мінімумі даних:
+ * 1. ≥2 замірів зросту за останні 12 міс. АБО зафіксована фаза PHV.
+ * 2. ≥28 днів історії моніторингу навантаження.
+ * 3. Велнес-анкети за ≥7 днів.
+ * 
+ * Без відсотків «15% ймовірність». Використовує прозорі якісні категорії:
+ * «Низький», «Помірний», «Підвищений» з обов'язковою позначкою «орієнтовна оцінка, не прогноз».
+ */
+export function calculateReinjuryRisk(input: ReinjuryRiskInput): ReinjuryRiskAssessment {
+  const missingDataReasons: string[] = [];
+
+  // 1. Перевірка мінімуму даних: Зріст / PHV
+  const hasPhv = input.growthPhase === "phv" || input.hasPhvRecorded === true;
+  const heightCount = input.heightMeasurementsCount12m ?? 0;
+  const hasSufficientGrowth = hasPhv || heightCount >= 2;
+  if (!hasSufficientGrowth) {
+    missingDataReasons.push(
+      `Виміри зросту: потрібно ≥2 замірів за 12 міс. або статус PHV (наявно: ${heightCount})`
+    );
+  }
+
+  // 2. Перевірка мінімуму даних: Навантаження (≥28 днів)
+  const workloadDays = input.workloadDaysMonitored ?? 0;
+  const hasSufficientWorkload = workloadDays >= 28;
+  if (!hasSufficientWorkload) {
+    missingDataReasons.push(
+      `Моніторинг навантаження: потрібно ≥28 днів історії (наявно: ${workloadDays} дн.)`
+    );
+  }
+
+  // 3. Перевірка мінімуму даних: Велнес (≥7 днів)
+  const wellnessDays = input.wellnessDaysRecorded ?? 0;
+  const hasSufficientWellness = wellnessDays >= 7;
+  if (!hasSufficientWellness) {
+    missingDataReasons.push(
+      `Велнес-анкети: потрібно щонайменше 7 днів заповнення (наявно: ${wellnessDays} дн.)`
+    );
+  }
+
+  // Якщо хоча б одного компонента не вистачає — чесно повертаємо «Недостатньо даних»
+  if (missingDataReasons.length > 0) {
+    return {
+      isInsufficientData: true,
+      missingDataReasons,
+      riskCategory: "insufficient_data",
+      categoryLabelUa: "Недостатньо даних",
+      disclaimer: REINJURY_RISK_DISCLAIMER,
+      factors: [],
+      recommendation:
+        "Для формування оцінки функціонального стану гравця необхідно завершити збір мінімального пакета спостережень: систематичний зріст, не менше 28 днів обліку навантажень та мінімум 7 днів щоденного велнесу.",
+      badgeClass: "bg-slate-800 text-slate-400 border-slate-700",
+    };
+  }
+
+  // Якщо всі мінімальні дані присутні — аналізуємо фактори
+  const factors: ReinjuryRiskFactor[] = [];
+  let dangerTriggers = 0;
+  let warningTriggers = 0;
+
+  // Фактор 1: ACWR (навантаження)
   if (input.acwr != null) {
     if (input.acwr >= 1.5) {
-      score += 35;
+      dangerTriggers++;
       factors.push({
         title: `Різкий стрибок навантаження (ACWR = ${input.acwr.toFixed(2)})`,
-        impact: "+35% ризику (Danger Zone за Габбеттом)",
+        description: "Гостре навантаження суттєво перевищує хронічну базу гравця (зона спайку навантаження).",
         severity: "danger",
       });
     } else if (input.acwr >= 1.3) {
-      score += 15;
+      warningTriggers++;
       factors.push({
         title: `Підвищене навантаження (ACWR = ${input.acwr.toFixed(2)})`,
-        impact: "+15% ризику (Caution)",
+        description: "Навантаження вище звичного оптимуму, рекомендовано контроль відновлення.",
         severity: "warning",
       });
     } else if (input.acwr < 0.8) {
-      score += 10;
+      warningTriggers++;
       factors.push({
-        title: `Недонавантаження (ACWR = ${input.acwr.toFixed(2)})`,
-        impact: "+10% ризику (деадаптація тканин)",
+        title: `Знижене навантаження (ACWR = ${input.acwr.toFixed(2)})`,
+        description: "Потенційний ризик деадаптації зв'язково-м'язового апарату після тривалої паузи.",
         severity: "warning",
+      });
+    } else {
+      factors.push({
+        title: `Збалансоване навантаження (ACWR = ${input.acwr.toFixed(2)})`,
+        description: "Гостре навантаження відповідає хронічній адаптації тканин (Sweet Spot).",
+        severity: "info",
       });
     }
   }
@@ -52,93 +135,111 @@ export function calculateReinjuryRisk(input: {
   // Фактор 2: Велнес
   if (input.wellnessScore != null) {
     if (input.wellnessScore < 12) {
-      score += 25;
+      dangerTriggers++;
       factors.push({
-        title: `Низький рівень велнесу (${input.wellnessScore}/20 балів)`,
-        impact: "+25% ризику (виснаження ЦНС, недосип або крепатура)",
+        title: `Знижений рівень велнесу (${input.wellnessScore}/20 балів)`,
+        description: "Ознаки суттєвої втоми ЦНС, дефіциту сну або вираженої крепатури.",
         severity: "danger",
       });
     } else if (input.wellnessScore <= 15) {
-      score += 10;
+      warningTriggers++;
       factors.push({
         title: `Помірна втома за велнесом (${input.wellnessScore}/20 балів)`,
-        impact: "+10% ризику",
+        description: "Легке накопичення втоми, бажано оптимізувати режим сну та гідратації.",
         severity: "warning",
+      });
+    } else {
+      factors.push({
+        title: `Сприятливий рівень відновлення (${input.wellnessScore}/20 балів)`,
+        description: "Показники сну, бадьорості та м'язової готовності на доброму рівні.",
+        severity: "info",
       });
     }
   }
 
   // Фактор 3: PHV пік росту
-  if (input.growthPhase === "phv") {
-    score += 20;
+  if (hasPhv) {
+    warningTriggers++;
     factors.push({
       title: "Фаза максимального піку росту (PHV)",
-      impact: "+20% ризику тракційних апофізитів (Осгуд-Шлаттер, Севера)",
-      severity: "danger",
+      description: "Підвищена механічна вразливість зон росту та апофізів (Осгуд-Шлаттер, Север).",
+      severity: "warning",
     });
   }
 
   // Фактор 4: Попередні травми
   const reinjCount = input.previousInjuriesCount ?? 0;
   if (reinjCount > 0) {
-    const pts = Math.min(30, reinjCount * 15);
-    score += pts;
-    factors.push({
-      title: `Анамнез травм у цій зоні (${reinjCount} пошкоджень)`,
-      impact: `+${pts}% ризику через утворення рубцевої тканини`,
-      severity: "danger",
-    });
+    if (reinjCount >= 2) {
+      dangerTriggers++;
+      factors.push({
+        title: `Обтяжений анамнез травм (${reinjCount} ушкоджень)`,
+        description: "Наявність множинних попередніх травм вимагає особливого контролю ексцентричного навантаження.",
+        severity: "danger",
+      });
+    } else {
+      warningTriggers++;
+      factors.push({
+        title: `Анамнез травми (${reinjCount} ушкодження)`,
+        description: "Потребує додаткової специфічної розминки (FIFA 11+) та якісної заминки.",
+        severity: "warning",
+      });
+    }
   }
 
+  // Фактор 5: Суб'єктивний дискомфорт
   if (input.hasActiveDiscomfort) {
-    score += 15;
+    warningTriggers++;
     factors.push({
       title: "Суб'єктивний дискомфорт / біль при розминці",
-      impact: "+15% ризику",
+      description: "Зафіксовано скарги на дискомфорт або скутість м'язів під час тренувального дня.",
       severity: "warning",
     });
   }
 
-  score = Math.min(95, Math.max(5, score));
-
-  if (score >= 70) {
+  // Визначення категорії
+  if (dangerTriggers >= 2 || (dangerTriggers >= 1 && warningTriggers >= 2)) {
     return {
-      score,
-      riskLevel: "critical",
+      isInsufficientData: false,
+      missingDataReasons: [],
+      riskCategory: "high",
+      categoryLabelUa: "Підвищений",
+      disclaimer: REINJURY_RISK_DISCLAIMER,
       factors,
       recommendation:
-        "🛑 Критичний ризик травми: Рекомендовано звільнити від максимальних спринтів та контактних єдиноборств. Індивідуальне відновлювальне тренування.",
-      badgeClass: "bg-red-500/20 text-red-300 border-red-500/40",
+        "⚠️ Підвищений рівень навантажувального ризику: Рекомендовано знизити обсяг високошвидкісних спринтів та контактних єдиноборств. Провести розширену розминку FIFA 11+, індивідуалізувати відновлення.",
+      badgeClass: "bg-rose-500/20 text-rose-300 border-rose-500/40",
     };
   }
 
-  if (score >= 45) {
+  if (dangerTriggers >= 1 || warningTriggers >= 1) {
     return {
-      score,
-      riskLevel: "high",
+      isInsufficientData: false,
+      missingDataReasons: [],
+      riskCategory: "moderate",
+      categoryLabelUa: "Помірний",
+      disclaimer: REINJURY_RISK_DISCLAIMER,
       factors,
       recommendation:
-        "⚠️ Підвищений ризик: Обмежити час у грі (до 45-60 хв), провести розширену специфічну розминку (FIFA 11+), контролювати об'єм ударів по м'ячу.",
+        "🟡 Помірний рівень ризику: Повний тренувальний допуск з контролем індивідуального темпу, дотриманням протоколу питного режиму та якісною заминкою.",
       badgeClass: "bg-amber-500/20 text-amber-300 border-amber-500/40",
     };
   }
 
-  if (score >= 25) {
-    return {
-      score,
-      riskLevel: "moderate",
-      factors,
-      recommendation:
-        "🟡 Помірний ризик: Допуск до повного тренування з контролем гідратації та якісною заминкою.",
-      badgeClass: "bg-yellow-500/15 text-yellow-300 border-yellow-500/30",
-    };
-  }
-
   return {
-    score,
-    riskLevel: "low",
-    factors: factors.length > 0 ? factors : [{ title: "Показники в оптимумі", impact: "Мінімальний базовий ризик", severity: "info" }],
-    recommendation: "🟢 Оптимальний стан: Повний допуск без обмежень.",
-    badgeClass: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+    isInsufficientData: false,
+    missingDataReasons: [],
+    riskCategory: "low",
+    categoryLabelUa: "Низький",
+    disclaimer: REINJURY_RISK_DISCLAIMER,
+    factors: factors.length > 0 ? factors : [
+      {
+        title: "Показники в оптимумі",
+        description: "Навантаження та відновлення збалансовані відповідно до адаптаційних можливостей.",
+        severity: "info",
+      },
+    ],
+    recommendation: "🟢 Оптимальний функціональний стан: Повний допуск до тренувань без обмежень.",
+    badgeClass: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
   };
 }

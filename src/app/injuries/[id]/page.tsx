@@ -6,7 +6,8 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
 import Link from "next/link";
-import { LOCATION_UA, INJURY_TYPE_UA, SEVERITY_UA, STATUS_UA, MECHANISM_UA, SIDE_UA, EXAM_GRADE_UA, ROM_GRADE_UA, MUSCLE_TONE_UA } from "@/lib/constants";
+import { LOCATION_UA, INJURY_TYPE_UA, SEVERITY_UA, STATUS_UA, MECHANISM_UA, SIDE_UA, EXAM_GRADE_UA, ROM_GRADE_UA, MUSCLE_TONE_UA, ONSET_UA, OCCURRENCE_UA } from "@/lib/constants";
+import { getInjuryUefaSeverityInfo } from "@/lib/uefa-severity";
 import ClassificationSection from "./ClassificationSection";
 import RehabilitationProtocolSection from "@/components/injuries/RehabilitationProtocolSection";
 import RtpClearanceChecklist from "@/components/injuries/RtpClearanceChecklist";
@@ -105,6 +106,16 @@ export default async function InjuryDetailPage({ params }: Props) {
   const { data: injury } = injuryRes;
   if (!injury) notFound();
 
+  const { data: latestAnthro } = await supabase
+    .from("anthropometry_logs")
+    .select("weight")
+    .eq("player_id", injury.player_id)
+    .order("date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const playerWeightKg = latestAnthro?.weight ? Number(latestAnthro.weight) : null;
+
   const player = injury.players as any;
   const playerName = player ? `${player.last_name} ${player.first_name}` : "—";
   const teamName = player?.teams?.name ?? "";
@@ -185,6 +196,13 @@ export default async function InjuryDetailPage({ params }: Props) {
   const rtpOverdue = rtpDays != null && rtpDays <= 0 && !isClosed;
 
   const hasAiConsent = await hasConsent(injury.player_id, "ai_processing");
+
+  const uefaInfo = getInjuryUefaSeverityInfo({
+    dateOfInjury: injury.date_of_injury,
+    actualReturnDate: injury.actual_return_date,
+    expectedReturnDate: injury.expected_return_date,
+    status: injury.status,
+  });
 
   return (
     <div className="min-h-screen bg-transparent text-slate-100 p-4 sm:p-6 md:p-8">
@@ -353,6 +371,9 @@ export default async function InjuryDetailPage({ params }: Props) {
             injuryId={injury.id}
             playerName={playerName}
             initialRecords={lsiAssessments}
+            playerWeightKg={playerWeightKg}
+            defaultInjuryType={injury.injury_type}
+            defaultSide={injury.side === "left" || injury.side === "right" ? injury.side : undefined}
           />
         </div>
 
@@ -374,7 +395,38 @@ export default async function InjuryDetailPage({ params }: Props) {
             <Row label="Тип травми" value={INJURY_TYPE_UA[injury.injury_type] ?? injury.injury_type} />
             <Row label="Локалізація" value={`${LOCATION_UA[injury.location] ?? injury.location} · ${SIDE_UA[injury.side] ?? injury.side}`} />
             <Row label="Механізм" value={MECHANISM_UA[injury.mechanism] ?? injury.mechanism} />
-            <Row label="Тяжкість" value={SEVERITY_UA[injury.severity] ?? injury.severity} />
+            {injury.osiics_code && (
+              <Row
+                label="Код OSIICS"
+                value={
+                  <span className="font-mono bg-sky-950/80 border border-sky-800 text-sky-400 px-2 py-0.5 rounded text-xs font-bold">
+                    {injury.osiics_code}
+                  </span>
+                }
+              />
+            )}
+            <Row
+              label="Тяжкість за UEFA (time-loss)"
+              value={
+                <span className={`px-2.5 py-1 rounded-lg border text-xs font-bold ${uefaInfo.colorClass}`}>
+                  {uefaInfo.label}
+                </span>
+              }
+            />
+            <Row label="Клінічна оцінка лікаря" value={SEVERITY_UA[injury.severity] ?? injury.severity} />
+            <Row label="Початок (UEFA Onset)" value={ONSET_UA[injury.onset] ?? injury.onset ?? "Невідомо"} />
+            <Row label="Випадок (UEFA Occurrence)" value={OCCURRENCE_UA[injury.occurrence] ?? injury.occurrence ?? "Невідомо"} />
+            {injury.previous_injury_id && (
+              <Row
+                label="Первинна травма (рецидив)"
+                value={
+                  <Link href={`/injuries/${injury.previous_injury_id}`} className="text-sky-400 hover:text-sky-300 underline font-mono text-xs">
+                    #{injury.previous_injury_id.slice(0, 8)} →
+                  </Link>
+                }
+              />
+            )}
+            <Row label="Втрачено днів (Time-loss)" value={`${uefaInfo.timeLossDays} дн. (${isClosed ? "фактично" : "поточний строк"})`} />
             <Row label="Дата травми" value={fmtDate(injury.date_of_injury)} />
             {injury.expected_return_date && <Row label="Очік. повернення" value={fmtDate(injury.expected_return_date)} />}
             {injury.actual_return_date && <Row label="Факт. повернення" value={fmtDate(injury.actual_return_date)} />}

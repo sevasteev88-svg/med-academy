@@ -8,10 +8,11 @@ import {
   Bandage, Activity, CheckCircle, Calendar,
   Brain, Stethoscope, Plus, ChevronRight,
 } from "lucide-react";
-import { LOCATION_UA, INJURY_TYPE_UA } from "@/lib/constants";
+import { LOCATION_UA, INJURY_TYPE_UA, formatPosition, formatInjuryType, formatLocation } from "@/lib/constants";
 import RiskAlertsCenter from "@/components/alerts/RiskAlertsCenter";
 import { getRiskAlerts } from "@/lib/get-risk-alerts";
 import { getPlayerAvailability } from "@/lib/availability";
+import { calculateExposureMetrics, INSUFFICIENT_EXPOSURE_DATA_MSG } from "@/lib/exposure-calculator";
 
 // ─── Типи ────────────────────────────────────────────────────────────────────
 type StatCard = {
@@ -129,13 +130,26 @@ export default async function Home() {
     { count: examsThisWeek },
     alerts,
     availability,
+    { data: allInjuriesForExposure },
+    { data: allExposures },
   ] = await Promise.all([
     supabase.from("injuries").select("*", { count: "exact", head: true }).eq("status", "active"),
     supabase.from("injuries").select("*", { count: "exact", head: true }).eq("status", "rehabilitation"),
     supabase.from("injury_examinations").select("*", { count: "exact", head: true }).gte("date", weekAgoStr),
     getRiskAlerts(),
     getPlayerAvailability(),
+    supabase.from("injuries").select("id, activity_type, date_of_injury"),
+    supabase.from("exposures").select("id, team_id, date, type, minutes, players_count"),
   ]);
+
+  // Розрахунок метрик експозиції та захворюваності (травми на 1000 годин)
+  const exposureMetrics = calculateExposureMetrics(
+    allExposures ?? [],
+    (allInjuriesForExposure ?? []).map((i: any) => ({
+      date_of_injury: i.date_of_injury,
+      activity_type: i.activity_type ?? "training",
+    }))
+  );
 
   // Єдине джерело правди для готових до матчу гравців
   const readyCount = availability.summary.available;
@@ -324,12 +338,12 @@ export default async function Home() {
                             <span className="text-sm font-bold text-white truncate">{shortName(p)}</span>
                             {p?.position && (
                               <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-400 font-mono border border-sky-500/20 font-semibold">
-                                {p.position}
+                                {formatPosition(p.position)}
                               </span>
                             )}
                           </div>
                           <div className="text-xs text-slate-400 truncate mt-0.5">
-                            {p?.teams?.name ?? "—"} · {INJURY_TYPE_UA[inj.injury_type] ?? inj.injury_type} ({LOCATION_UA[inj.location] ?? inj.location})
+                            {p?.teams?.name ?? "—"} · {formatInjuryType(inj.injury_type)} ({formatLocation(inj.location)})
                           </div>
                           {classCode(inj) && (
                             <div className="text-[11px] text-sky-400 truncate mt-0.5 font-mono">
@@ -393,6 +407,84 @@ export default async function Home() {
                   <div className="bg-red-500 rounded-l-full" style={{ width: `${((activeInjuries ?? 0) / (totalPlayers ?? 1)) * 100}%` }} />
                   <div className="bg-amber-500" style={{ width: `${((onRehab ?? 0) / (totalPlayers ?? 1)) * 100}%` }} />
                   <div className="bg-emerald-500 rounded-r-full flex-1" />
+                </div>
+              )}
+            </div>
+
+            {/* Exposure & Injury Incidence Rate Card (Задача 4.2) */}
+            <div className="bg-slate-900/60 backdrop-blur-md border border-sky-500/15 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                  <span>⏱️</span> Травматизм на 1000 годин
+                </h3>
+                <Link
+                  href="/exposures"
+                  className="text-xs font-semibold text-sky-400 hover:text-sky-300 transition flex items-center gap-1"
+                >
+                  Експозиція <ChevronRight size={13} />
+                </Link>
+              </div>
+
+              {exposureMetrics.hasSufficientData && exposureMetrics.overallIncidence != null ? (
+                <div className="space-y-2.5">
+                  <div className="flex items-baseline justify-between">
+                    <div>
+                      <span className="text-2xl font-black font-mono text-white">
+                        {exposureMetrics.overallIncidence.toFixed(1)}
+                      </span>
+                      <span className="text-xs text-slate-400 ml-1.5 font-sans">
+                        травм / 1000 год
+                      </span>
+                    </div>
+                    <span className="text-[11px] font-mono text-sky-400 font-semibold">
+                      {exposureMetrics.totalExposureHours.toFixed(0)} год експозиції
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-800/80">
+                    <div className="p-2 rounded-xl bg-slate-950/40 border border-slate-800/80">
+                      <div className="text-[10px] text-slate-400 uppercase font-mono tracking-wider">
+                        Тренування
+                      </div>
+                      <div className="text-sm font-bold font-mono text-sky-300 mt-0.5">
+                        {exposureMetrics.trainingIncidence != null
+                          ? `${exposureMetrics.trainingIncidence.toFixed(1)} / 1000 год`
+                          : "—"}
+                      </div>
+                      <div className="text-[9px] text-slate-500 mt-0.5">
+                        {exposureMetrics.trainingExposureHours.toFixed(0)} год ({exposureMetrics.trainingInjuries} травм)
+                      </div>
+                    </div>
+
+                    <div className="p-2 rounded-xl bg-slate-950/40 border border-slate-800/80">
+                      <div className="text-[10px] text-slate-400 uppercase font-mono tracking-wider">
+                        Матчі
+                      </div>
+                      <div className="text-sm font-bold font-mono text-emerald-300 mt-0.5">
+                        {exposureMetrics.matchIncidence != null
+                          ? `${exposureMetrics.matchIncidence.toFixed(1)} / 1000 год`
+                          : "—"}
+                      </div>
+                      <div className="text-[9px] text-slate-500 mt-0.5">
+                        {exposureMetrics.matchExposureHours.toFixed(0)} год ({exposureMetrics.matchInjuries} травм)
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3.5 rounded-xl bg-slate-950/40 border border-dashed border-slate-800 text-center space-y-2">
+                  <div className="text-xs font-semibold text-slate-400">
+                    {INSUFFICIENT_EXPOSURE_DATA_MSG}
+                  </div>
+                  <p className="text-[10px] text-slate-500">
+                    Внесіть хвилини тренувань та матчів команди для точного епідеміологічного підрахунку
+                  </p>
+                  <Link
+                    href="/exposures"
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold text-sky-400 bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/20 transition"
+                  >
+                    + Ввести експозицію
+                  </Link>
                 </div>
               )}
             </div>

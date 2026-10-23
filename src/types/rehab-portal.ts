@@ -5,6 +5,15 @@ export interface RehabExerciseItem {
   targetArea: string;
   technique: string;
   completed?: boolean;
+  pain_score?: number | null; // 0-10 після виконання вправи
+  source?: string;
+}
+
+export interface ExerciseFeedbackItem {
+  exercise_id: string;
+  exercise_name: string;
+  completed: boolean;
+  pain_score: number | null;
 }
 
 export interface DailyRecoveryQuest {
@@ -26,6 +35,7 @@ export interface RehabCheckinData {
   stiffness_minutes?: number | null; // 0, 15, 30, 60
   exercises_completed?: "full" | "partial" | "none";
   completed_exercise_ids?: string[];
+  exercise_feedback?: ExerciseFeedbackItem[];
   completed_quests?: string[];
   psychological_readiness?: number | null; // 1-10 (I-PRRS)
   sleep_quality: number; // 1-5 (5 = найкраще)

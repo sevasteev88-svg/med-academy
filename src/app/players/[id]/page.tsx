@@ -32,6 +32,9 @@ import PlayerArchiveControl from "@/components/players/PlayerArchiveControl";
 import { getCurrentUser } from "@/lib/auth";
 import { POSITION_LABELS, POSITION_FULL, DOMINANT_UA, LOCATION_UA, SEVERITY_UA, INJURY_TYPE_UA, STATUS_UA } from "@/lib/constants";
 import PlayerConsentsCard from "@/components/consents/PlayerConsentsCard";
+import PlayerTreatmentsCard from "@/components/players/PlayerTreatmentsCard";
+import type { MedicalTreatmentEntry } from "@/types/pharmacy";
+import { calculateAcwr } from "@/types/workload";
 import {
   getPlayerConsentSummary,
   getActiveConsentDocuments,
@@ -59,7 +62,7 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
   if (from) injuryQuery = injuryQuery.gte("date_of_injury", from);
   if (to) injuryQuery = injuryQuery.lte("date_of_injury", to);
 
-  const [playerRes, injuriesRes, anthroRes, matRes, screeningLogsRes, nutritionLogsRes, photoLogsRes, wearableLogsRes, rehabLogsRes, pinLogsRes, lsiLogsRes, planLogsRes] = await Promise.all([
+  const [playerRes, injuriesRes, anthroRes, matRes, screeningLogsRes, nutritionLogsRes, photoLogsRes, wearableLogsRes, rehabLogsRes, pinLogsRes, lsiLogsRes, planLogsRes, workloadRes, wellnessRes, workloadLogsRes, wellnessLogsRes, treatmentLogsRes] = await Promise.all([
     supabase.from("players").select("*, teams ( name, category )").eq("id", id).single(),
     injuryQuery,
     supabase.from("anthropometry_logs").select("*").eq("player_id", id).order("date", { ascending: false }),
@@ -111,6 +114,36 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
       .like("note", "[CUSTOM_REHAB_PLAN]%")
       .order("created_at", { ascending: false })
       .limit(20),
+    supabase
+      .from("workload_sessions")
+      .select("date, workload_au, duration_minutes, rpe_score")
+      .eq("player_id", id)
+      .order("date", { ascending: false })
+      .limit(100),
+    supabase
+      .from("wellness_surveys")
+      .select("date, total_score")
+      .eq("player_id", id)
+      .order("date", { ascending: false })
+      .limit(50),
+    supabase
+      .from("injury_logs")
+      .select("date, note")
+      .like("note", "[WORKLOAD]%")
+      .order("date", { ascending: false })
+      .limit(100),
+    supabase
+      .from("injury_logs")
+      .select("date, note")
+      .like("note", "[WELLNESS%")
+      .order("date", { ascending: false })
+      .limit(100),
+    supabase
+      .from("injury_logs")
+      .select("id, date, note")
+      .like("note", "[TREATMENT]%")
+      .order("date", { ascending: false })
+      .limit(100),
   ]);
 
   const { data: player, error } = playerRes;
@@ -212,6 +245,22 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
     }
   }
 
+  const playerTreatments: MedicalTreatmentEntry[] = (treatmentLogsRes.data || [])
+    .map((l) => {
+      try {
+        const rawJson = l.note.replace("[TREATMENT] ", "");
+        const parsed = JSON.parse(rawJson);
+        if (parsed.player_id === id) {
+          parsed.log_id = l.id;
+          return parsed as MedicalTreatmentEntry;
+        }
+        return null;
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean) as MedicalTreatmentEntry[];
+
   const totalInjuries = injuryList.length;
   const totalDaysMissed = injuryList.reduce((s,i) => s + calcDaysMissed(i), 0);
   const activeCount = injuryList.filter(i => i.status === "active").length;
@@ -223,6 +272,72 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
   const periodLabel = from ? `${from}${to ? ` — ${to}` : " — сьогодні"}` : "За весь час";
   const currentUser = await getCurrentUser();
   const isAdminUser = currentUser?.role === "admin";
+
+  // Розрахунок показників для чесного індикатора AI-аналітика ризику (Задача 3.1)
+  // 1. Зріст: заміри за останні 12 місяців
+  const oneYearAgoStr = new Date(Date.now() - 365 * 24 * 3600 * 1000).toISOString().split("T")[0];
+  const heightMeasurementsCount12m = (measurements || []).filter(
+    (m) => m.date >= oneYearAgoStr && m.height_cm != null
+  ).length;
+
+  // 2. Навантаження та ACWR (потрібно >=28 днів історії)
+  let playerWorkloadList: { date: string; workload_au: number }[] = (workloadRes?.data as any) || [];
+  if (playerWorkloadList.length === 0 && workloadLogsRes?.data) {
+    playerWorkloadList = workloadLogsRes.data
+      .map((l) => {
+        try {
+          const raw = l.note.replace("[WORKLOAD] ", "");
+          const parsed = JSON.parse(raw);
+          return parsed.player_id === id ? { date: parsed.date, workload_au: parsed.workload_au } : null;
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean) as any[];
+  }
+
+  let workloadDaysMonitored = 0;
+  let playerAcwr: number | null = null;
+  if (playerWorkloadList.length > 0) {
+    const dates = playerWorkloadList.map((w) => w.date).sort();
+    const earliest = new Date(dates[0]).getTime();
+    workloadDaysMonitored = Math.floor((Date.now() - earliest) / (1000 * 60 * 60 * 24)) + 1;
+
+    const d7Ago = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString().split("T")[0];
+    const d28Ago = new Date(Date.now() - 28 * 24 * 3600 * 1000).toISOString().split("T")[0];
+
+    const acuteLoad = playerWorkloadList
+      .filter((w) => w.date >= d7Ago)
+      .reduce((sum, w) => sum + (w.workload_au || 0), 0);
+    const chronicLoad = playerWorkloadList
+      .filter((w) => w.date >= d28Ago)
+      .reduce((sum, w) => sum + (w.workload_au || 0), 0);
+
+    const calc = calculateAcwr(acuteLoad, chronicLoad, {
+      daysMonitored: workloadDaysMonitored,
+      chronicSessionsCount: playerWorkloadList.filter((w) => w.date >= d28Ago).length,
+    });
+    playerAcwr = calc.acwr;
+  }
+
+  // 3. Велнес: кількість днів моніторингу (потрібно >=7 днів)
+  let playerWellnessList: { date: string; total_score: number }[] = (wellnessRes?.data as any) || [];
+  if (playerWellnessList.length === 0 && wellnessLogsRes?.data) {
+    playerWellnessList = wellnessLogsRes.data
+      .map((l) => {
+        try {
+          const raw = l.note.replace("[WELLNESS_ENTRY] ", "").replace("[WELLNESS] ", "");
+          const parsed = JSON.parse(raw);
+          return parsed.player_id === id ? { date: parsed.date, total_score: parsed.total_score || parsed.score } : null;
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean) as any[];
+  }
+
+  const distinctWellnessDays = new Set(playerWellnessList.map((w) => w.date)).size;
+  const latestWellnessScore = playerWellnessList[0]?.total_score ?? null;
 
   const initials = `${player.last_name?.[0] ?? ""}${player.first_name?.[0] ?? ""}`;
 
@@ -416,8 +531,15 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
         
         <ReinjuryRiskWidget
           playerName={`${player.last_name} ${player.first_name}`}
+          heightMeasurementsCount12m={heightMeasurementsCount12m}
           growthPhase={maturation?.growth_phase}
+          hasPhvRecorded={Boolean(maturation?.growth_phase)}
+          workloadDaysMonitored={workloadDaysMonitored}
+          acwr={playerAcwr}
+          wellnessDaysRecorded={distinctWellnessDays}
+          wellnessScore={latestWellnessScore}
           reinjuryCount={injuryList.filter((i) => i.status === "closed").length}
+          hasActiveDiscomfort={activeInjuries.length > 0}
         />
         
         <PreSeasonScreeningCard playerId={id} playerName={`${player.last_name} ${player.first_name}`} initialScreenings={screenings} />
@@ -427,6 +549,13 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
           playerName={`${player.last_name} ${player.first_name}`}
           initialProfile={latestNutrition}
           requiresParentalConsent={!hasSupplementsConsent}
+        />
+
+        {/* 3.3 Фармакотерапія та медикаменти гравця з аптеки */}
+        <PlayerTreatmentsCard
+          playerId={id}
+          playerName={`${player.last_name} ${player.first_name}`}
+          initialTreatments={playerTreatments}
         />
 
         {/* 8.2 Авторизовані пристрої гравця (QR-активація, макс 2 пристрої) */}
@@ -455,12 +584,18 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
           playerId={id}
           playerName={`${player.last_name} ${player.first_name}`}
           initialRecords={lsiRecords}
+          playerWeightKg={anthroRes.data?.[0]?.weight ? Number(anthroRes.data[0].weight) : null}
+          defaultInjuryType={injuryList?.[0]?.injury_type}
+          defaultSide={injuryList?.[0]?.side === "left" || injuryList?.[0]?.side === "right" ? injuryList[0].side : undefined}
         />
 
         <RehabExercisePlanBuilder
           playerId={id}
           playerName={`${player.last_name} ${player.first_name}`}
           initialPlan={playerCustomPlan}
+          activeInjuries={activeInjuries}
+          currentRtpPhase={playerCustomPlan?.target_rtp_phase || 1}
+          defaultDoctorName={currentUser?.fullName || currentUser?.email || "Головний лікар клубу"}
         />
 
         {/* Період аналізу травм */}

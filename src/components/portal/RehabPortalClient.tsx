@@ -173,7 +173,9 @@ export default function RehabPortalClient({
           setsReps: e.setsReps,
           targetArea: e.targetArea,
           technique: e.technique,
+          source: e.source,
           completed: false,
+          pain_score: null,
         }));
         setExercises(customEx);
       } else if (primaryInj?.location && primaryInj.location !== "other") {
@@ -263,10 +265,27 @@ export default function RehabPortalClient({
     });
   };
 
-  // Toggle Exercise completion
+  // Toggle Exercise completion and initialize pain rating
   const toggleExercise = (exId: string) => {
     setExercises((prev) =>
-      prev.map((ex) => (ex.id === exId ? { ...ex, completed: !ex.completed } : ex))
+      prev.map((ex) => {
+        if (ex.id === exId) {
+          const nextCompleted = !ex.completed;
+          return {
+            ...ex,
+            completed: nextCompleted,
+            pain_score: nextCompleted ? (ex.pain_score ?? 0) : null,
+          };
+        }
+        return ex;
+      })
+    );
+  };
+
+  // Update exercise specific pain score (0-10)
+  const updateExercisePain = (exId: string, score: number) => {
+    setExercises((prev) =>
+      prev.map((ex) => (ex.id === exId ? { ...ex, pain_score: score } : ex))
     );
   };
 
@@ -402,6 +421,12 @@ export default function RehabPortalClient({
         stiffness_minutes: stiffnessMinutes,
         exercises_completed: exercisesStatus,
         completed_exercise_ids: exercises.filter((e) => e.completed).map((e) => e.id),
+        exercise_feedback: exercises.map((e) => ({
+          exercise_id: e.id,
+          exercise_name: e.name,
+          completed: !!e.completed,
+          pain_score: e.completed ? (e.pain_score ?? 0) : null,
+        })),
         completed_quests: quests.filter((q) => q.completed).map((q) => q.id),
         psychological_readiness: psychReadiness,
         sleep_quality: sleepQuality!,
@@ -801,12 +826,80 @@ export default function RehabPortalClient({
                             <p className="text-[10px] text-slate-400 mt-1 leading-snug">
                               {ex.technique}
                             </p>
+                            {ex.source && (
+                              <p className="text-[9px] text-slate-500 mt-1 font-mono">
+                                📖 {ex.source}
+                              </p>
+                            )}
                           </div>
                         </div>
                         <span className="text-[9px] px-2 py-0.5 rounded-full bg-slate-900 border border-white/10 text-slate-400 shrink-0">
                           {ex.targetArea?.split(" ")[0]}
                         </span>
                       </div>
+
+                      {/* Оцінка болю після вправи (0-10) */}
+                      {ex.completed && (
+                        <div
+                          className="mt-3 pt-2.5 border-t border-emerald-500/20 space-y-2"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="font-bold text-slate-300 flex items-center gap-1">
+                              <span>⚡</span> Біль під час чи після вправи:
+                            </span>
+                            <span
+                              className={`font-mono font-bold text-xs px-2 py-0.5 rounded border ${
+                                (ex.pain_score ?? 0) >= 5
+                                  ? "bg-rose-500/20 text-rose-300 border-rose-500/40"
+                                  : (ex.pain_score ?? 0) >= 3
+                                  ? "bg-amber-500/20 text-amber-300 border-amber-500/30"
+                                  : "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
+                              }`}
+                            >
+                              {ex.pain_score != null ? `${ex.pain_score} / 10` : "0 / 10"}
+                            </span>
+                          </div>
+
+                          {/* Pills 0..10 */}
+                          <div className="grid grid-cols-11 gap-1">
+                            {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
+                              <button
+                                key={num}
+                                type="button"
+                                onClick={() => updateExercisePain(ex.id, num)}
+                                className={`h-7 rounded-lg font-mono text-[11px] font-bold transition-all border ${
+                                  ex.pain_score === num
+                                    ? num >= 5
+                                      ? "bg-rose-500 text-white border-rose-400 shadow-sm scale-105"
+                                      : num >= 3
+                                      ? "bg-amber-500 text-black border-amber-400 shadow-sm scale-105"
+                                      : "bg-emerald-500 text-black border-emerald-400 shadow-sm scale-105"
+                                    : "bg-slate-900 text-slate-300 border-slate-800 hover:border-slate-700 hover:text-white"
+                                }`}
+                              >
+                                {num}
+                              </button>
+                            ))}
+                          </div>
+
+                          <div className="flex justify-between text-[9px] text-slate-400 px-0.5">
+                            <span>0: Без болю</span>
+                            <span>3: Дискомфорт</span>
+                            <span>5+: Сильний біль ⚠️</span>
+                          </div>
+
+                          {/* Запобіжник безпеки при болю >= 5 */}
+                          {(ex.pain_score ?? 0) >= 5 && (
+                            <div className="p-2 rounded-xl bg-rose-950/80 border border-rose-500/50 text-[10px] text-rose-300 leading-snug flex items-start gap-1.5 animate-fadeIn">
+                              <span>🚨</span>
+                              <span>
+                                <strong>Зупиніть вправу!</strong> Біль {ex.pain_score}/10 перевищує поріг безпеки. Негайно повідомте лікаря клубу.
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

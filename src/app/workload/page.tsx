@@ -79,8 +79,21 @@ export default async function WorkloadPage({
     const chronicLoad = chronicSessions.reduce((sum, s) => sum + (s.workload_au || 0), 0);
     const weeklyChronic = Math.round(chronicLoad > 0 ? chronicLoad / 4 : 0);
 
+    // Розрахунок періоду моніторингу (задача 3.1: мінімум >= 28 днів даних для ACWR)
+    let daysMonitored = 0;
+    if (pSessions.length > 0) {
+      const dates = pSessions.map((s) => s.date).sort();
+      const earliest = new Date(dates[0]).getTime();
+      const todayMs = now.getTime();
+      // Кількість днів від першого зареєстрованого тренування до сьогодні
+      const daysSpan = Math.floor((todayMs - earliest) / (1000 * 60 * 60 * 24)) + 1;
+      // Якщо спан менше 28 днів, у гравця об'єктивно ще немає повного 28-денного вікна
+      daysMonitored = daysSpan;
+    }
+
     const acwrCalc = calculateAcwr(acuteLoad, chronicLoad, {
       chronicSessionsCount: chronicSessions.length,
+      daysMonitored,
     });
     const lastSession = pSessions[0];
 
@@ -142,7 +155,7 @@ export default async function WorkloadPage({
               </h1>
             </div>
             <p className="text-xs text-slate-400 mt-1">
-              Контроль гострого до хронічного навантаження (Gabbett ACWR) для запобігання перетренованості та неконтактних травм
+              Контроль гострого до хронічного навантаження (Gabbett ACWR) для моніторингу навантаження та оптимізації відновлення
             </p>
           </div>
 

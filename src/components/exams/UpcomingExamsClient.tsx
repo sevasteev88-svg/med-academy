@@ -2,8 +2,9 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { LOCATION_UA, INJURY_TYPE_UA, vasColor } from "@/lib/constants";
+import { formatLocation, formatInjuryType, vasColor } from "@/lib/constants";
 import { rescheduleExamAction } from "@/actions/reschedule-exam-action";
+import { bulkRescheduleExamsAction } from "@/actions/bulk-reschedule-exams-action";
 
 type InjuryExamItem = {
   id: string;
@@ -40,6 +41,8 @@ export default function UpcomingExamsClient({ injuries, todayStr }: Props) {
   const [selectedTeam, setSelectedTeam] = useState<string>("all");
   const [isPending, startTransition] = useTransition();
   const [reschedulingId, setReschedulingId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkMessage, setBulkMessage] = useState<string | null>(null);
 
   // Обчислюємо групи
   const overdueList = injuries.filter((i) => i.next_exam_date < todayStr);
@@ -122,6 +125,37 @@ export default function UpcomingExamsClient({ injuries, todayStr }: Props) {
       await rescheduleExamAction(injuryId, newDate);
       setReschedulingId(null);
     });
+  }
+
+  function handleBulkReschedule(idsToReschedule: string[], daysToAdd: number) {
+    if (idsToReschedule.length === 0) return;
+    setBulkMessage("Переносимо огляди...");
+    startTransition(async () => {
+      const res = await bulkRescheduleExamsAction(idsToReschedule, daysToAdd);
+      if (res.error) {
+        setBulkMessage(`Помилка: ${res.error}`);
+      } else {
+        setBulkMessage(`Успішно перенесено ${res.count} огляд(ів) на ${res.nextExamDate}`);
+        setSelectedIds([]);
+      }
+      setTimeout(() => setBulkMessage(null), 4000);
+    });
+  }
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  }
+
+  function toggleSelectAll(items: InjuryExamItem[]) {
+    const itemIds = items.map((i) => i.id);
+    const allSelected = itemIds.every((id) => selectedIds.includes(id));
+    if (allSelected) {
+      setSelectedIds((prev) => prev.filter((id) => !itemIds.includes(id)));
+    } else {
+      setSelectedIds((prev) => Array.from(new Set([...prev, ...itemIds])));
+    }
   }
 
   return (
@@ -215,6 +249,52 @@ export default function UpcomingExamsClient({ injuries, todayStr }: Props) {
         </div>
       )}
 
+      {/* Повідомлення про масові дії */}
+      {bulkMessage && (
+        <div className="p-3 rounded-xl bg-sky-500/15 border border-sky-500/30 text-sky-300 text-xs font-medium animate-fade-in flex items-center justify-between">
+          <span>{bulkMessage}</span>
+          <button type="button" onClick={() => setBulkMessage(null)} className="text-slate-400 hover:text-white">✕</button>
+        </div>
+      )}
+
+      {/* Плаваюча панель масових дій для обраних оглядів */}
+      {selectedIds.length > 0 && (
+        <div className="p-3.5 rounded-2xl bg-slate-900/95 border border-sky-500/40 shadow-2xl flex flex-wrap items-center justify-between gap-3 sticky top-4 z-20 backdrop-blur-md">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-sky-400 animate-pulse" />
+            <span className="text-xs font-bold text-white">
+              Вибрано {selectedIds.length} {selectedIds.length === 1 ? "огляд" : selectedIds.length < 5 ? "огляди" : "оглядів"}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              disabled={isPending}
+              onClick={() => handleBulkReschedule(selectedIds, 1)}
+              className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold transition-all disabled:opacity-50 flex items-center gap-1 shadow-sm"
+            >
+              <span>⚡</span> Перенести на завтра (+1 дн)
+            </button>
+            <button
+              type="button"
+              disabled={isPending}
+              onClick={() => handleBulkReschedule(selectedIds, 3)}
+              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition-all disabled:opacity-50 border border-slate-700"
+            >
+              +3 дні
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedIds([])}
+              className="px-2.5 py-1.5 rounded-lg text-xs text-slate-400 hover:text-white transition-colors"
+            >
+              Скинути вибір
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Якщо оглядів немає */}
       {groups.length === 0 && (
         <div className="bg-surface border border-blue-900/18 rounded-xl p-8 text-center space-y-3">
@@ -235,151 +315,203 @@ export default function UpcomingExamsClient({ injuries, todayStr }: Props) {
       )}
 
       {/* Список оглядів за категоріями */}
-      {groups.map((group) => (
-        <section key={group.label} className="space-y-3">
-          <div className="flex items-center gap-2">
-            <h2
-              className={`text-xs font-bold uppercase tracking-wider ${
-                group.badgeType === "danger"
-                  ? "text-status-danger"
-                  : group.badgeType === "warn"
-                  ? "text-status-warn"
-                  : "text-slate-400"
-              }`}
-            >
-              {group.label}
-            </h2>
-            <span className="text-[11px] px-2 py-0.2 rounded-full bg-slate-800 text-slate-400 font-mono">
-              {group.items.length}
-            </span>
-            <div className="flex-1 h-px bg-slate-800" />
-          </div>
+      {groups.map((group) => {
+        const isOverdueGroup = group.badgeType === "danger";
+        const groupIds = group.items.map((i) => i.id);
+        const allGroupSelected = groupIds.length > 0 && groupIds.every((id) => selectedIds.includes(id));
 
-          <div className="space-y-2.5">
-            {group.items.map((inj) => {
-              const p = inj.players;
-              const isOverdue = group.badgeType === "danger";
-              const isToday = group.badgeType === "warn";
-              const isThisRescheduling = isPending && reschedulingId === inj.id;
-
-              return (
-                <div
-                  key={inj.id}
-                  className={`bg-surface border rounded-xl p-3.5 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                    isOverdue
-                      ? "border-status-danger/30 hover:border-status-danger/60 bg-status-danger/[0.03]"
-                      : isToday
-                      ? "border-status-warn/30 hover:border-status-warn/60 bg-status-warn/[0.02]"
-                      : "border-blue-900/18 hover:border-blue-500/40"
+        return (
+          <section key={group.label} className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <h2
+                  className={`text-xs font-bold uppercase tracking-wider ${
+                    isOverdueGroup
+                      ? "text-status-danger"
+                      : group.badgeType === "warn"
+                      ? "text-status-warn"
+                      : "text-slate-400"
                   }`}
                 >
-                  {/* Ліва колонка: гравець та травма */}
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div
-                      className={`w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center text-xs font-bold shadow-sm ${
-                        isOverdue
-                          ? "bg-status-danger/15 text-status-danger"
-                          : isToday
-                          ? "bg-status-warn/15 text-status-warn"
-                          : "bg-brand-blue/15 text-brand-blue"
-                      }`}
-                    >
-                      {initials(p)}
-                    </div>
+                  {group.label}
+                </h2>
+                <span className="text-[11px] px-2 py-0.2 rounded-full bg-slate-800 text-slate-400 font-mono">
+                  {group.items.length}
+                </span>
+              </div>
 
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <Link
-                          href={`/injuries/${inj.id}`}
-                          className="text-sm font-bold text-white hover:text-brand-blue transition-colors truncate"
-                        >
-                          {shortName(p)}
-                        </Link>
-                        {p?.teams?.name && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">
-                            {p.teams.name}
-                          </span>
-                        )}
-                        {inj.vas_score != null && (
-                          <span className={`text-[10px] font-mono font-bold ${vasColor(inj.vas_score)}`}>
-                            ВАШ {inj.vas_score}/10
-                          </span>
-                        )}
-                      </div>
+              {/* Швидкі масові дії для групи прострочених */}
+              {isOverdueGroup && group.items.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={isPending}
+                    onClick={() => handleBulkReschedule(groupIds, 1)}
+                    className="px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 text-[11px] font-bold transition-all disabled:opacity-50 flex items-center gap-1 shadow-sm"
+                    title="Перенести всі прострочені на завтра"
+                  >
+                    <span>⚡</span> Перенести всі на завтра
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => toggleSelectAll(group.items)}
+                    className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-700 hover:border-slate-500 text-slate-300 text-[11px] transition-colors"
+                  >
+                    {allGroupSelected ? "Зняти всі" : "Вибрати всі"}
+                  </button>
+                </div>
+              )}
+            </div>
 
-                      <div className="text-xs text-slate-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
-                        <span>{INJURY_TYPE_UA[inj.injury_type] ?? inj.injury_type}</span>
-                        <span>·</span>
-                        <span className="text-slate-300 font-medium">
-                          {LOCATION_UA[inj.location] ?? inj.location}
-                        </span>
-                        <span>·</span>
-                        <span className="text-slate-500">
-                          {inj.status === "active" ? "Гостра фаза" : "Реабілітація"}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
+            <div className="space-y-2.5">
+              {group.items.map((inj) => {
+                const p = inj.players;
+                const isOverdue = group.badgeType === "danger";
+                const isToday = group.badgeType === "warn";
+                const isThisRescheduling = isPending && reschedulingId === inj.id;
+                const isSelected = selectedIds.includes(inj.id);
 
-                  {/* Права колонка: дата та швидкі дії */}
-                  <div className="flex items-center justify-between sm:justify-end gap-2 border-t sm:border-t-0 border-slate-800/80 pt-2 sm:pt-0">
-                    <div className="text-left sm:text-right mr-2">
+                // Точний розрахунок запізнення для прострочених
+                let overdueDays = 0;
+                if (isOverdue && inj.next_exam_date) {
+                  const diffMs = new Date(todayStr).getTime() - new Date(inj.next_exam_date).getTime();
+                  overdueDays = Math.max(1, Math.floor(diffMs / 86400000));
+                }
+
+                return (
+                  <div
+                    key={inj.id}
+                    className={`bg-surface border rounded-xl p-3.5 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                      isSelected
+                        ? "border-sky-500 bg-sky-950/20 ring-1 ring-sky-500/40"
+                        : isOverdue
+                        ? "border-status-danger/30 hover:border-status-danger/60 bg-status-danger/[0.03]"
+                        : isToday
+                        ? "border-status-warn/30 hover:border-status-warn/60 bg-status-warn/[0.02]"
+                        : "border-blue-900/18 hover:border-blue-500/40"
+                    }`}
+                  >
+                    {/* Ліва колонка: чекбокс, гравець та травма */}
+                    <div className="flex items-center gap-3 min-w-0">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleSelect(inj.id)}
+                        className="w-4 h-4 rounded border-slate-700 text-brand-blue focus:ring-0 focus:ring-offset-0 bg-slate-900 cursor-pointer"
+                        title="Вибрати для масового перенесення"
+                      />
+
                       <div
-                        className={`text-xs font-mono font-bold ${
+                        className={`w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center text-xs font-bold shadow-sm ${
                           isOverdue
-                            ? "text-status-danger"
+                            ? "bg-status-danger/15 text-status-danger"
                             : isToday
-                            ? "text-status-warn"
-                            : "text-slate-300"
+                            ? "bg-status-warn/15 text-status-warn"
+                            : "bg-brand-blue/15 text-brand-blue"
                         }`}
                       >
-                        {new Date(inj.next_exam_date).toLocaleDateString("uk-UA", {
-                          day: "numeric",
-                          month: "short",
-                        })}
+                        {initials(p)}
                       </div>
-                      <div className="text-[10px] text-slate-500">
-                        {isOverdue ? "прострочено" : isToday ? "сьогодні" : "за планом"}
+
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Link
+                            href={`/injuries/${inj.id}`}
+                            className="text-sm font-bold text-white hover:text-brand-blue transition-colors truncate"
+                          >
+                            {shortName(p)}
+                          </Link>
+                          {p?.teams?.name && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">
+                              {p.teams.name}
+                            </span>
+                          )}
+                          {inj.vas_score != null && (
+                            <span className={`text-[10px] font-mono font-bold ${vasColor(inj.vas_score)}`}>
+                              ВАШ {inj.vas_score}/10
+                            </span>
+                          )}
+                          {isOverdue && (
+                            <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                              Прострочено на {overdueDays} {overdueDays === 1 ? "день" : overdueDays < 5 ? "дні" : "днів"}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="text-xs text-slate-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                          <span>{formatInjuryType(inj.injury_type)}</span>
+                          <span>·</span>
+                          <span className="text-slate-300 font-medium">
+                            {formatLocation(inj.location)}
+                          </span>
+                          <span>·</span>
+                          <span className="text-slate-500">
+                            {inj.status === "active" ? "Гостра фаза" : "Реабілітація"}
+                          </span>
+                        </div>
                       </div>
                     </div>
 
-                    {/* Швидке перенесення */}
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        disabled={isThisRescheduling}
-                        onClick={() => handleReschedule(inj.id, 1)}
-                        title="Перенести на завтра"
-                        className="px-2 py-1.5 rounded-lg border border-slate-800 hover:border-slate-700 bg-slate-900 text-[11px] text-slate-400 hover:text-white transition-colors disabled:opacity-50"
-                      >
-                        +1 дн
-                      </button>
-                      <button
-                        type="button"
-                        disabled={isThisRescheduling}
-                        onClick={() => handleReschedule(inj.id, 3)}
-                        title="Перенести на 3 дні"
-                        className="px-2 py-1.5 rounded-lg border border-slate-800 hover:border-slate-700 bg-slate-900 text-[11px] text-slate-400 hover:text-white transition-colors disabled:opacity-50"
-                      >
-                        +3 дн
-                      </button>
-                    </div>
+                    {/* Права колонка: дата та швидкі дії */}
+                    <div className="flex items-center justify-between sm:justify-end gap-2 border-t sm:border-t-0 border-slate-800/80 pt-2 sm:pt-0">
+                      <div className="text-left sm:text-right mr-2">
+                        <div
+                          className={`text-xs font-mono font-bold ${
+                            isOverdue
+                              ? "text-status-danger"
+                              : isToday
+                              ? "text-status-warn"
+                              : "text-slate-300"
+                          }`}
+                        >
+                          {new Date(inj.next_exam_date).toLocaleDateString("uk-UA", {
+                            day: "numeric",
+                            month: "short",
+                          })}
+                        </div>
+                        <div className="text-[10px] text-slate-500">
+                          {isOverdue ? `затримка ${overdueDays} дн.` : isToday ? "сьогодні" : "за планом"}
+                        </div>
+                      </div>
 
-                    {/* Прямий перехід на проведення огляду */}
-                    <Link
-                      href={`/exams/new/${inj.id}`}
-                      className="px-3 py-1.5 rounded-lg bg-brand-blue hover:bg-blue-600 text-white text-xs font-bold transition-colors flex items-center gap-1.5 shadow-sm shadow-brand-blue/30"
-                    >
-                      <span>🩺</span>
-                      <span>Оглянути</span>
-                    </Link>
+                      {/* Швидке перенесення по одиниці */}
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          disabled={isThisRescheduling || isPending}
+                          onClick={() => handleReschedule(inj.id, 1)}
+                          title="Перенести на завтра"
+                          className="px-2 py-1.5 rounded-lg border border-slate-800 hover:border-slate-700 bg-slate-900 text-[11px] text-slate-400 hover:text-white transition-colors disabled:opacity-50"
+                        >
+                          +1 дн
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isThisRescheduling || isPending}
+                          onClick={() => handleReschedule(inj.id, 3)}
+                          title="Перенести на 3 дні"
+                          className="px-2 py-1.5 rounded-lg border border-slate-800 hover:border-slate-700 bg-slate-900 text-[11px] text-slate-400 hover:text-white transition-colors disabled:opacity-50"
+                        >
+                          +3 дн
+                        </button>
+                      </div>
+
+                      {/* Прямий перехід на проведення огляду */}
+                      <Link
+                        href={`/exams/new/${inj.id}`}
+                        className="px-3 py-1.5 rounded-lg bg-brand-blue hover:bg-blue-600 text-white text-xs font-bold transition-colors flex items-center gap-1.5 shadow-sm shadow-brand-blue/30"
+                      >
+                        <span>🩺</span>
+                        <span>Оглянути</span>
+                      </Link>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      ))}
+                );
+              })}
+            </div>
+          </section>
+        );
+      })}
     </div>
   );
 }

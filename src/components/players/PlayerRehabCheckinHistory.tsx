@@ -233,6 +233,56 @@ export default function PlayerRehabCheckinHistory({
                     </div>
                   </div>
 
+                  {/* Деталізація виконання вправ ЛФК та рівня болю від гравця */}
+                  {chk.exercise_feedback && chk.exercise_feedback.length > 0 && (
+                    <div className="pt-2 border-t border-white/5 space-y-1.5">
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className="font-bold text-slate-400">Вправи комплексу та біль (0–10):</span>
+                        {chk.exercise_feedback.some((ef) => (ef.pain_score ?? 0) >= 5) && (
+                          <span className="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 font-bold text-[9px] animate-pulse">
+                            ⚠️ Сигнал болю ≥ 5/10
+                          </span>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                        {chk.exercise_feedback.map((ef, efIdx) => {
+                          const isAlert = (ef.pain_score ?? 0) >= 5;
+                          const isWarning = (ef.pain_score ?? 0) >= 3;
+                          return (
+                            <div
+                              key={efIdx}
+                              className={`p-2 rounded-lg border text-[11px] flex items-center justify-between gap-2 ${
+                                isAlert
+                                  ? "bg-rose-950/30 border-rose-500/40 text-rose-200"
+                                  : isWarning
+                                  ? "bg-amber-950/20 border-amber-500/30 text-amber-200"
+                                  : "bg-slate-900/80 border-slate-800 text-slate-300"
+                              }`}
+                            >
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span className={ef.completed ? "text-emerald-400 font-bold" : "text-slate-500"}>
+                                  {ef.completed ? "✓" : "○"}
+                                </span>
+                                <span className="truncate">{ef.exercise_name}</span>
+                              </div>
+                              <span
+                                className={`font-mono font-bold text-[10px] px-1.5 py-0.5 rounded shrink-0 border ${
+                                  isAlert
+                                    ? "bg-rose-500/20 text-rose-300 border-rose-500/30"
+                                    : isWarning
+                                    ? "bg-amber-500/20 text-amber-300 border-amber-500/30"
+                                    : "bg-slate-800 text-slate-400 border-slate-700"
+                                }`}
+                              >
+                                Біль: {ef.pain_score != null ? `${ef.pain_score}/10` : "0/10"}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                   {chk.player_comment && (
                     <div className="p-2 rounded-lg bg-white/5 text-[11px] text-slate-200 italic mt-1">
                       «{chk.player_comment}»

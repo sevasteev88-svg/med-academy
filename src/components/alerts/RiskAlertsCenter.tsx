@@ -6,7 +6,7 @@ import Link from "next/link";
 
 export interface RiskAlertItem {
   id: string;
-  type: "acwr" | "wearable" | "phv" | "pain" | "hydration" | "overdue";
+  type: "acwr" | "wearable" | "phv" | "pain" | "hydration" | "overdue" | "pharmacy";
   severity: "critical" | "warning";
   playerId: string;
   playerName: string;
@@ -158,10 +158,11 @@ export default function RiskAlertsCenter({
                       {alert.type === "pain" && "🩹"}
                       {alert.type === "hydration" && "💧"}
                       {alert.type === "overdue" && "⚠️"}
+                      {alert.type === "pharmacy" && "💊"}
                     </span>
                     <div>
                       <Link
-                        href={`/players/${alert.playerId}`}
+                        href={alert.type === "pharmacy" ? "/pharmacy" : `/players/${alert.playerId}`}
                         className="text-xs font-bold text-white hover:text-sky-300 transition-colors block leading-tight"
                       >
                         {alert.playerName}
@@ -332,7 +333,7 @@ export default function RiskAlertsCenter({
                         <div className="flex items-start justify-between gap-2">
                           <div>
                             <Link
-                              href={`/players/${alert.playerId}`}
+                              href={alert.type === "pharmacy" ? "/pharmacy" : `/players/${alert.playerId}`}
                               onClick={() => setIsOpen(false)}
                               className="font-bold text-white hover:text-sky-300 transition-colors"
                             >

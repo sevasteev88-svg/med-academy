@@ -11,6 +11,7 @@ import {
   BORG_CR10_SCALE,
   SESSION_TYPE_UA,
   calculateAcwr,
+  ACWR_THRESHOLDS,
 } from "@/types/workload";
 
 type Player = {
@@ -67,10 +68,11 @@ export default function WorkloadClient({
     return true;
   });
 
-  const dangerCount = summaries.filter((s) => s.riskZone === "danger").length;
-  const cautionCount = summaries.filter((s) => s.riskZone === "caution").length;
-  const sweetSpotCount = summaries.filter((s) => s.riskZone === "sweet_spot").length;
-  const insufficientCount = summaries.filter((s) => s.riskZone === "insufficient_data" || s.isInsufficientData).length;
+  // Підрахунок категорій з урахуванням правила 3.1: недостатньо даних виділяється окремо і не потрапляє до Sweet Spot
+  const dangerCount = summaries.filter((s) => s.riskZone === "danger" && !s.isInsufficientData && s.acwr !== null).length;
+  const cautionCount = summaries.filter((s) => s.riskZone === "caution" && !s.isInsufficientData && s.acwr !== null).length;
+  const sweetSpotCount = summaries.filter((s) => s.riskZone === "sweet_spot" && !s.isInsufficientData && s.acwr !== null).length;
+  const insufficientCount = summaries.filter((s) => s.riskZone === "insufficient_data" || s.isInsufficientData || s.acwr === null).length;
   const discrepanciesCount = summaries.filter((s) => s.rpeDiscrepancy && Math.abs(s.rpeDiscrepancy.diff) >= 2).length;
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -101,14 +103,14 @@ export default function WorkloadClient({
 
   return (
     <div className="space-y-6">
-      {/* Top Banner & Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+      {/* Top Banner & Quick Stats (5 карток, включаючи категорію "Немає даних" за правилом 3.1) */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <div className="bg-slate-900/90 border border-blue-900/20 rounded-xl p-4">
           <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1">
             Гравців у базі
           </div>
           <div className="text-2xl font-black text-white">{summaries.length}</div>
-          <div className="text-xs text-slate-500 mt-1">Під моніторингом ACWR</div>
+          <div className="text-xs text-slate-500 mt-1">Моніторинг навантаження</div>
         </div>
 
         <div className="bg-emerald-950/20 border border-emerald-500/30 rounded-xl p-4">
@@ -122,20 +124,38 @@ export default function WorkloadClient({
 
         <div className="bg-amber-950/20 border border-amber-500/30 rounded-xl p-4">
           <div className="text-[11px] font-semibold text-amber-400 uppercase tracking-wider mb-1 flex items-center justify-between">
-            <span>Підвищений ризик</span>
+            <span>Зона контролю</span>
             <span>🟡</span>
           </div>
           <div className="text-2xl font-black text-amber-300">{cautionCount}</div>
-          <div className="text-xs text-amber-500/80 mt-1">ACWR 1.3 – 1.5 (Контроль)</div>
+          <div className="text-xs text-amber-500/80 mt-1">ACWR 1.3 – 1.5 (Підвищене)</div>
         </div>
 
         <div className="bg-red-950/20 border border-red-500/40 rounded-xl p-4">
           <div className="text-[11px] font-semibold text-red-400 uppercase tracking-wider mb-1 flex items-center justify-between">
-            <span>Danger Zone</span>
+            <span>Спайк навантаження</span>
             <span>🔴</span>
           </div>
           <div className="text-2xl font-black text-red-400">{dangerCount}</div>
-          <div className="text-xs text-red-400/80 mt-1">ACWR ≥ 1.5 (Стрибок у 2-4x)</div>
+          <div className="text-xs text-red-400/80 mt-1">ACWR ≥ 1.5 (Орієнтир втоми)</div>
+        </div>
+
+        <div className="bg-slate-900/90 border border-slate-700/60 rounded-xl p-4 col-span-2 lg:col-span-1">
+          <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-between">
+            <span>Немає даних</span>
+            <span>⚪</span>
+          </div>
+          <div className="text-2xl font-black text-slate-300">{insufficientCount}</div>
+          <div className="text-xs text-slate-500 mt-1">&lt;28 днів спостереження</div>
+        </div>
+      </div>
+
+      {/* Методологічний дисклеймер */}
+      <div className="text-[11px] text-slate-400 bg-slate-900/50 border border-blue-900/30 rounded-xl px-4 py-2.5 flex items-start gap-2.5">
+        <span className="text-sky-400 text-sm mt-0.5">ℹ️</span>
+        <div className="leading-relaxed">
+          <span className="font-semibold text-slate-200">Методологія моніторингу: </span>
+          {ACWR_THRESHOLDS.NOTE} Гостре навантаження обчислюється як сума за 7 днів, хронічне — як середньотижневе ковзне навантаження за 28 днів. За відсутності повних 28 днів гравець отримує статус «Немає даних» і не враховується у Sweet Spot.
         </div>
       </div>
 
@@ -242,7 +262,7 @@ export default function WorkloadClient({
                     : "bg-surface-raised text-red-400 hover:bg-red-950/30"
                 }`}
               >
-                🔴 Небезпека ({dangerCount})
+                🔴 Спайк ({dangerCount})
               </button>
               <button
                 onClick={() => setRiskFilter("caution")}

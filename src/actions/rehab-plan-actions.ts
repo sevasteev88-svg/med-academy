@@ -46,42 +46,63 @@ export async function savePlayerRehabPlanAction(planData: Omit<PlayerCustomRehab
 
   const supabase = await createClient();
 
+  const isApproved = planData.status === "approved";
+  const doctorName = planData.approved_by || planData.doctor_name || auth.user.email || "Медичний штаб клубу";
+
   const plan: PlayerCustomRehabPlan = {
     ...planData,
     id: `plan_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+    status: planData.status || "approved",
+    approved_by: isApproved ? doctorName : undefined,
+    approved_at: isApproved ? (planData.approved_at || new Date().toISOString()) : undefined,
     created_at: new Date().toISOString(),
   };
 
   const payload = `[CUSTOM_REHAB_PLAN] ${JSON.stringify(plan)}`;
 
   // Отримуємо або створюємо системну травму для зв'язку
-  let targetInjuryId: string | null = null;
-  const { data: existingInj } = await supabase
-    .from("injuries")
-    .select("id")
-    .eq("player_id", planData.player_id)
-    .order("date_of_injury", { ascending: false })
-    .limit(1);
+  let targetInjuryId: string | null = planData.target_injury_id || null;
 
-  if (existingInj && existingInj.length > 0) {
-    targetInjuryId = existingInj[0].id;
-  } else {
-    const { data: newInj } = await supabase
+  if (!targetInjuryId) {
+    const { data: existingInj } = await supabase
       .from("injuries")
-      .insert({
-        player_id: planData.player_id,
-        date_of_injury: new Date().toISOString().split("T")[0],
-        injury_type: "illness",
-        location: "other",
-        severity: "minor",
-        status: "closed",
-        description: "План ЛФК / Реабілітація",
-        vas_score: 0,
-      } as any)
       .select("id")
-      .single();
+      .eq("player_id", planData.player_id)
+      .in("status", ["active", "rehabilitation"])
+      .order("date_of_injury", { ascending: false })
+      .limit(1);
 
-    if (newInj) targetInjuryId = newInj.id;
+    if (existingInj && existingInj.length > 0) {
+      targetInjuryId = existingInj[0].id;
+    } else {
+      const { data: anyInj } = await supabase
+        .from("injuries")
+        .select("id")
+        .eq("player_id", planData.player_id)
+        .order("date_of_injury", { ascending: false })
+        .limit(1);
+
+      if (anyInj && anyInj.length > 0) {
+        targetInjuryId = anyInj[0].id;
+      } else {
+        const { data: newInj } = await supabase
+          .from("injuries")
+          .insert({
+            player_id: planData.player_id,
+            date_of_injury: new Date().toISOString().split("T")[0],
+            injury_type: "illness",
+            location: "other",
+            severity: "minor",
+            status: "closed",
+            description: "План ЛФК / Реабілітація",
+            vas_score: 0,
+          } as any)
+          .select("id")
+          .single();
+
+        if (newInj) targetInjuryId = newInj.id;
+      }
+    }
   }
 
   const { error } = await supabase.from("injury_logs").insert({

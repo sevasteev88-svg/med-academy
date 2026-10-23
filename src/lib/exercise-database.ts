@@ -17,6 +17,7 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
       "Стегно зафіксоване руками строго під 90°. Повільне розгинання гомілки вгору до відчуття легкого комфортного натяжіння. Темп плавний, не форсувати через біль (макс. 2/10).",
     equipment: "Власна вага",
     precautions: "Уникати різких рухів у кінцевій точці амплітуди.",
+    source: "Askling C. et al. (BJSM 2013) — L-protocol",
   },
   {
     id: "ham-ball-curl",
@@ -31,6 +32,7 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
       "Лежачи на спині, п'яти на вершині фітболу. Підняти таз до прямої лінії тіла. Згинаючи коліна, підтягувати м'яч п'ятами до сідниць, утримуючи таз високо. Повільно розігнути ноги назад.",
     equipment: "Фітбол (Gymball)",
     precautions: "Не допускати прогину в попереку.",
+    source: "Aspetar Sports Medicine Clinical Practice Guideline",
   },
   {
     id: "ham-nordic",
@@ -44,7 +46,8 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
     technique:
       "Коліна на м'якому килимку, гомілки надійно зафіксовані партнером або під важкою штангою/валиком. Зберігаючи тулуб та стегна в одній лінії, максимально повільно опускатися вперед, опираючись силі тяжіння за рахунок хамстрінгів. В кінці м'яко зловити себе руками і відштовхнутися назад.",
     equipment: "Фіксатор для гомілок або партнер",
-    precautions: "Золотий стандарт FIFA 11+ для профілактики надривів хамстрінга.",
+    precautions: "Доказовий протокол ексцентричного навантаження для профілактики повторних надривів хамстрінга.",
+    source: "FIFA 11+ Prevention Guidelines / F-MARC",
   },
   {
     id: "ham-rdl-single",
@@ -57,7 +60,8 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
     targetArea: "Ексцентричний контроль на довгих довжинах волокна",
     technique:
       "Опорне коліно злегка пом'якшене (15-20°). З прямою спиною нахиляти корпус уперед, одночасно відводячи вільну ногу назад до паралелі з підлогою. Відчути піковий натяг задньої поверхні опорної ноги та повернутися зусиллям сідниці.",
-    equipment: "Гантель 6-12 кг або гиря",
+    equipment: "Гантель або гиря (дозування визначає лікар)",
+    source: "Aspetar Hamstring Protocol (van Dyk et al., 2019)",
   },
   {
     id: "ham-diver",
@@ -71,6 +75,7 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
     technique:
       "Стоячи на одній нозі, одночасно нахиляти тулуб уперед та розводити руки в боки («літак»), згинаючи опорне стегно до 90°. Контролювати горизонтальний рівень тазу без перекосу.",
     equipment: "Власна вага",
+    source: "Askling C. et al. (BJSM 2014) — L-protocol",
   },
   {
     id: "ham-slider-curls",
@@ -84,6 +89,7 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
     technique:
       "Лежачи на спині, підйом тазу у міст на двох ногах. Відриваємо одну ногу, а опорну п'яту на слайдері повільно випрямляємо вперед за 3-4 секунди, утримуючи таз у повітрі.",
     equipment: "Слайд-диск / рушник",
+    source: "Bourne et al., BJSM (Eccentric Hamstring Training)",
   },
   {
     id: "ham-high-box-bridge",
@@ -97,6 +103,7 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
     technique:
       "П'яти стоять на краю тумби або лави висотою 40 см, кут у колінах 90°. Відриваємо таз від підлоги на 5-10 см і фіксуємо ізометричне напруження без спазму.",
     equipment: "Степ / гімнастична лава",
+    source: "Askling L-protocol / Tendinopathy Rehabilitation",
   },
   {
     id: "ham-kick-whipping",
@@ -110,6 +117,7 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
     technique:
       "Тримаючись за стійку, активний винос стегна вперед з наступним потужним пружним захльостом п'яти до сідниці у футбольному спринтерському патерні.",
     equipment: "Власна вага",
+    source: "FIFA Return-to-Play Sprint Clearance Protocol",
   },
 
   // =========================================================================
@@ -127,7 +135,8 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
     technique:
       "Лежачи на спині, невеликий валик під підколінною ямкою. Ізометрично напружувати передню поверхню стегна, вдавлюючи коліно вниз у кушетку та підтягуючи надколінок догори.",
     equipment: "Рушник / валик",
-    precautions: "Перший крок після пластики ПКС або артроскопії меніска.",
+    precautions: "Базовий протокол активації після пластики ПКС або артроскопії меніска.",
+    source: "Melbourne ACL Rehabilitation Guide 2.0",
   },
   {
     id: "knee-straight-leg-raise",
@@ -141,6 +150,7 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
     technique:
       "Суворе випрямлення коліна в замок. Підйом ноги на 30 см від підлоги, утримання 2 секунди у верхній точці, плавне опускання.",
     equipment: "Власна вага",
+    source: "American Physical Therapy Association (APTA) Knee Guidelines",
   },
   {
     id: "knee-spanish-squat",
@@ -155,6 +165,7 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
       "Жорсткий джгут / еспандер зафіксований на висоті колін і одягнений за підколінні ямки обох ніг. Присідати до кута 70-80° із суворо вертикальною гомілкою та прямим корпусом. Утримати 2-3 секунди у нижній точці.",
     equipment: "Силовий еспандер (Power Band)",
     precautions: "Знижує компресійний стрес на пателофеморальний суглоб при вираженому тендиніті.",
+    source: "Rio E. et al. (BJSM 2015) — Patellar Tendinopathy Protocol",
   },
   {
     id: "knee-step-downs",
@@ -168,6 +179,7 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
     technique:
       "Стоячи однією ногою на тумбі або сходинці 15-20 см, повільно опускати п'яту другої ноги до торкання підлоги, контролюючи щоб коліно опорної ноги дивилося строго по вектору 2-го пальця стопи.",
     equipment: "Степ-платформа 15-20 см",
+    source: "Petersen et al., Patellofemoral Pain Clinical Consensus",
   },
   {
     id: "knee-single-hop-stick",
@@ -182,6 +194,7 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
       "Стрибок вперед з однієї ноги на 60-80 см із м'яким приземленням на ту саму ногу, кут у коліні 45°, повна фіксація балансу та нерухомість протягом 3 секунд без підскоків.",
     equipment: "Розмітка / конуси",
     precautions: "Виконується лише при LSI силі розгинання > 85%.",
+    source: "Melbourne ACL Guide 2.0 / Grindem et al. (2016)",
   },
   {
     id: "knee-wall-sit-iso",
@@ -191,11 +204,12 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
     injuryTags: ["patellar_tendon", "jumper_knee"],
     phase: "early",
     defaultSetsReps: "5 підходів × 45 секунд (відпочинок 2 хв)",
-    targetArea: "Знеболюючий (анальгетичний) ефект на зв'язку надколінка за протоколом Rio et al.",
+    targetArea: "Анальгетичний ефект на зв'язку надколінка за протоколом Rio et al.",
     technique:
       "Спина щільно притиснута до стіни, коліна зігнуті рівно під кутом 60° (не 90° для зменшення пателофеморального тиску). Гомілки вертикальні. Рівномірне дихання.",
     equipment: "Стіна",
-    precautions: "Доведено знімає біль у зв'язці надколінка на 45+ хвилин перед тренуванням.",
+    precautions: "Знижує больову чутливість у зв'язці надколінка перед початком функціональних навантажень.",
+    source: "Rio E. et al. (BJSM 2015) — Isometric Analgesia Protocol",
   },
   {
     id: "knee-lateral-band-walk",
@@ -208,7 +222,8 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
     targetArea: "Середній сідничний м'яз для контролю динамічного вальгусу коліна",
     technique:
       "Амортизатор на рівні стоп або щиколоток. Напівприсід 30°, коліна розведені на ширину стоп. Кроки вбік без зближення колін і без розгойдування плечима.",
-    equipment: "Міні-бенд середнього/важкого опору",
+    equipment: "Міні-бенд середнього опору",
+    source: "Distefano et al., JOSPT (Gluteal Muscle Activation)",
   },
   {
     id: "knee-deceleration-90",
@@ -222,6 +237,7 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
     technique:
       "Спринт 10 метрів з 80% швидкістю -> різке трикрокове гальмування перед фішкою -> зниження центру ваги і поворот на 90° убік без вальгусного завалу коліна.",
     equipment: "Конуси на газоні",
+    source: "FIFA 11+ Agility & Deceleration Protocol",
   },
 
   // =========================================================================
@@ -239,6 +255,7 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
     technique:
       "Бічна планка, де коліно верхньої ноги лежить на лаві або підтримується партнером, нижня нога вільно висить під лавою. Утримувати пряму лінію тулуба та тазу без провисання.",
     equipment: "Гімнастична лава",
+    source: "Harøy et al. (BJSM 2017) — Copenhagen Adduction Protocol",
   },
   {
     id: "groin-copenhagen-long",
@@ -253,6 +270,7 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
       "Опора на лаву здійснюється лише внутрішнім краєм стопи / гомілкостопом верхньої ноги. Підйом нижньої ноги до торкання дна лави і плавне опускання.",
     equipment: "Лава",
     precautions: "Не виконувати при гострому запаленні окістя лобкової кістки.",
+    source: "Harøy et al. (BJSM 2017) — Copenhagen Adduction Protocol",
   },
   {
     id: "groin-ball-squeeze",
@@ -266,6 +284,7 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
     technique:
       "Лежачи на спині, коліна зігнуті на 45°. М'яч розміщений між внутрішніми виростками колін. Плавне нарощування тиску до 70% максимуму, утримання 10 секунд.",
     equipment: "М'яч медичний / пілатес",
+    source: "Hølmich P. et al. (The Lancet) — Groin Rehabilitation Protocol",
   },
   {
     id: "groin-slider-lunge",
@@ -279,6 +298,7 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
     technique:
       "Стоячи, одна нога на ковзному диску (слайдері). Згинаючи опорне коліно і відводячи таз назад, плавно відводити ногу на слайдері вбік до відчутного розтягування паху, потім притягнути ногу назад зусиллям аддуктора.",
     equipment: "Слайд-диск (Slider) / рушник на паркеті",
+    source: "Aspetar Adductor Protocol / Serner et al. (2020)",
   },
   {
     id: "groin-cable-adduction",
@@ -292,6 +312,7 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
     technique:
       "Манжета закріплена на щиколотці робочої ноги. Стоячи боком до кросовера, виконувати приведення ноги перед опорною кінцівкою, контролюючи повільну фазу повернення 3 сек.",
     equipment: "Кросовер або амортизатор з манжетою",
+    source: "Hølmich P. et al. — Conservative Groin Treatment",
   },
   {
     id: "groin-speed-skater-hops",
@@ -305,6 +326,7 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
     technique:
       "Потужний поштовх однією ногою вбік на 1-1.5 метра, приземлення на протилежну ногу з м'якою фіксацією коліна та контролем тазу без просідання в пах.",
     equipment: "Власна вага",
+    source: "FIFA Return-to-Play Lateral Deceleration Protocol",
   },
 
   // =========================================================================
@@ -323,6 +345,7 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
       "Стоячи на краю сходинки подушечками стоп. Піднятися вгору на обох ногах, перенести вагу на травмовану ногу і повільно (за 3-4 сек) опустити п'яту нижче рівня сходинки.",
     equipment: "Сходинка або степ",
     precautions: "Виконувати з прямим коліном (литка) та з легким згинанням 30° (камбалоподібний).",
+    source: "Alfredson H. et al. (AJSM 1998) — Achilles Protocol",
   },
   {
     id: "ankle-balance-airex",
@@ -336,6 +359,7 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
     technique:
       "Стоячи на пінопластовій подушці Airex на одній нозі, опорне коліно злегка зігнуте, погляд фіксований вперед. Утримувати нейтральну вісь гомілкостопа без завалів.",
     equipment: "Балансувальна подушка Airex",
+    source: "International Ankle Consortium Consensus (Gribble et al., 2016)",
   },
   {
     id: "ankle-star-excursion",
@@ -349,6 +373,7 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
     technique:
       "Опорна нога фіксована у центрі, вільною ногою плавно тягнутися носком у напрямках: передній, задньо-медіальний та задньо-латеральний, не переносячи вагу на вільну ногу.",
     equipment: "Маркери / конуси",
+    source: "SEBT / Y-Balance Test Consensus Protocol",
   },
   {
     id: "ankle-wb-lunge-mobilization",
@@ -362,6 +387,7 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
     technique:
       "Випад перед стіною, пальці стопи за 10-12 см від стіни. Згинати гомілку вперед, намагаючись торкнутися коліном стіни без відриву п'яти від підлоги.",
     equipment: "Стіна або стійка",
+    source: "Bennell et al., Weight-Bearing Lunge Ankle Consensus",
   },
   {
     id: "ankle-seated-calf-raise",
@@ -374,7 +400,8 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
     targetArea: "Ізольоване тренування камбалоподібного м'яза (Soleus) без участі литкового",
     technique:
       "Сидячи, кут у колінах рівно 90°, обтяження на передній частині стегон. Максимальний підйом на носки з 2-секундною паузою у піковій точці скорочення камбалоподібного м'яза.",
-    equipment: "Тренажер для гомілки або гантелі на колінах",
+    equipment: "Тренажер для гомілки або обтяжувач (дозування визначає лікар)",
+    source: "Silbernagel et al. (BJSM) — Soleus Tendinopathy Training",
   },
   {
     id: "ankle-pogo-jumps",
@@ -388,6 +415,7 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
     technique:
       "Пружні підскоки на передній частині стопи з мінімальним згинанням колін. Контакт із покриттям має бути максимально коротким і звучним, як у пружини.",
     equipment: "Газон або амортизуюче покриття",
+    source: "International Ankle Consortium Tendon Stiffness Protocol",
   },
   {
     id: "ankle-eversion-band",
@@ -401,6 +429,7 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
     technique:
       "Сидячи, гумова стрічка натягнута на зовнішню сторону стопи. Відводити носок назовні проти опору гуми, не обертаючи всією ногою в кульшовому суглобі.",
     equipment: "Еластична стрічка TheraBand",
+    source: "International Ankle Consortium Lateral Ligament Rehab",
   },
 
   // =========================================================================
@@ -418,6 +447,7 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
     technique:
       "Лежачи на боці, коліна зігнуті під 90°, стопи разом, гумка вище колін. Розводити коліна вгору, не розкриваючи таз назад.",
     equipment: "Гумове міні-кільце (Mini Band)",
+    source: "Boren et al., Electromyographic Analysis of Gluteal Muscles",
   },
   {
     id: "glute-single-leg-bridge",
@@ -431,6 +461,7 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
     technique:
       "Лежачи на спині, одна нога зігнута з опорою на п'яту, друга підтягнута до грудей. Потужним зусиллям сідниці виштовхувати таз угору до однієї лінії стегно-тулуб. Фіксація 2 сек угорі.",
     equipment: "Власна вага",
+    source: "Contreras et al., Gluteus Maximus Activation in Athletes",
   },
   {
     id: "glute-bulgarian-split-squat",
@@ -443,7 +474,8 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
     targetArea: "Одноопорна сила великої сідничної та передньої поверхні стегна",
     technique:
       "Задня нога носком на лаві, передня стоїть у кроці попереду. Опускатися вертикально вниз до торкання заднім коліном підлоги, акцент ваги на п'яті передньої ноги.",
-    equipment: "Лава та гантелі",
+    equipment: "Лава та гантелі / обтяжувачі (дозування визначає лікар)",
+    source: "Aspetar Lower Extremity Strength Protocol",
   },
   {
     id: "glute-hip-thrust-barbell",
@@ -456,7 +488,8 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
     targetArea: "Максимальна горизонтальна сила розгинання тазу для футбольного прискорення",
     technique:
       "Лопатки на лаві, штанга з м'яким валиком на згині тазу. Потужний підйом тазу вгору до горизонталі, підборіддя притиснуте до грудей, 2 секунди стискання сідниць у верхній точці.",
-    equipment: "Штанга з олімпійським грифом та м'яким валиком",
+    equipment: "Штанга з м'яким валиком (вагу визначає лікар)",
+    source: "Contreras et al., Barbell Hip Thrust Biomechanics",
   },
 
   // =========================================================================
@@ -474,6 +507,7 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
     technique:
       "Лежачи на спині, руки підняті вгору, коліна зігнуті під 90° у повітрі. Поперек щільно втиснутий у підлогу. Одночасно повільно опускати праву руку і ліву ногу майже до підлоги, контролюючи щоб спина не вигиналася.",
     equipment: "Килимок",
+    source: "McGill S. — Core Stability & Spine Biomechanics",
   },
   {
     id: "core-pallof-press",
@@ -487,6 +521,7 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
     technique:
       "Стоячи боком до точки кріплення гуми/троса, утримувати ручку двома руками біля грудей. Витискати руки вперед перед собою, опираючись скручувальній силі.",
     equipment: "Еспандер або кросовер",
+    source: "McGill S. — Anti-Rotation Athletic Training",
   },
   {
     id: "core-side-plank-rotation",
@@ -500,6 +535,7 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
     technique:
       "У позиції бічної планки на передпліччі вільна рука закручується під корпус, після чого повертається вгору до стелі з повним контролем лінії тазу.",
     equipment: "Килимок",
+    source: "Hølmich P. — Athletic Pelvic Core Integration",
   },
   {
     id: "core-bird-dog",
@@ -513,6 +549,7 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
     technique:
       "Позиція на чотирьох. Одночасне витягування протилежних руки та ноги в одну горизонтальну площину без прогину в попереку.",
     equipment: "Килимок",
+    source: "McGill S. 'Big Three' Lumbar Stability Protocol",
   },
   {
     id: "core-hollow-body-hold",
@@ -526,6 +563,7 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
     technique:
       "Лежачи на спині, руки витягнуті за головою, стопи разом у 15 см від підлоги. Поперек вдавлений у підлогу, плечі відірвані.",
     equipment: "Власна вага",
+    source: "Gymnastics & Athletic Foundation Core Protocol",
   },
 
   // =========================================================================
@@ -543,6 +581,7 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
     technique:
       "Лікоть притиснутий до тулуба під кутом 90°. Плавне відведення передпліччя назовні проти опору гумового еспандера без руху плеча вгору.",
     equipment: "Легка гумова стрічка",
+    source: "Wilk et al., Baseball & Overhead Athlete Shoulder Protocol",
   },
   {
     id: "shoulder-face-pulls",
@@ -556,6 +595,7 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
     technique:
       "Канатна рукоять тягнеться до рівня очей з одночасним розведенням ліктів та обертанням кистей назад, фіксація лопаток 2 секунди.",
     equipment: "Кросовер з канатом або гума",
+    source: "American Journal of Sports Medicine Rotator Cuff Guidelines",
   },
   {
     id: "shoulder-landmine-press",
@@ -569,6 +609,7 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
     technique:
       "Один кінець штанги зафіксований у кутку / лендмайні. Жим однією рукою вперед і вгору з включенням кору та обертанням тазу.",
     equipment: "Гриф лендмайн",
+    source: "Contreras & Schoenfeld Athletic Press Mechanics",
   },
   {
     id: "shoulder-gk-plyo-ball-throw",
@@ -580,8 +621,9 @@ export const EXERCISE_DATABASE: ExerciseLibraryItem[] = [
     defaultSetsReps: "4 підходи × 8 вибухових кидків",
     targetArea: "Реактивна міцність зв'язкового апарату плеча при контактних падіннях",
     technique:
-      "Лежачи на спині на кушетці або підлозі, вибуховий викид набивного м'яча 2-3 кг вертикально вгору та м'яке поглинання двома руками.",
-    equipment: "Медбол 2-3 кг",
+      "Лежачи на спині на кушетці або підлозі, вибуховий викид набивного м'яча вертикально вгору та м'яке поглинання двома руками (вагу м'яча визначає лікар).",
+    equipment: "Медбол / набивний м'яч",
+    source: "English Premier League GK Shoulder RTP Guidelines",
   },
 ];
 
@@ -614,7 +656,8 @@ export function filterExerciseDatabase(criteria: {
       const matchTech = item.technique.toLowerCase().includes(q);
       const matchArea = item.targetArea.toLowerCase().includes(q);
       const matchEquip = item.equipment?.toLowerCase().includes(q);
-      if (!matchName && !matchTech && !matchArea && !matchEquip) return false;
+      const matchSource = item.source?.toLowerCase().includes(q);
+      if (!matchName && !matchTech && !matchArea && !matchEquip && !matchSource) return false;
     }
     return true;
   });

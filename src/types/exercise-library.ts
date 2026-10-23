@@ -26,7 +26,10 @@ export interface ExerciseLibraryItem {
   equipment?: string; // "Фітбол", "Еспандер", "Airex подушка", "Власна вага", "Гантелі"
   videoUrl?: string;
   precautions?: string; // На що звернути увагу, протипоказання
+  source?: string; // Наукове джерело / клінічний протокол
 }
+
+export type ExerciseLoadType = "rpe" | "bodyweight" | "percent_bw" | "percent_1rm" | "custom_weight";
 
 export interface CustomRehabPlanItem {
   exerciseId: string;
@@ -35,7 +38,15 @@ export interface CustomRehabPlanItem {
   targetArea: string;
   technique: string;
   notes?: string;
+  source?: string;
+  phase?: RehabPhaseType;
+  sets?: number | string;
+  reps?: string;
+  loadType?: ExerciseLoadType;
+  loadValue?: string;
 }
+
+export type RehabPlanStatus = "draft" | "approved";
 
 export interface PlayerCustomRehabPlan {
   id?: string;
@@ -46,6 +57,12 @@ export interface PlayerCustomRehabPlan {
   exercises: CustomRehabPlanItem[];
   created_at: string;
   is_active: boolean;
+  status?: RehabPlanStatus;
+  approved_by?: string;
+  approved_at?: string;
+  target_injury_id?: string;
+  injury_title?: string;
+  target_rtp_phase?: number;
 }
 
 export const MUSCLE_GROUP_LABELS: Record<MuscleGroup, { label: string; icon: string }> = {

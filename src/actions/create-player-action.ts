@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { assertDoctor } from "@/lib/auth";
 import { generateRandom6DigitPin, generatePortalToken, hashPin } from "@/lib/player-auth";
 import { logAudit } from "@/lib/audit";
+import { normalizePosition } from "@/lib/dictionaries";
 
 export type CreatePlayerState = {
   error?: string;
@@ -49,7 +50,7 @@ export async function createPlayerAction(
     last_name: lastName.trim(),
     date_of_birth: dateOfBirth,
     sex: sex === "female" ? "female" : "male",
-    position,
+    position: normalizePosition(position),
     dominant_leg: dominantLeg || "right",
     dominant_arm: dominantArm || "right",
     portal_token: portalToken,
@@ -73,7 +74,7 @@ export async function createPlayerAction(
       last_name: lastName.trim(),
       date_of_birth: dateOfBirth,
       sex: sex === "female" ? "female" : "male",
-      position,
+      position: normalizePosition(position),
       dominant_leg: dominantLeg || "right",
       dominant_arm: dominantArm || "right",
     };

@@ -24,6 +24,8 @@
 export type DominantSide = "left" | "right" | "both";
 
 export type PlayerPosition =
+  | "ВР" | "ЦЗ" | "ЛЗ" | "ПЗ" | "ОП"
+  | "ЦП" | "ЦАП" | "ЛВ" | "ПВ" | "НП"
   | "GK" | "CB" | "LB" | "RB" | "CDM"
   | "CAM" | "LW" | "RW" | "ST" | "CF";
 
@@ -48,6 +50,11 @@ export type InjurySeverity =
 export type InjuryMechanism = "contact" | "non_contact" | "overuse";
 
 export type InjuryStatus = "active" | "rehabilitation" | "closed";
+
+// ─── Стандарти OSIICS та UEFA (Етап 4.1) ───────────────────────────
+export type InjuryOnset = "acute" | "gradual" | "unknown";
+export type InjuryOccurrence = "new" | "recurrence" | "exacerbation" | "unknown";
+export type UefaSeverity = "minimal" | "mild" | "moderate" | "severe";
 
 // ─── Огляди (injury_examinations) ────────────────────────────────────
 export type ExamGrade = "none" | "mild" | "moderate" | "severe";
@@ -265,9 +272,22 @@ export type Injury = {
   next_exam_date: string | null;  // дата наступного контрольного огляду (НЕ прогноз RTP)
 
   status: InjuryStatus;
+  activity_type?: "training" | "match" | "other" | null;
   description: string | null;
   days_missed: number | null;
   created_at: string;
+
+  // ─── Стандарти OSIICS та UEFA (Етап 4.1) ──────────────────────────
+  /** Код за OSIICS (наприклад, 'TMHM') */
+  osiics_code?: string | null;
+  /** Характер виникнення за UEFA (гострий або поступовий) */
+  onset?: InjuryOnset;
+  /** Тип випадку за UEFA (нова, рецидив, загострення) */
+  occurrence?: InjuryOccurrence;
+  /** Посилання на попередню травму (для рецидиву / загострення) */
+  previous_injury_id?: string | null;
+  /** Фактичні або поточні дні втрати працездатності (time-loss) */
+  time_loss_days?: number | null;
 
   // ── Нова класифікація (цільова) ──
   /** Munich Consensus тип (text): "3B" */
@@ -521,16 +541,33 @@ export type ConsentRequest = {
 
 // ─── Експозиції (exposures) ──────────────────────────────────────────
 export type ExposureType = "training" | "match" | "rehab" | "other";
+export type ExposureSessionType = "training" | "match";
 
 export type Exposure = {
   id: string;
   club_id: string;
-  player_id: string;
+  team_id?: string | null;
+  player_id?: string | null;
   date: string;
-  exposure_type: ExposureType;
+  type: ExposureSessionType;
+  exposure_type?: ExposureType;
   minutes: number;
+  players_count: number;
   workload_session_id?: string | null;
   notes?: string | null;
+  created_at: string;
+  teams?: { id: string; name: string } | null;
+};
+
+// ─── Довідник OSIICS (osiics_codes) ──────────────────────────────────
+export type OsiicsCode = {
+  id: string;
+  club_id: string | null;
+  code: string;
+  title: string;
+  category: string | null;
+  anatomical_site: string | null;
+  description: string | null;
   created_at: string;
 };
 

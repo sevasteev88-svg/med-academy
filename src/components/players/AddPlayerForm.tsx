@@ -4,12 +4,11 @@ import { useState, useEffect } from "react";
 import { useActionState } from "react";
 import { createPlayerAction, type CreatePlayerState } from "@/actions/create-player-action";
 import Card, { Button, Input, Select } from "@/components/ui/Card";
-import { POSITION_LABELS, POSITION_FULL, TEAM_CATEGORY_UA } from "@/lib/constants";
+import { CANONICAL_POSITIONS, POSITION_FULL_UA, TEAM_CATEGORY_UA } from "@/lib/constants";
 import OneTimePinModal from "@/components/portal/OneTimePinModal";
 
 type Team = { id: string; name: string; category: string };
 
-const positions = Object.entries(POSITION_LABELS);
 const sides = [
   { value: "right", label: "Права" },
   { value: "left",  label: "Ліва" },
@@ -73,9 +72,9 @@ export default function AddPlayerForm({ teams }: { teams: Team[] }) {
           {/* Позиція */}
           <Select label="Позиція *" name="position" required>
             <option value="">Оберіть позицію</option>
-            {positions.map(([code, short]) => (
+            {CANONICAL_POSITIONS.map((code) => (
               <option key={code} value={code}>
-                {short} — {POSITION_FULL[code]}
+                {code} — {POSITION_FULL_UA[code]}
               </option>
             ))}
           </Select>

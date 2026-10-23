@@ -1,37 +1,47 @@
 import { createClient } from "@/utils/supabase/server";
-import InjuryPatternsAI from "@/components/reports/InjuryPatternsAI";
+import InjuryPatternsAI, {
+  AggregatedPatternsData,
+  PatternsSummary,
+} from "@/components/reports/InjuryPatternsAI";
+import { calculateExposureMetrics } from "@/lib/exposure-calculator";
 import Link from "next/link";
 
 export default async function InjuryPatternsPage() {
   const supabase = await createClient();
 
-  // 1. ВСІ травми (не тільки активні)
-  const { data: injuriesRaw } = await supabase
-    .from("injuries")
-    .select(
-      `id, injury_type, location, side, severity, mechanism, vas_score,
-       status, date_of_injury, expected_return_date, actual_return_date,
-       players!inner (
-         id, first_name, last_name, position, date_of_birth, sex,
-         teams!inner ( id, name )
-       )`
-    )
-    .order("date_of_injury", { ascending: false });
-
-  // 2. Дані матурації
-  const { data: maturationRaw } = await supabase
-    .from("maturation_assessments")
-    .select(
-      `player_id, consensus_offset, consensus_phv_age, growth_phase,
-       risk_zone, height_velocity, age_at_measurement, created_at,
-       players!inner ( first_name, last_name, date_of_birth, teams!inner ( name ) )`
-    )
-    .order("created_at", { ascending: false });
-
-  // 3. Кількість гравців по командах
-  const { data: teamPlayersRaw } = await supabase
-    .from("players")
-    .select("id, teams!inner ( id, name )");
+  // 1. Запити до бази даних
+  const [
+    { data: injuriesRaw },
+    { data: maturationRaw },
+    { data: teamPlayersRaw },
+    { data: exposuresRaw },
+  ] = await Promise.all([
+    supabase
+      .from("injuries")
+      .select(
+        `id, injury_type, location, side, severity, mechanism, vas_score,
+         status, date_of_injury, expected_return_date, actual_return_date, activity_type,
+         players!inner (
+           id, first_name, last_name, position, date_of_birth, sex,
+           teams!inner ( id, name )
+         )`
+      )
+      .order("date_of_injury", { ascending: false }),
+    supabase
+      .from("maturation_assessments")
+      .select(
+        `player_id, consensus_offset, consensus_phv_age, growth_phase,
+         risk_zone, height_velocity, age_at_measurement, created_at,
+         players!inner ( first_name, last_name, date_of_birth, teams!inner ( name ) )`
+      )
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("players")
+      .select("id, teams!inner ( id, name )"),
+    supabase
+      .from("exposures")
+      .select("id, team_id, date, type, minutes, players_count"),
+  ]);
 
   // ─── Форматування ────────────────────────────────────────
 
@@ -53,8 +63,7 @@ export default async function InjuryPatternsPage() {
     maturationByPlayer.get(m.player_id)!.push(m);
   }
 
-  // Оцінка матурації, найближча за датою до дати травми.
-  // Дата виміру ≈ дата народження + вік на момент виміру (age_at_measurement).
+  // Оцінка матурації, найближча за датою до дати травми
   function matNearestToInjury(playerId: string, dob: string, injuryDate: string) {
     const list = maturationByPlayer.get(playerId);
     if (!list || list.length === 0) return null;
@@ -65,7 +74,10 @@ export default async function InjuryPatternsPage() {
     for (const m of list) {
       const measMs = dobMs + (m.age_at_measurement ?? 0) * 365.25 * 86400000;
       const diff = Math.abs(measMs - injMs);
-      if (diff < bestDiff) { bestDiff = diff; best = m; }
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        best = m;
+      }
     }
     return best;
   }
@@ -73,7 +85,9 @@ export default async function InjuryPatternsPage() {
   // Травми з розширеними даними
   const injuries = (injuriesRaw ?? []).map((inj: any) => {
     const playerId = inj.players.id;
-    const mat = maturationMap.get(playerId);
+    const mat =
+      matNearestToInjury(playerId, inj.players.date_of_birth, inj.date_of_injury) ||
+      maturationMap.get(playerId);
     const daysMissed = inj.actual_return_date
       ? daysBetween(inj.date_of_injury, inj.actual_return_date)
       : inj.status === "closed" && inj.expected_return_date
@@ -100,23 +114,11 @@ export default async function InjuryPatternsPage() {
       expectedReturn: inj.expected_return_date,
       actualReturn: inj.actual_return_date,
       daysMissed,
+      activityType: inj.activity_type ?? "training",
       growthPhase: mat?.growth_phase ?? null,
       riskZone: mat?.risk_zone ?? null,
     };
   });
-
-  // Матурація (унікальні гравці)
-  const maturation = Array.from(maturationMap.values()).map((m: any) => ({
-    playerId: m.player_id,
-    firstName: m.players.first_name,
-    lastName: m.players.last_name,
-    teamName: m.players.teams.name,
-    age: m.age_at_measurement?.toFixed(1),
-    growthPhase: m.growth_phase,
-    consensusOffset: m.consensus_offset,
-    riskZone: m.risk_zone,
-    heightVelocity: m.height_velocity,
-  }));
 
   // Рецидиви: гравці з >1 травмою
   const playerInjuries = new Map<string, any[]>();
@@ -153,8 +155,22 @@ export default async function InjuryPatternsPage() {
     injuryRate: t.players > 0 ? (t.injuries / t.players).toFixed(1) : "0",
   }));
 
+  // Розрахунок метрик експозиції та захворюваності (травми на 1000 годин)
+  const exposureMetrics = calculateExposureMetrics(
+    exposuresRaw ?? [],
+    injuries.map((i) => ({
+      date_of_injury: i.dateOfInjury,
+      team_id: i.teamId,
+      activity_type: i.activityType,
+    }))
+  );
+
+  // Підрахунок відомої/невідомої фази росту
+  const maturationKnownCount = injuries.filter((i) => !!i.growthPhase).length;
+  const maturationUnknownCount = injuries.length - maturationKnownCount;
+
   // Саммарі для UI
-  const summary = {
+  const summary: PatternsSummary = {
     totalInjuries: injuries.length,
     totalPlayers: teamPlayersRaw?.length ?? 0,
     uniqueInjuredPlayers: playerInjuries.size,
@@ -164,9 +180,47 @@ export default async function InjuryPatternsPage() {
     byMechanism: countBy(injuries, "mechanism"),
     bySeverity: countBy(injuries, "severity"),
     byPhase: countBy(injuries.filter((i) => i.growthPhase), "growthPhase"),
+    maturationKnownCount,
+    maturationUnknownCount,
+    exposureMetrics,
   };
 
-  const analysisData = { injuries, maturation, recurrences, teamStats };
+  // Виключно знеособлені агрегати для передачі в ШІ
+  const validAges = injuries.map((i) => i.age).filter((a) => !isNaN(a) && a > 0);
+  const aggregates: AggregatedPatternsData = {
+    sampleSize: injuries.length,
+    totalPlayers: teamPlayersRaw?.length ?? 0,
+    uniqueInjuredPlayers: playerInjuries.size,
+    ageStats: {
+      min: validAges.length > 0 ? Math.min(...validAges) : null,
+      max: validAges.length > 0 ? Math.max(...validAges) : null,
+      avg:
+        validAges.length > 0
+          ? Math.round((validAges.reduce((s, a) => s + a, 0) / validAges.length) * 10) / 10
+          : null,
+    },
+    byType: summary.byType,
+    byLocation: summary.byLocation,
+    byMechanism: summary.byMechanism,
+    bySeverity: summary.bySeverity,
+    maturation: {
+      totalInjuries: injuries.length,
+      knownCount: maturationKnownCount,
+      unknownCount: maturationUnknownCount,
+      byPhase: summary.byPhase,
+    },
+    recurrencesSummary: {
+      playersWithRecurrences: recurrences.length,
+      distribution: countBy(recurrences, "injuryCount"),
+      recurringLocations: recurrences.map((r) => r.locations),
+    },
+    teamStats,
+    exposureMetrics: {
+      hasData: false,
+      hours1000Rate: null,
+      placeholderNote: "Показники на 1000 годин з'являться після задачі 4.2",
+    },
+  };
 
   return (
     <div className="min-h-screen bg-background text-slate-200 p-5 md:p-8">
@@ -177,7 +231,7 @@ export default async function InjuryPatternsPage() {
               Аналіз патернів травм
             </h1>
             <p className="text-xs text-slate-500 mt-1">
-              AI-аналітика кореляцій та факторів ризику · Claude API
+              Описова аналітика та патерни ризику · Агреговані дані для ШІ
             </p>
           </div>
           <Link
@@ -188,7 +242,7 @@ export default async function InjuryPatternsPage() {
           </Link>
         </div>
 
-        <InjuryPatternsAI data={analysisData} summary={summary} />
+        <InjuryPatternsAI aggregates={aggregates} summary={summary} />
       </div>
     </div>
   );
