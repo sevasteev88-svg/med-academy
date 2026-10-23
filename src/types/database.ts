@@ -421,11 +421,16 @@ export type AuditAction =
   | "send_consent_request"
   | "grant_consent"
   | "revoke_consent"
-  | "upload_consent_scan";
+  | "upload_consent_scan"
+  | "upload_injury_attachment"
+  | "view_injury_attachment"
+  | "archive_injury_attachment"
+  | "restore_injury_attachment";
 
 export type AuditEntity =
   | "player"
   | "injury"
+  | "injury_attachment"
   | "examination"
   | "screening"
   | "pharmacy"
