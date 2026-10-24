@@ -290,8 +290,8 @@ export default async function PlayersPage({
             </div>
             <p className="text-xs text-slate-400 mt-1">
               {isArchiveView
-                ? "Архівовані гравці ФК «Чорноморець» (історію збережено, приховані з оперативних звітів)"
-                : "База активних гравців Академії та молодіжного складу ФК «Чорноморець»"}
+                ? "Архівовані гравці клубу (історію збережено, приховані з оперативних звітів)"
+                : "База активних гравців Академії та молодіжного складу"}
               {(searchQuery || (selectedTeam && selectedTeam !== "all") || (selectedStatus && selectedStatus !== "all") || isArchiveView) && (
                 <span className="text-sky-400 ml-1">· Знайдено: {totalFiltered}</span>
               )}

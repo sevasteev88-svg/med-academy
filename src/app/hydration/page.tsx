@@ -4,7 +4,7 @@ import HydrationClient from "@/components/hydration/HydrationClient";
 import type { HydrationSession } from "@/types/hydration";
 
 export const metadata = {
-  title: "Монітор гідратації та Sweat Rate · ФК «Чорноморець»",
+  title: "Монітор гідратації та Sweat Rate · Медичний штаб",
   description: "Контроль втрати ваги до/після тренування та розрахунок регідратації",
 };
 

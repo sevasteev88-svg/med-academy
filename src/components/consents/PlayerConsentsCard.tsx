@@ -233,7 +233,7 @@ export default function PlayerConsentsCard({
       <body>
         <div class="header">
           <div>
-            <div style="font-size:18px; font-weight:bold;">ФК «ЧОРНОМОРЕЦЬ» ОДЕСА — МЕДИЧНИЙ ДЕПАРТАМЕНТ</div>
+            <div style="font-size:18px; font-weight:bold;">МЕДИЧНИЙ ДЕПАРТАМЕНТ АКАДЕМІЇ ФУТБОЛУ</div>
             <div style="font-size:13px; color:#334155; margin-top:4px;">ПАПЕРОВА ФОРМА ІНФОРМОВАНОЇ ЗГОДИ ЗАКОННОГО ПРЕДСТАВНИКА / ГРАВЦЯ</div>
             <div style="font-size:12px; font-family:monospace; margin-top:6px;">Номер документа: <strong>${paperDocNumber}</strong></div>
           </div>

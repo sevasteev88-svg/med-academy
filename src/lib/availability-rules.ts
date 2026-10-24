@@ -209,7 +209,7 @@ export function calculatePlayerAvailability(
   // 5. Несколько травм у игрока -> по худшему статусу (unavailable > restricted > available)
 
   let worstStatus: AvailabilityStatus = "available";
-  let maxMinutes = AVAILABILITY_RULES.DEFAULT_AVAILABLE_MAX_MINUTES;
+  let maxMinutes: number = AVAILABILITY_RULES.DEFAULT_AVAILABLE_MAX_MINUTES;
   const restrictionNotesList: string[] = [];
   const injurySummariesList: string[] = [];
   let worstRtpPhase: number | null = null;

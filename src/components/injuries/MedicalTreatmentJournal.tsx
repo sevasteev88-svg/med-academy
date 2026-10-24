@@ -42,7 +42,7 @@ export default function MedicalTreatmentJournal({
   const [title, setTitle] = useState("");
   const [dosage, setDosage] = useState("");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
-  const [doctor, setDoctor] = useState("Лікар штабу ФК Чорноморець");
+  const [doctor, setDoctor] = useState("Лікар медичного штабу");
   const [wadaStatus, setWadaStatus] = useState<WadaStatus>("allowed");
   const [notes, setNotes] = useState("");
   const [isTueModalOpen, setIsTueModalOpen] = useState(false);

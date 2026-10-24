@@ -6,7 +6,7 @@ import Link from "next/link";
 import { Clock } from "lucide-react";
 
 export const metadata = {
-  title: "Експозиція та захворюваність · ФК «Чорноморець»",
+  title: "Експозиція та захворюваність · Медичний штаб",
   description: "Реєстр командного навантаження та розрахунок травматизму на 1000 годин",
 };
 

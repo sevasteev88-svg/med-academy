@@ -3,7 +3,7 @@ import { getAuthorizedPlayerCabinetData, getPlayerByPortalToken } from "@/action
 import RehabPortalClient from "@/components/portal/RehabPortalClient";
 
 export const metadata = {
-  title: "Щоденне самопочуття · ФК «Чорноморець»",
+  title: "Щоденне самопочуття · Кабінет гравця",
   description: "Особистий кабінет футболіста для щоденної оцінки самопочуття, сну та відновлення",
 };
 
@@ -45,7 +45,7 @@ export default async function RehabPortalPage({
             ⚽
           </div>
           <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-            ФК Чорноморець · Кабінет гравця
+            Медичний штаб · Кабінет гравця
           </span>
         </div>
       </div>
@@ -62,7 +62,7 @@ export default async function RehabPortalPage({
 
       {/* Footer */}
       <div className="max-w-md mx-auto w-full text-center pt-6 text-[10px] text-slate-600 font-mono">
-        Штаб спортивної медицини ФК «Чорноморець» · Всі права захищено
+        Штаб спортивної медицини · Всі права захищено
       </div>
     </div>
   );

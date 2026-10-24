@@ -9,7 +9,7 @@ export const INSTRUCTIONS_STEPS_UA = [
 ] as const;
 
 export const CARD_TERMS_UA = "Одноразовий доступ · Дійсний 14 днів";
-export const CLUB_BRAND_UA = "ФК «ЧОРНОМОРЕЦЬ» · АКАДЕМІЯ";
+export const CLUB_BRAND_UA = "СПОРТИВНА АКАДЕМІЯ · МЕДИЧНИЙ ШТАБ";
 
 /**
  * Перевірка відсутності медичних даних, дат народження та діагнозів
@@ -49,7 +49,8 @@ export function sanitizeCardData(card: Partial<GeneratedQrCard> & Record<string,
  * Генерує base64 DataURL для QR-коду посилання активації
  */
 export async function createQrDataUrl(url: string): Promise<string> {
-  const fullUrl = url.startsWith("http") ? url : `${typeof window !== "undefined" ? window.location.origin : "https://med.fc-chornomorets.com"}${url}`;
+  const defaultOrigin = process.env.NEXT_PUBLIC_APP_URL || "https://medacademy.app";
+  const fullUrl = url.startsWith("http") ? url : `${typeof window !== "undefined" ? window.location.origin : defaultOrigin}${url}`;
   return QRCode.toDataURL(fullUrl, {
     errorCorrectionLevel: "M",
     margin: 1,
@@ -277,7 +278,7 @@ export async function generateSingleCardPdfBlob(card: GeneratedQrCard): Promise<
   doc.setFont("helvetica", "bold");
   doc.setFontSize(14);
   doc.setTextColor(30, 41, 59);
-  doc.text("ФК ЧОРНОМОРЕЦЬ · ПЕРСОНАЛЬНА QR-КАРТКА ГРАВЦЯ", 105, 25, { align: "center" });
+  doc.text("ПЕРСОНАЛЬНА QR-КАРТКА ГРАВЦЯ", 105, 25, { align: "center" });
 
   doc.addImage(cardDataUrl, "PNG", x, y, cardWidth, cardHeight);
 

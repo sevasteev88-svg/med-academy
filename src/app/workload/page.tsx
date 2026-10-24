@@ -10,7 +10,7 @@ import type {
 import { calculateAcwr } from "@/types/workload";
 
 export const metadata = {
-  title: "Моніторинг навантажень (Session-RPE & ACWR) · ФК «Чорноморець»",
+  title: "Моніторинг навантажень (Session-RPE & ACWR) · Штаб команди",
   description: "Контроль тренувального навантаження, коефіцієнт ACWR за Тімом Габбеттом",
 };
 

@@ -329,7 +329,7 @@ export async function sendConsentRequestAction(input: {
       : guardian?.phone || input.adultPhone || "+380000000000";
 
   const messageText =
-    `ФК «Чорноморець» (Медичний департамент)\n` +
+    `Медичний департамент клубу\n` +
     `Запит на оформлення згоди на обробку даних для гравця: ${player.last_name} ${player.first_name}.\n` +
     `Перейдіть за одноразовим посиланням (діє 7 днів):\n${consentUrl}`;
 
@@ -502,7 +502,7 @@ export async function getPublicConsentPageData(rawToken: string) {
   }
 
   const clubId = player.club_id || DEFAULT_CLUB_ID;
-  let clubName = "ФК «Чорноморець» (Академія)";
+  let clubName = "Спортивна Академія";
   try {
     const { data: club } = await admin
       .from("clubs")
@@ -623,8 +623,8 @@ export async function requestConsentOtpAction(input: {
 
   const smsText =
     input.purpose === "revoke"
-      ? `ФК «Чорноморець»: Ваш одноразовий код (OTP) для ВІДКЛИКАННЯ згоди: ${otpCode}. Код діє 10 хвилин.`
-      : `ФК «Чорноморець»: Ваш одноразовий код (OTP) для підтвердження згоди: ${otpCode}. Код діє 10 хвилин.`;
+      ? `Медичний штаб: Ваш одноразовий код (OTP) для ВІДКЛИКАННЯ згоди: ${otpCode}. Код діє 10 хвилин.`
+      : `Медичний штаб: Ваш одноразовий код (OTP) для підтвердження згоди: ${otpCode}. Код діє 10 хвилин.`;
 
   const sendRes = await sendClubMessage({
     clubId: request.club_id || DEFAULT_CLUB_ID,
@@ -799,7 +799,7 @@ export async function submitConsentWithOtpAction(input: {
   );
 
   const receiptText =
-    `КВИТАНЦІЯ ПРО НАДАННЯ ЗГОДИ — ФК «Чорноморець»\n` +
+    `КВИТАНЦІЯ ПРО НАДАННЯ ЗГОДИ\n` +
     `Дата та час: ${new Date(nowIso).toLocaleString("uk-UA")}\n` +
     `Гравець: ${player?.last_name || ""} ${player?.first_name || ""}\n` +
     `Підписант: ${input.signerFullName.trim()} (${input.signerRelation})\n` +
@@ -828,7 +828,7 @@ export async function submitConsentWithOtpAction(input: {
     clubId,
     channel: receiptChannel,
     recipient: guardianEmailOrContact,
-    subject: "Квитанція про надання згоди — ФК «Чорноморець»",
+    subject: "Квитанція про надання згоди",
     text: receiptText,
   });
 

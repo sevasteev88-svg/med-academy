@@ -44,7 +44,7 @@ export default function LsiSymmetryAssessmentCard({
   );
   const [injuryType, setInjuryType] = useState<string>(defaultInjuryType || "");
   const [protocolSource, setProtocolSource] = useState<string>(DEFAULT_PROTOCOL_SOURCE);
-  const [evaluatorName, setEvaluatorName] = useState("Медичний штаб ФК «Чорноморець»");
+  const [evaluatorName, setEvaluatorName] = useState("Медичний штаб");
   const [doctorSignature, setDoctorSignature] = useState("Головний лікар Академії");
   const [phaseClearance, setPhaseClearance] = useState("Фаза 4 -> Фаза 5 (Match Fitness Clearance)");
   const [bodyWeightKgInput, setBodyWeightKgInput] = useState<string>(

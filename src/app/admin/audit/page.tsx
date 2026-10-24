@@ -6,7 +6,7 @@ import AuditLogViewerClient from "@/components/audit/AuditLogViewerClient";
 import type { AuditLogEntry } from "@/types/database";
 
 export const metadata = {
-  title: "Журнал дій (Audit Log) · ФК «Чорноморець»",
+  title: "Журнал дій (Audit Log) · Медичний штаб",
   description: "Аудит безпеки та журналювання дій медичного та тренерського штабу",
 };
 

@@ -71,10 +71,10 @@ export default async function CoachDashboard() {
     <div className="min-h-screen bg-background text-slate-200 p-5 md:p-8">
       <div className="max-w-5xl mx-auto space-y-6">
         <header className="flex items-center gap-4 pb-5 border-b border-blue-900/15">
-          <Image src="/logo-chr.png" alt="ФК Чорноморець" width={40} height={40} className="rounded-full" />
+          <Image src="/logo-chr.png" alt="Клуб" width={40} height={40} className="rounded-full" />
           <div>
             <h1 className="text-lg font-bold text-white tracking-tight">Доступність складу</h1>
-            <p className="text-xs text-slate-500">ФК «Чорноморець» · Панель тренера</p>
+            <p className="text-xs text-slate-500">Панель тренерського штабу</p>
           </div>
         </header>
 

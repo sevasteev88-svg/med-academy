@@ -5,7 +5,7 @@ import { getTeamActivationSummaryAction } from "@/actions/player-device-actions"
 import TeamQrCardsClient from "@/components/team/TeamQrCardsClient";
 
 export const metadata = {
-  title: "QR-картки команди · ФК «Чорноморець»",
+  title: "QR-картки команди · Медичний кабінет",
   description: "Генерація друкованих QR-карток для швидкої активації особистих кабінетів гравців",
 };
 

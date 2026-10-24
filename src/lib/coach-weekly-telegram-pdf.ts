@@ -26,7 +26,7 @@ export function generateCoachWeeklyReportPdf(summary: CoachWeeklyTelegramSummary
   doc.setTextColor(56, 189, 248); // sky-400
   doc.setFontSize(10);
   doc.setFont("helvetica", "bold");
-  doc.text("FC CHORNOMORETS · MEDICAL & FITNESS STAFF", 15, 12);
+  doc.text(`${(summary.teamName || "MEDACADEMY").toUpperCase()} · MEDICAL & PERFORMANCE STAFF`, 15, 12);
 
   // Назва звіту
   doc.setTextColor(255, 255, 255);
@@ -147,7 +147,7 @@ export function generateCoachWeeklyReportPdf(summary: CoachWeeklyTelegramSummary
   doc.setFont("helvetica", "normal");
   doc.setTextColor(148, 163, 184);
   doc.text(
-    `FC Chornomorets Medical & Performance · Generated at ${new Date().toISOString()}`,
+    `MedAcademy Medical & Performance · Generated at ${new Date().toISOString()}`,
     15,
     doc.internal.pageSize.getHeight() - 10
   );

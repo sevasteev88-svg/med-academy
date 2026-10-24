@@ -3,8 +3,10 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import AppNav from "@/components/layout/AppNav";
 import PwaRegister from "@/components/layout/PwaRegister";
+import DemoModeBanner from "@/components/layout/DemoModeBanner";
 import { getCurrentUser } from "@/lib/auth";
 import { getRiskAlerts } from "@/lib/get-risk-alerts";
+import { DEMO_CLUB_ID } from "@/lib/demo-generator";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -17,7 +19,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Медичний штаб · ФК «Чорноморець»",
+  title: "Медичний штаб · Спортивна Академія",
   description: "Медичний дашборд для спортивного лікаря-травматолога",
   manifest: "/manifest.json",
   appleWebApp: {
@@ -59,7 +61,10 @@ export default async function RootLayout({
             alerts={alerts}
           />
         )}
-        <main className={`${user ? "md:ml-16 pb-16 md:pb-0" : ""} flex-1`}>
+        <main className={`${user ? "md:ml-16 pt-14 md:pt-0 pb-24 md:pb-6" : ""} flex-1 min-w-0 overflow-x-hidden`}>
+          {user && user.clubId === DEMO_CLUB_ID && (
+            <DemoModeBanner isDemoClub={true} />
+          )}
           {children}
         </main>
         <PwaRegister />

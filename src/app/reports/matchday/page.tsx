@@ -11,7 +11,7 @@ import {
 import { getPlayerAvailability } from "@/lib/availability";
 
 export const metadata = {
-  title: "Медичний протокол матчу (Matchday Protocol) · ФК «Чорноморець»",
+  title: "Медичний протокол матчу (Matchday Protocol)",
   description: "Протокол допуску гравців до матчу (PDF-друк)",
 };
 

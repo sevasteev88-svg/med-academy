@@ -485,7 +485,7 @@ export async function commitEhrImportAction(params: {
 
   return {
     success: true,
-    playerId,
+    playerId: playerId || "",
     message: `Медичну карту успішно імпортовано з ${payload.club_origin.name} для гравця ${payload.player.last_name} ${payload.player.first_name}`,
   };
 }

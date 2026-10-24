@@ -229,7 +229,7 @@ export default async function InjuryDetailPage({ params }: Props) {
             </Link>
             <div>
               <div className="text-base font-bold text-white">Картка травми #{id.slice(0, 8)}</div>
-              <div className="text-[11px] text-slate-400">Медичний штаб · ФК «Чорноморець» Одеса</div>
+              <div className="text-[11px] text-slate-400">Медичний штаб Академії</div>
             </div>
           </div>
           <Link

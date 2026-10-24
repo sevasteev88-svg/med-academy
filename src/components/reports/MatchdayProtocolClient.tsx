@@ -277,14 +277,14 @@ export default function MatchdayProtocolClient({
           <div className="flex items-center gap-4">
             <Image
               src="/logo-chr.png"
-              alt="ФК Чорноморець"
+              alt="Клуб"
               width={64}
               height={64}
               className="object-contain"
             />
             <div>
               <div className="text-xs uppercase tracking-widest font-black text-slate-500">
-                Футбольний Клуб «Чорноморець» Одеса
+                {initialSettings?.title || "Футбольний Клуб · Медичний департамент"}
               </div>
               <h1 className="text-xl font-black tracking-tight text-slate-950">
                 {isOfficial ? `ОФІЦІЙНИЙ ${protocolTitle.toUpperCase()} ТА ЗАЯВКА НА МАТЧ` : `${protocolTitle.toUpperCase()}`}

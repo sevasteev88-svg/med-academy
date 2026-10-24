@@ -2,7 +2,7 @@ import { getTeamTrainingDataAction } from "@/actions/training-session-actions";
 import CoachTrainingClient from "@/components/training/CoachTrainingClient";
 
 export const metadata = {
-  title: "Введення тренування (Session-RPE) · ФК «Чорноморець»",
+  title: "Введення тренування (Session-RPE) · Штаб команди",
   description: "Швидкий груповий запис навантаження команди тренером за 10 секунд",
 };
 

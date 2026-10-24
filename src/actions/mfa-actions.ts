@@ -109,7 +109,7 @@ export async function enrollMfaTotpAction(): Promise<{
   // Реєструємо новий TOTP-фактор у Supabase Auth
   const { data: factor, error: enrollErr } = await supabase.auth.mfa.enroll({
     factorType: "totp",
-    issuer: "MedAcademy (FC Chornomorets)",
+    issuer: "MedAcademy",
     friendlyName: `${user.email} (${user.role})`,
   });
 

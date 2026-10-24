@@ -28,7 +28,7 @@ export function clearTelegramMemoryStoresForTesting(): void {
  * Отримує юзернейм бота із серверних змінних оточення
  */
 export function getTelegramBotUsername(): string {
-  return process.env.TELEGRAM_BOT_USERNAME || "MedAcademyChornomoretsBot";
+  return process.env.TELEGRAM_BOT_USERNAME || "MedAcademySportsBot";
 }
 
 /**

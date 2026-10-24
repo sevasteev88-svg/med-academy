@@ -463,7 +463,7 @@ export default function CoachBriefingClient({ teams, players }: CoachBriefingPro
             <span className="text-2xl">🧠</span>
             <div className="space-y-1.5">
               <h4 className="text-xs font-black text-white uppercase tracking-wider">
-                Рекомендації Медичного Департаменту ФК «Чорноморець» до гри:
+                Рекомендації Медичного Департаменту до гри:
               </h4>
               <ul className="text-xs text-slate-300 space-y-1.5 list-disc list-inside">
                 <li>

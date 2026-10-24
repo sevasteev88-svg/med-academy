@@ -5,7 +5,7 @@ import ClubPharmacyClient from "@/components/pharmacy/ClubPharmacyClient";
 import type { MedicalTreatmentEntry } from "@/types/pharmacy";
 
 export const metadata: Metadata = {
-  title: "Аптека та Медичний Склад | ФК Чорноморець",
+  title: "Аптека та Медичний Склад | Спортивна Академія",
   description: "Облік медикаментів, ін'єкцій, витратних матеріалів та антидопінговий контроль WADA",
 };
 

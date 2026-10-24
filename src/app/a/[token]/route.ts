@@ -109,7 +109,7 @@ export async function GET(
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${title} · ФК «Чорноморець»</title>
+  <title>${title} · Медичний кабінет</title>
   <style>
     body {
       margin: 0;
@@ -223,7 +223,7 @@ export async function GET(
 <body>
   <div class="header">
     <div class="logo">⚽</div>
-    <div class="brand">ФК Чорноморець · Активація пристрою</div>
+    <div class="brand">MedAcademy · Активація пристрою</div>
   </div>
 
   <div class="card">
@@ -240,7 +240,7 @@ export async function GET(
   </div>
 
   <div class="footer">
-    Штаб спортивної медицини ФК «Чорноморець» · Безпечна активація пристроїв
+    Штаб спортивної медицини · Безпечна активація пристроїв
   </div>
 </body>
 </html>`;

@@ -14,7 +14,7 @@ export default function RegisterPage() {
     <div className="min-h-screen bg-background flex items-center justify-center p-5">
       <div className="w-full max-w-sm space-y-6">
         <div className="text-center">
-          <Image src="/logo-chr.png" alt="ФК Чорноморець" width={64} height={64} className="mx-auto rounded-full ring-2 ring-brand-blue/30 mb-4" />
+          <Image src="/logo-chr.png" alt="MedAcademy" width={64} height={64} className="mx-auto rounded-full ring-2 ring-brand-blue/30 mb-4" />
           <h1 className="text-xl font-bold text-white">Реєстрація</h1>
           <p className="text-xs text-slate-500 mt-1">Створіть акаунт для доступу до системи</p>
         </div>
@@ -27,7 +27,7 @@ export default function RegisterPage() {
             </div>
             <div>
               <label className="block text-xs text-slate-500 mb-1.5">Email</label>
-              <input name="email" type="email" required placeholder="doctor@chornomorets.com" className={inputClass} />
+              <input name="email" type="email" required placeholder="doctor@medacademy.app" className={inputClass} />
             </div>
             <div>
               <label className="block text-xs text-slate-500 mb-1.5">Пароль (мін. 6 символів)</label>

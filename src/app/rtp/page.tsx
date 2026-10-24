@@ -5,7 +5,7 @@ import type { RtpPhaseNumber, RtpPhaseLog } from "@/types/rtp";
 import type { PlayerPhoto } from "@/types/photo";
 
 export const metadata = {
-  title: "Return-to-Play (RTP) · Медичний штаб ФК «Чорноморець»",
+  title: "Return-to-Play (RTP) · Медичний штаб",
   description: "Етапи повернення футболістів у гру за протоколами FIFA та Aspetar",
 };
 

@@ -199,7 +199,7 @@ export default function PlayerDevicesCard({
             </button>
 
             <div className="w-10 h-10 rounded-2xl bg-slate-950 border border-sky-500/30 flex items-center justify-center p-1.5 shadow-md mx-auto print:border-slate-300">
-              <img src="/logo-chr.png" alt="Чорноморець" className="w-full h-full object-contain" />
+              <img src="/logo-chr.png" alt="Клуб" className="w-full h-full object-contain" />
             </div>
 
             <div>

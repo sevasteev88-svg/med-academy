@@ -3,6 +3,7 @@
 // Реальні дані: статистика, тріаж, реабілітація. Без локалі.
 
 import { createClient } from "@/utils/supabase/server";
+import { getCurrentUser } from "@/lib/auth";
 import Link from "next/link";
 import {
   Bandage, Activity, CheckCircle, Calendar,
@@ -120,8 +121,15 @@ function StatCardItem({ icon, value, label, accent, href }: StatCard) {
 // ─── Головний компонент ───────────────────────────────────────────────────────
 export default async function Home() {
   const supabase = await createClient();
+  const user = await getCurrentUser();
   const todayStr = new Date().toISOString().split("T")[0];
   const weekAgoStr = new Date(Date.now() - 7 * 86400000).toISOString().split("T")[0];
+
+  let clubName = "Академія";
+  if (user?.clubId) {
+    const { data: club } = await supabase.from("clubs").select("name").eq("id", user.clubId).maybeSingle();
+    if (club?.name) clubName = club.name;
+  }
 
   // ── Статистика (лічильники та доступність через єдине джерело) ──
   const [
@@ -234,7 +242,7 @@ export default async function Home() {
               <p className="text-xs uppercase tracking-wider text-slate-400 font-mono capitalize">{todayUk()}</p>
             </div>
             <h1 className="text-2xl md:text-3xl font-black text-white tracking-tight mt-1">
-              Медичний Штаб <span className="text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-blue-500">ФК «Чорноморець»</span>
+              Медичний Штаб <span className="text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-blue-500">{clubName}</span>
             </h1>
           </div>
 

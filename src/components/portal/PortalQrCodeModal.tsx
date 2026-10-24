@@ -66,7 +66,7 @@ export default function PortalQrCodeModal({
             {/* Логотип клубу */}
             <div className="flex items-center justify-center gap-2">
               <div className="w-12 h-12 rounded-2xl bg-slate-950 border border-sky-500/30 flex items-center justify-center p-2 shadow-md print:bg-transparent print:border-slate-300">
-                <img src="/logo-chr.png" alt="Чорноморець" className="w-full h-full object-contain" />
+                <img src="/logo-chr.png" alt="Клуб" className="w-full h-full object-contain" />
               </div>
             </div>
 
@@ -75,7 +75,7 @@ export default function PortalQrCodeModal({
                 {title}
               </h3>
               <p className="text-xs text-sky-400 print:text-blue-700 font-semibold mt-0.5">
-                ФК «Чорноморець» Одеса
+                Медичний штаб Академії
               </p>
               <p className="text-[11px] text-slate-400 print:text-slate-600 mt-2 leading-snug">
                 {subtitle}

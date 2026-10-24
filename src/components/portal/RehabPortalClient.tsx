@@ -561,7 +561,7 @@ export default function RehabPortalClient({
         <div className="flex items-center justify-between pb-3 border-b border-sky-500/15">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-2xl bg-slate-950 border border-sky-500/30 flex items-center justify-center text-xl overflow-hidden shrink-0 shadow-md">
-              <img src="/logo-chr.png" alt="Чорноморець" className="w-8 h-8 object-contain" />
+              <img src="/logo-chr.png" alt="Клуб" className="w-8 h-8 object-contain" />
             </div>
             <div>
               <h2 className="text-base font-bold text-white leading-tight">
@@ -1814,13 +1814,13 @@ export default function RehabPortalClient({
     <div className="max-w-md mx-auto p-6 rounded-3xl bg-slate-900/90 border border-sky-500/25 backdrop-blur-xl space-y-6 shadow-2xl shadow-sky-950/40">
       <div className="text-center space-y-2">
         <div className="w-16 h-16 mx-auto rounded-2xl bg-slate-950 border border-sky-500/30 flex items-center justify-center p-2 shadow-lg shadow-sky-500/20">
-          <img src="/logo-chr.png" alt="Чорноморець" className="w-full h-full object-contain" />
+          <img src="/logo-chr.png" alt="Клуб" className="w-full h-full object-contain" />
         </div>
         <h1 className="text-lg font-black text-white tracking-tight">
           Щоденне самопочуття
         </h1>
         <p className="text-xs text-slate-400">
-          ФК «Чорноморець» · Персональний кабінет гравця
+          Персональний медичний кабінет гравця
         </p>
 
         {playerPreview && (

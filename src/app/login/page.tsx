@@ -13,9 +13,9 @@ export default function LoginPage() {
     <div className="min-h-screen bg-background flex items-center justify-center p-5">
       <div className="w-full max-w-sm space-y-6">
         <div className="text-center">
-          <Image src="/logo-chr.png" alt="ФК Чорноморець" width={64} height={64} className="mx-auto rounded-full ring-2 ring-brand-blue/30 mb-4" />
+          <Image src="/logo-chr.png" alt="MedAcademy" width={64} height={64} className="mx-auto rounded-full ring-2 ring-brand-blue/30 mb-4" />
           <h1 className="text-xl font-bold text-white">Медичний штаб</h1>
-          <p className="text-xs text-slate-400 mt-1">ФК «Чорноморець» · Увійдіть до системи</p>
+          <p className="text-xs text-slate-400 mt-1">Вхід до системи спортивної медицини</p>
         </div>
 
         <Card className="p-6">
@@ -25,7 +25,7 @@ export default function LoginPage() {
               name="email"
               type="email"
               required
-              placeholder="doctor@chornomorets.com"
+              placeholder="doctor@medacademy.app"
             />
             <Input
               label="Пароль"

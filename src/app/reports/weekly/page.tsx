@@ -59,7 +59,7 @@ export default async function WeeklyReportPage() {
 
       <div className="border-b border-blue-900/15 pb-5">
         <h1 className="text-lg font-bold text-white tracking-tight">📋 Тижневий звіт</h1>
-        <p className="text-xs text-slate-500 mt-1">ФК «Чорноморець» · Медичний штаб · {weekStart} — {reportDate}</p>
+        <p className="text-xs text-slate-500 mt-1">Медичний штаб Академії · {weekStart} — {reportDate}</p>
       </div>
 
       {/* ШІ Генератор тижневого звіту (Claude) */}
@@ -99,7 +99,7 @@ export default async function WeeklyReportPage() {
         </div>
       </section>
 
-      <div className="text-center text-xs text-slate-600 pt-4 border-t border-blue-900/15">ФК «Чорноморець» · Медичний штаб · {reportDate}</div>
+      <div className="text-center text-xs text-slate-600 pt-4 border-t border-blue-900/15">Медичний штаб · {reportDate}</div>
     </div></div>
   );
 }

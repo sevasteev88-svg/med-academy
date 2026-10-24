@@ -34,7 +34,7 @@ export async function createConcussionBaselineAction(input: {
   const { data, error } = await supabase
     .from("concussion_baselines")
     .insert({
-      club_id: auth.profile.club_id,
+      club_id: (auth.user as any).clubId || null,
       player_id: input.player_id,
       season: input.season,
       date: input.date,
@@ -118,7 +118,7 @@ export async function createConcussionCaseAction(input: {
   const { data, error } = await supabase
     .from("concussion_cases")
     .insert({
-      club_id: auth.profile.club_id,
+      club_id: (auth.user as any).clubId || null,
       player_id: input.player_id,
       injury_id: input.injury_id || null,
       baseline_id: input.baseline_id || null,

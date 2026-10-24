@@ -49,7 +49,7 @@ export default function OneTimePinModal({
   if (!isOpen) return null;
 
   const handleCopy = () => {
-    const textToCopy = `Медичний кабінет гравця ФК «Чорноморець»\nГравець: ${playerName}\nПерсональне посилання: ${portalUrl}\nОдноразовий 6-значний PIN: ${pin}\n(При першому вході обов'язково встановіть свій постійний PIN)`;
+    const textToCopy = `Медичний кабінет гравця\nГравець: ${playerName}\nПерсональне посилання: ${portalUrl}\nОдноразовий 6-значний PIN: ${pin}\n(При першому вході обов'язково встановіть свій постійний PIN)`;
     navigator.clipboard.writeText(textToCopy);
     setCopied(true);
     setTimeout(() => setCopied(false), 3000);

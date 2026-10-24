@@ -108,7 +108,7 @@ export async function getPlayerAvailability(
     const screening = latestScreeningsMap.get(p.id) || null;
     const availability = calculatePlayerAvailability(
       {
-        ...p,
+        ...(p as any),
         screening,
       },
       {
