@@ -34,6 +34,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { POSITION_LABELS, POSITION_FULL, DOMINANT_UA, LOCATION_UA, SEVERITY_UA, INJURY_TYPE_UA, STATUS_UA } from "@/lib/constants";
 import PlayerConsentsCard from "@/components/consents/PlayerConsentsCard";
 import PlayerTreatmentsCard from "@/components/players/PlayerTreatmentsCard";
+import PlayerProfileTabs from "@/components/players/PlayerProfileTabs";
 import type { MedicalTreatmentEntry } from "@/types/pharmacy";
 import { calculateAcwr } from "@/types/workload";
 import {
@@ -47,8 +48,8 @@ function vasVariant(v: number): "ok"|"warn"|"danger" { if(v>=7)return"danger";if
 function statusVariant(s: string): "ok"|"warn"|"danger"|"neutral" { if(s==="active")return"danger";if(s==="rehabilitation")return"warn";return"neutral"; }
 function calcDaysMissed(inj: any): number { if(inj.actual_return_date)return Math.max(0,Math.floor((new Date(inj.actual_return_date).getTime()-new Date(inj.date_of_injury).getTime())/86400000)); if(inj.status==="active"||inj.status==="rehabilitation")return daysSince(inj.date_of_injury); return 0; }
 
-export default async function PlayerDetailPage({ params, searchParams }: { params: Promise<{id:string}>; searchParams: Promise<{from?:string;to?:string}> }) {
-  const { id } = await params; const { from, to } = await searchParams;
+export default async function PlayerDetailPage({ params, searchParams }: { params: Promise<{id:string}>; searchParams: Promise<{from?:string;to?:string;tab?:string}> }) {
+  const { id } = await params; const { from, to, tab } = await searchParams;
   const supabase = await createClient();
 
   // Логуємо перегляд картки гравця (Audit Log)
@@ -359,6 +360,7 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
   const hasWearablesConsent = consentSummary.scopes.wearables.allowed;
   const hasAiConsent = consentSummary.scopes.ai_processing.allowed;
   const hasSupplementsConsent = consentSummary.scopes.supplements.allowed;
+  const hasPendingConsents = !hasPhotoConsent || !hasWearablesConsent || !hasAiConsent || !hasSupplementsConsent;
 
   const activeDevices = devicesRes?.devices || [];
 
@@ -487,242 +489,395 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
           </div>
         </Card>
 
-        {/* 1.4 Згоди законних представників (батьків) та гравця */}
-        <PlayerConsentsCard
-          playerId={id}
-          playerName={`${player.last_name} ${player.first_name}`}
-          teamName={player.teams?.name || "Команда"}
-          dateOfBirth={player.date_of_birth}
-          initialSummary={consentSummary}
-          activeDocuments={activeDocuments}
-        />
-
-        {/* Секції паспорта здоров'я */}
-        <AnthropometrySection playerId={id} measurements={measurements} maturation={maturation} dateOfBirth={player.date_of_birth} />
-
-        <WearablesBiometricsCard
-          playerId={id}
-          playerName={`${player.last_name} ${player.first_name}`}
-          initialEntries={wearableLogs}
-          requiresParentalConsent={!hasWearablesConsent}
-        />
-
-        <PlayerSportsIntelligenceCard
-          requiresParentalConsent={!hasAiConsent}
-          playerContext={{
-            id,
-            name: `${player.last_name} ${player.first_name}`,
-            age: calcAge(player.date_of_birth),
-            position: POSITION_FULL[player.position] || player.position,
-            team: player.teams?.name || "Команда",
-            maturation: maturation
-              ? {
-                  growth_phase: maturation.growth_phase,
-                  risk_zone: maturation.risk_zone,
-                  consensus_offset: maturation.consensus_offset,
-                }
-              : null,
-            wearables: wearableLogs,
-            screening: screenings,
-            nutrition: latestNutrition,
-            injuries: injuryList.map((i) => ({
-              type: i.injury_type,
-              location: i.location,
-              severity: i.severity,
-              status: i.status,
-              daysMissed: calcDaysMissed(i),
-            })),
-          }}
-        />
-        
-        <ReinjuryRiskWidget
-          playerName={`${player.last_name} ${player.first_name}`}
-          heightMeasurementsCount12m={heightMeasurementsCount12m}
-          growthPhase={maturation?.growth_phase}
-          hasPhvRecorded={Boolean(maturation?.growth_phase)}
-          workloadDaysMonitored={workloadDaysMonitored}
-          acwr={playerAcwr}
-          wellnessDaysRecorded={distinctWellnessDays}
-          wellnessScore={latestWellnessScore}
-          reinjuryCount={injuryList.filter((i) => i.status === "closed").length}
-          hasActiveDiscomfort={activeInjuries.length > 0}
-        />
-        
-        <PreSeasonScreeningCard playerId={id} playerName={`${player.last_name} ${player.first_name}`} initialScreenings={screenings} />
-        
-        <DentalNutritionCard
-          playerId={id}
-          playerName={`${player.last_name} ${player.first_name}`}
-          initialProfile={latestNutrition}
-          requiresParentalConsent={!hasSupplementsConsent}
-        />
-
-        {/* 3.3 Фармакотерапія та медикаменти гравця з аптеки */}
-        <PlayerTreatmentsCard
-          playerId={id}
-          playerName={`${player.last_name} ${player.first_name}`}
-          initialTreatments={playerTreatments}
-        />
-
-        {/* 8.2 Авторизовані пристрої гравця (QR-активація, макс 2 пристрої) */}
-        <PlayerDevicesCard
-          playerId={id}
-          playerName={`${player.last_name} ${player.first_name}`}
-          initialDevices={activeDevices}
-        />
-
-        {/* 8.7 Telegram-сповіщення та нагадування (deep-link, QR, відписка в 1 клік) */}
-        <TelegramBindingCard
-          playerId={id}
-          playerName={`${player.last_name} ${player.first_name}`}
-          initialBinding={telegramRes?.binding}
-          initialEligibility={telegramRes?.eligibility}
-        />
-
-        <PlayerRehabCheckinHistory
-          playerId={id}
-          playerName={`${player.last_name} ${player.first_name}`}
-          portalToken={portalToken}
-          checkins={rehabCheckins}
-        />
-
-        <LsiSymmetryAssessmentCard
-          playerId={id}
-          playerName={`${player.last_name} ${player.first_name}`}
-          initialRecords={lsiRecords}
-          playerWeightKg={anthroRes.data?.[0]?.weight ? Number(anthroRes.data[0].weight) : null}
-          defaultInjuryType={injuryList?.[0]?.injury_type}
-          defaultSide={injuryList?.[0]?.side === "left" || injuryList?.[0]?.side === "right" ? injuryList[0].side : undefined}
-        />
-
-        <RehabExercisePlanBuilder
-          playerId={id}
-          playerName={`${player.last_name} ${player.first_name}`}
-          initialPlan={playerCustomPlan}
-          activeInjuries={activeInjuries}
-          currentRtpPhase={playerCustomPlan?.target_rtp_phase || 1}
-          defaultDoctorName={currentUser?.fullName || currentUser?.email || "Головний лікар клубу"}
-        />
-
-        {/* Період аналізу травм */}
-        <section className="space-y-3">
-          <div className="flex items-center gap-2">
-            <span className="text-xs uppercase font-mono font-bold text-sky-400 tracking-wider">
-              Період аналізу травм
-            </span>
-            <div className="flex-1 h-px bg-sky-500/15" />
-          </div>
-          <PeriodSelector />
-        </section>
-
-        {/* Статистика травм гравця */}
-        <section className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-              <span>📊</span> Статистика травм <span className="text-slate-400 font-mono text-xs font-normal">({periodLabel})</span>
-            </h2>
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Card className="p-3.5"><div className="text-[10px] uppercase font-mono text-slate-400 mb-1">Всього травм</div><div className="text-2xl font-black font-mono text-white">{totalInjuries}</div></Card>
-            <Card className="p-3.5"><div className="text-[10px] uppercase font-mono text-slate-400 mb-1">Днів пропущено</div><div className="text-2xl font-black font-mono text-red-400">{totalDaysMissed}</div></Card>
-            <Card className="p-3.5"><div className="text-[10px] uppercase font-mono text-slate-400 mb-1">Активних / Реаб.</div><div className="text-2xl font-black font-mono text-amber-400">{activeCount} / {rehabCount}</div></Card>
-            <Card className="p-3.5"><div className="text-[10px] uppercase font-mono text-slate-400 mb-1">Закритих</div><div className="text-2xl font-black font-mono text-emerald-400">{closedCount}</div></Card>
-          </div>
-
-          {totalInjuries > 0 && (
-            <div className="grid md:grid-cols-2 gap-3">
-              <Card className="p-4">
-                <div className="text-xs font-semibold text-slate-300 mb-3 flex items-center gap-1.5">
-                  <span>⚡</span> Розподіл по типу
-                </div>
-                <div className="space-y-2">
-                  {Object.entries(daysByType).sort(([,a],[,b])=>b-a).map(([t,d])=>(
-                    <div key={t} className="flex justify-between items-center text-xs">
-                      <span className="text-slate-300 truncate">{INJURY_TYPE_UA[t]??t}</span>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <div className="h-1.5 rounded-full bg-red-950/60 border border-red-900/30 w-20 overflow-hidden">
-                          <div className="h-full rounded-full bg-red-500" style={{width:`${Math.min(100,(d/Math.max(totalDaysMissed,1))*100)}%`}}/>
-                        </div>
-                        <span className="font-mono text-slate-400 w-12 text-right">{d} дн.</span>
-                      </div>
+        {/* Вкладки медичного профілю гравця (Варіант 1) */}
+        <PlayerProfileTabs
+          activeInjuriesCount={activeInjuries.length}
+          hasPendingConsents={hasPendingConsents}
+          overview={
+            <>
+              {/* Повідомлення про поточний стан / активну травму */}
+              {activeInjuries.length > 0 ? (
+                <div className="p-4 md:p-5 rounded-2xl bg-rose-950/30 border border-rose-500/40 shadow-lg shadow-rose-950/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="flex items-start gap-3.5">
+                    <div className="p-3 rounded-xl bg-rose-500/20 text-rose-300 text-2xl shrink-0">
+                      ⚠️
                     </div>
-                  ))}
-                </div>
-              </Card>
-
-              <Card className="p-4">
-                <div className="text-xs font-semibold text-slate-300 mb-3 flex items-center gap-1.5">
-                  <span>🦴</span> Розподіл по локалізації
-                </div>
-                <div className="space-y-2">
-                  {Object.entries(daysByLocation).sort(([,a],[,b])=>b-a).map(([l,d])=>(
-                    <div key={l} className="flex justify-between items-center text-xs">
-                      <span className="text-slate-300 truncate">{LOCATION_UA[l]??l}</span>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <div className="h-1.5 rounded-full bg-amber-950/60 border border-amber-900/30 w-20 overflow-hidden">
-                          <div className="h-full rounded-full bg-amber-500" style={{width:`${Math.min(100,(d/Math.max(totalDaysMissed,1))*100)}%`}}/>
-                        </div>
-                        <span className="font-mono text-slate-400 w-12 text-right">{d} дн.</span>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm md:text-base font-bold text-white">
+                          Активне пошкодження: {INJURY_TYPE_UA[activeInjuries[0].injury_type] ?? activeInjuries[0].injury_type} — {LOCATION_UA[activeInjuries[0].location] ?? activeInjuries[0].location}
+                        </span>
+                        <Badge variant={vasVariant(activeInjuries[0].vas_score)}>
+                          ВАШ {activeInjuries[0].vas_score}/10
+                        </Badge>
+                        <Badge variant={statusVariant(activeInjuries[0].status)}>
+                          {STATUS_UA[activeInjuries[0].status] ?? activeInjuries[0].status}
+                        </Badge>
                       </div>
+                      <p className="text-xs text-rose-200/80 mt-1">
+                        Днів на відновленні: <strong className="text-white font-mono">{calcDaysMissed(activeInjuries[0])}</strong> · Зафіксовано: {new Date(activeInjuries[0].date_of_injury).toLocaleDateString("uk-UA")}
+                      </p>
                     </div>
-                  ))}
+                  </div>
+                  <Link
+                    href={`/players/${id}?tab=injuries`}
+                    className="shrink-0 px-4 py-2 rounded-xl text-xs font-bold bg-rose-600/30 hover:bg-rose-600/50 text-rose-200 border border-rose-500/40 transition-all flex items-center gap-1.5 shadow-sm active:scale-95"
+                  >
+                    <span>План реабілітації</span>
+                    <span>→</span>
+                  </Link>
                 </div>
-              </Card>
-            </div>
-          )}
-        </section>
+              ) : (
+                <div className="p-4 rounded-2xl bg-emerald-950/25 border border-emerald-500/30 shadow-md flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <span className="w-3 h-3 rounded-full bg-emerald-400 animate-pulse shadow-sm shadow-emerald-400/50 shrink-0" />
+                    <span className="text-xs md:text-sm font-semibold text-emerald-300">
+                      Активних скарг та відкритих травм не зафіксовано. Гравець займається в загальній групі.
+                    </span>
+                  </div>
+                  <Link
+                    href={`/injuries/new?playerId=${id}`}
+                    className="text-xs font-semibold text-slate-400 hover:text-white transition-colors shrink-0"
+                  >
+                    + Фіксувати травму
+                  </Link>
+                </div>
+              )}
 
-        {/* Історія травм */}
-        <section className="space-y-3">
-          <div className="flex items-center justify-between pb-1 border-b border-sky-500/15">
-            <h2 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-              <span>📋</span> Історія пошкоджень
-            </h2>
-            <span className="text-xs font-mono text-slate-400 bg-slate-900/60 px-2 py-0.5 rounded-md border border-slate-800">
-              {totalInjuries} записів
-            </span>
-          </div>
+              {/* Індикатор оцінки ризику реінжурі */}
+              <ReinjuryRiskWidget
+                playerName={`${player.last_name} ${player.first_name}`}
+                heightMeasurementsCount12m={heightMeasurementsCount12m}
+                growthPhase={maturation?.growth_phase}
+                hasPhvRecorded={Boolean(maturation?.growth_phase)}
+                workloadDaysMonitored={workloadDaysMonitored}
+                acwr={playerAcwr}
+                wellnessDaysRecorded={distinctWellnessDays}
+                wellnessScore={latestWellnessScore}
+                reinjuryCount={injuryList.filter((i) => i.status === "closed").length}
+                hasActiveDiscomfort={activeInjuries.length > 0}
+              />
 
-          {totalInjuries === 0 ? (
-            <Card className="p-8 text-center text-xs text-slate-400">
-              {from ? "За обраний період травм не зафіксовано" : "Травм у даного гравця не зафіксовано 🟢"}
-            </Card>
-          ) : (
-            <div className="space-y-2.5">
-              {injuryList.map((inj: any) => {
-                const missed = calcDaysMissed(inj);
-                return (
-                  <Link key={inj.id} href={`/injuries/${inj.id}`} className="block group">
-                    <Card interactive accent={statusVariant(inj.status)==="neutral"?null:(statusVariant(inj.status) as "danger"|"warn")} className="p-3.5">
-                      <div className="flex justify-between items-start gap-3">
-                        <div className="min-w-0">
-                          <div className="font-bold text-white text-sm group-hover:text-sky-300 transition-colors">
-                            {INJURY_TYPE_UA[inj.injury_type]??inj.injury_type} — {LOCATION_UA[inj.location]??inj.location}
+              {/* Швидкі оглядові плашки статусів */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+                <Card className="p-4 bg-slate-900/60 border border-slate-800 flex flex-col justify-between">
+                  <div>
+                    <div className="text-[10px] uppercase font-mono text-slate-400 mb-1 flex items-center justify-between">
+                      <span>Скринінг / Допуск</span>
+                      <span>🩺</span>
+                    </div>
+                    <div className="text-sm font-bold text-white mt-1">
+                      {screenings[0] ? (
+                        screenings[0].overall_status === "cleared" ? (
+                          <span className="text-emerald-400">Пройдено повний скринінг</span>
+                        ) : screenings[0].overall_status === "provisional" ? (
+                          <span className="text-amber-400">Умовний допуск</span>
+                        ) : (
+                          <span className="text-rose-400">Відсторонений</span>
+                        )
+                      ) : (
+                        <span className="text-slate-400">Скринінг не внесено</span>
+                      )}
+                    </div>
+                  </div>
+                  <Link
+                    href={`/players/${id}?tab=passport`}
+                    className="text-[11px] text-sky-400 hover:text-sky-300 mt-3 inline-flex items-center gap-1 font-semibold"
+                  >
+                    <span>Відкрити медпаспорт</span>
+                    <span>→</span>
+                  </Link>
+                </Card>
+
+                <Card className="p-4 bg-slate-900/60 border border-slate-800 flex flex-col justify-between">
+                  <div>
+                    <div className="text-[10px] uppercase font-mono text-slate-400 mb-1 flex items-center justify-between">
+                      <span>Анамнез травм</span>
+                      <span>📊</span>
+                    </div>
+                    <div className="text-sm font-bold text-white mt-1">
+                      {totalInjuries === 0 ? (
+                        <span className="text-emerald-400">Травм не зафіксовано</span>
+                      ) : (
+                        <span>{totalInjuries} травм ({totalDaysMissed} дн. пропущено)</span>
+                      )}
+                    </div>
+                  </div>
+                  <Link
+                    href={`/players/${id}?tab=injuries`}
+                    className="text-[11px] text-sky-400 hover:text-sky-300 mt-3 inline-flex items-center gap-1 font-semibold"
+                  >
+                    <span>Історія та реабілітація</span>
+                    <span>→</span>
+                  </Link>
+                </Card>
+
+                <Card className="p-4 bg-slate-900/60 border border-slate-800 flex flex-col justify-between">
+                  <div>
+                    <div className="text-[10px] uppercase font-mono text-slate-400 mb-1 flex items-center justify-between">
+                      <span>Згоди законних представників</span>
+                      <span>📋</span>
+                    </div>
+                    <div className="text-sm font-bold text-white mt-1">
+                      {!hasPendingConsents ? (
+                        <span className="text-emerald-400">Всі згоди підписано</span>
+                      ) : (
+                        <span className="text-amber-400">Потрібно підтвердження</span>
+                      )}
+                    </div>
+                  </div>
+                  <Link
+                    href={`/players/${id}?tab=profile`}
+                    className="text-[11px] text-sky-400 hover:text-sky-300 mt-3 inline-flex items-center gap-1 font-semibold"
+                  >
+                    <span>Керувати згодами та ШІ</span>
+                    <span>→</span>
+                  </Link>
+                </Card>
+              </div>
+            </>
+          }
+          injuries={
+            <>
+              {/* Період аналізу травм */}
+              <section className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs uppercase font-mono font-bold text-sky-400 tracking-wider">
+                    Період аналізу травм
+                  </span>
+                  <div className="flex-1 h-px bg-sky-500/15" />
+                </div>
+                <PeriodSelector />
+              </section>
+
+              {/* Статистика травм гравця */}
+              <section className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                    <span>📊</span> Статистика травм <span className="text-slate-400 font-mono text-xs font-normal">({periodLabel})</span>
+                  </h2>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <Card className="p-3.5"><div className="text-[10px] uppercase font-mono text-slate-400 mb-1">Всього травм</div><div className="text-2xl font-black font-mono text-white">{totalInjuries}</div></Card>
+                  <Card className="p-3.5"><div className="text-[10px] uppercase font-mono text-slate-400 mb-1">Днів пропущено</div><div className="text-2xl font-black font-mono text-red-400">{totalDaysMissed}</div></Card>
+                  <Card className="p-3.5"><div className="text-[10px] uppercase font-mono text-slate-400 mb-1">Активних / Реаб.</div><div className="text-2xl font-black font-mono text-amber-400">{activeCount} / {rehabCount}</div></Card>
+                  <Card className="p-3.5"><div className="text-[10px] uppercase font-mono text-slate-400 mb-1">Закритих</div><div className="text-2xl font-black font-mono text-emerald-400">{closedCount}</div></Card>
+                </div>
+
+                {totalInjuries > 0 && (
+                  <div className="grid md:grid-cols-2 gap-3">
+                    <Card className="p-4">
+                      <div className="text-xs font-semibold text-slate-300 mb-3 flex items-center gap-1.5">
+                        <span>⚡</span> Розподіл по типу
+                      </div>
+                      <div className="space-y-2">
+                        {Object.entries(daysByType).sort(([,a],[,b])=>b-a).map(([t,d])=>(
+                          <div key={t} className="flex justify-between items-center text-xs">
+                            <span className="text-slate-300 truncate">{INJURY_TYPE_UA[t]??t}</span>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <div className="h-1.5 rounded-full bg-red-950/60 border border-red-900/30 w-20 overflow-hidden">
+                                <div className="h-full rounded-full bg-red-500" style={{width:`${Math.min(100,(d/Math.max(totalDaysMissed,1))*100)}%`}}/>
+                              </div>
+                              <span className="font-mono text-slate-400 w-12 text-right">{d} дн.</span>
+                            </div>
                           </div>
-                          <div className="text-xs text-slate-400 mt-1 flex items-center gap-1.5 flex-wrap">
-                            <span>{SEVERITY_UA[inj.severity]}</span>
-                            <span>·</span>
-                            <span>{new Date(inj.date_of_injury).toLocaleDateString("uk-UA")}</span>
-                            <span>·</span>
-                            <span className="text-red-400 font-mono font-bold">{missed} дн.</span>
-                          </div>
-                          {inj.description && (
-                            <div className="text-xs text-slate-500 mt-1 truncate max-w-lg">{inj.description}</div>
-                          )}
-                        </div>
-                        <div className="flex flex-col items-end gap-1.5 shrink-0">
-                          <Badge variant={vasVariant(inj.vas_score)}>ВАШ {inj.vas_score}/10</Badge>
-                          <Badge variant={statusVariant(inj.status)}>{STATUS_UA[inj.status]??inj.status}</Badge>
-                        </div>
+                        ))}
                       </div>
                     </Card>
-                  </Link>
-                );
-              })}
-            </div>
-          )}
-        </section>
+
+                    <Card className="p-4">
+                      <div className="text-xs font-semibold text-slate-300 mb-3 flex items-center gap-1.5">
+                        <span>🦴</span> Розподіл по локалізації
+                      </div>
+                      <div className="space-y-2">
+                        {Object.entries(daysByLocation).sort(([,a],[,b])=>b-a).map(([l,d])=>(
+                          <div key={l} className="flex justify-between items-center text-xs">
+                            <span className="text-slate-300 truncate">{LOCATION_UA[l]??l}</span>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <div className="h-1.5 rounded-full bg-amber-950/60 border border-amber-900/30 w-20 overflow-hidden">
+                                <div className="h-full rounded-full bg-amber-500" style={{width:`${Math.min(100,(d/Math.max(totalDaysMissed,1))*100)}%`}}/>
+                              </div>
+                              <span className="font-mono text-slate-400 w-12 text-right">{d} дн.</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </Card>
+                  </div>
+                )}
+              </section>
+
+              {/* План реабілітації */}
+              <RehabExercisePlanBuilder
+                playerId={id}
+                playerName={`${player.last_name} ${player.first_name}`}
+                initialPlan={playerCustomPlan}
+                activeInjuries={activeInjuries}
+                currentRtpPhase={playerCustomPlan?.target_rtp_phase || 1}
+                defaultDoctorName={currentUser?.fullName || currentUser?.email || "Головний лікар клубу"}
+              />
+
+              {/* LSI Оцінка симетрії */}
+              <LsiSymmetryAssessmentCard
+                playerId={id}
+                playerName={`${player.last_name} ${player.first_name}`}
+                initialRecords={lsiRecords}
+                playerWeightKg={anthroRes.data?.[0]?.weight ? Number(anthroRes.data[0].weight) : null}
+                defaultInjuryType={injuryList?.[0]?.injury_type}
+                defaultSide={injuryList?.[0]?.side === "left" || injuryList?.[0]?.side === "right" ? injuryList[0].side : undefined}
+              />
+
+              {/* Історія чек-інів реабілітації */}
+              <PlayerRehabCheckinHistory
+                playerId={id}
+                playerName={`${player.last_name} ${player.first_name}`}
+                portalToken={portalToken}
+                checkins={rehabCheckins}
+              />
+
+              {/* Історія пошкоджень */}
+              <section className="space-y-3">
+                <div className="flex items-center justify-between pb-1 border-b border-sky-500/15">
+                  <h2 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                    <span>📋</span> Історія пошкоджень
+                  </h2>
+                  <span className="text-xs font-mono text-slate-400 bg-slate-900/60 px-2 py-0.5 rounded-md border border-slate-800">
+                    {totalInjuries} записів
+                  </span>
+                </div>
+
+                {totalInjuries === 0 ? (
+                  <Card className="p-8 text-center text-xs text-slate-400">
+                    {from ? "За обраний період травм не зафіксовано" : "Травм у даного гравця не зафіксовано 🟢"}
+                  </Card>
+                ) : (
+                  <div className="space-y-2.5">
+                    {injuryList.map((inj: any) => {
+                      const missed = calcDaysMissed(inj);
+                      return (
+                        <Link key={inj.id} href={`/injuries/${inj.id}`} className="block group">
+                          <Card interactive accent={statusVariant(inj.status)==="neutral"?null:(statusVariant(inj.status) as "danger"|"warn")} className="p-3.5">
+                            <div className="flex justify-between items-start gap-3">
+                              <div className="min-w-0">
+                                <div className="font-bold text-white text-sm group-hover:text-sky-300 transition-colors">
+                                  {INJURY_TYPE_UA[inj.injury_type]??inj.injury_type} — {LOCATION_UA[inj.location]??inj.location}
+                                </div>
+                                <div className="text-xs text-slate-400 mt-1 flex items-center gap-1.5 flex-wrap">
+                                  <span>{SEVERITY_UA[inj.severity]}</span>
+                                  <span>·</span>
+                                  <span>{new Date(inj.date_of_injury).toLocaleDateString("uk-UA")}</span>
+                                  <span>·</span>
+                                  <span className="text-red-400 font-mono font-bold">{missed} дн.</span>
+                                </div>
+                                {inj.description && (
+                                  <div className="text-xs text-slate-500 mt-1 truncate max-w-lg">{inj.description}</div>
+                                )}
+                              </div>
+                              <div className="flex flex-col items-end gap-1.5 shrink-0">
+                                <Badge variant={vasVariant(inj.vas_score)}>ВАШ {inj.vas_score}/10</Badge>
+                                <Badge variant={statusVariant(inj.status)}>{STATUS_UA[inj.status]??inj.status}</Badge>
+                              </div>
+                            </div>
+                          </Card>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            </>
+          }
+          passport={
+            <>
+              {/* Передсезонний медичний скринінг */}
+              <PreSeasonScreeningCard playerId={id} playerName={`${player.last_name} ${player.first_name}`} initialScreenings={screenings} />
+              
+              {/* Антропометрія та біологічне дозрівання */}
+              <AnthropometrySection playerId={id} measurements={measurements} maturation={maturation} dateOfBirth={player.date_of_birth} />
+              
+              {/* Стоматологія та нутриціологія */}
+              <DentalNutritionCard
+                playerId={id}
+                playerName={`${player.last_name} ${player.first_name}`}
+                initialProfile={latestNutrition}
+                requiresParentalConsent={!hasSupplementsConsent}
+              />
+
+              {/* Фармакотерапія та ліки з аптеки */}
+              <PlayerTreatmentsCard
+                playerId={id}
+                playerName={`${player.last_name} ${player.first_name}`}
+                initialTreatments={playerTreatments}
+              />
+            </>
+          }
+          profile={
+            <>
+              {/* Згоди законних представників (батьків) та гравця */}
+              <PlayerConsentsCard
+                playerId={id}
+                playerName={`${player.last_name} ${player.first_name}`}
+                teamName={player.teams?.name || "Команда"}
+                dateOfBirth={player.date_of_birth}
+                initialSummary={consentSummary}
+                activeDocuments={activeDocuments}
+              />
+
+              {/* ШІ-аналітика спортивної форми */}
+              <PlayerSportsIntelligenceCard
+                requiresParentalConsent={!hasAiConsent}
+                playerContext={{
+                  id,
+                  name: `${player.last_name} ${player.first_name}`,
+                  age: calcAge(player.date_of_birth),
+                  position: POSITION_FULL[player.position] || player.position,
+                  team: player.teams?.name || "Команда",
+                  maturation: maturation
+                    ? {
+                        growth_phase: maturation.growth_phase,
+                        risk_zone: maturation.risk_zone,
+                        consensus_offset: maturation.consensus_offset,
+                      }
+                    : null,
+                  wearables: wearableLogs,
+                  screening: screenings,
+                  nutrition: latestNutrition,
+                  injuries: injuryList.map((i) => ({
+                    type: i.injury_type,
+                    location: i.location,
+                    severity: i.severity,
+                    status: i.status,
+                    daysMissed: calcDaysMissed(i),
+                  })),
+                }}
+              />
+
+              {/* Носимі біометричні датчики (Wearables) */}
+              <WearablesBiometricsCard
+                playerId={id}
+                playerName={`${player.last_name} ${player.first_name}`}
+                initialEntries={wearableLogs}
+                requiresParentalConsent={!hasWearablesConsent}
+              />
+
+              {/* Авторизовані пристрої гравця (QR-активація) */}
+              <PlayerDevicesCard
+                playerId={id}
+                playerName={`${player.last_name} ${player.first_name}`}
+                initialDevices={activeDevices}
+              />
+
+              {/* Telegram-сповіщення та нагадування */}
+              <TelegramBindingCard
+                playerId={id}
+                playerName={`${player.last_name} ${player.first_name}`}
+                initialBinding={telegramRes?.binding}
+                initialEligibility={telegramRes?.eligibility}
+              />
+            </>
+          }
+        />
 
       </div>
     </div>

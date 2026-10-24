@@ -40,15 +40,18 @@ export default function PeriodSelector() {
   const currentTo = searchParams.get("to") ?? "";
 
   function applyPreset(preset: (typeof PRESETS)[number]) {
-    const params = new URLSearchParams();
+    const params = new URLSearchParams(searchParams.toString());
     const from = calcDate(preset.from);
     const to = preset.to || "";
 
     if (from) params.set("from", from);
+    else params.delete("from");
+
     if (to) params.set("to", to);
+    else params.delete("to");
 
     const qs = params.toString();
-    router.push(qs ? `${pathname}?${qs}` : pathname);
+    router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   }
 
   function isActive(preset: (typeof PRESETS)[number]): boolean {
