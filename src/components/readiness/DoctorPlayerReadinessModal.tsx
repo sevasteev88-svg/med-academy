@@ -10,6 +10,7 @@ export interface DoctorPlayerReadinessModalProps {
   onClose: () => void;
   onAcknowledge?: (playerId: string, date: string) => void;
   isPendingAck?: boolean;
+  initialDate?: string;
 }
 
 export function DoctorPlayerReadinessModal({
@@ -17,9 +18,28 @@ export function DoctorPlayerReadinessModal({
   onClose,
   onAcknowledge,
   isPendingAck,
+  initialDate,
 }: DoctorPlayerReadinessModalProps) {
-  const details = player.doctorDetails;
-  const wearables = details?.wearables;
+  const [activeDate, setActiveDate] = useState<string>(initialDate || player.date);
+
+  // Знаходимо точку тренду для вибраного дня
+  const activePoint = player.trendLast7Days?.find((pt) => pt.date === activeDate);
+  const isSelectedToday = activeDate === player.date;
+
+  // Деталі анкети для вибраного дня (якщо сьогодні — з doctorDetails, якщо інший день — з activePoint.details)
+  const details = isSelectedToday
+    ? player.doctorDetails
+    : activePoint?.details || null;
+
+  const isAck = isSelectedToday
+    ? player.isAcknowledged
+    : Boolean(activePoint?.isAcknowledged);
+
+  const ackRole = isSelectedToday
+    ? player.reviewedByRole
+    : activePoint?.reviewedByRole;
+
+  const wearables = isSelectedToday ? player.doctorDetails?.wearables : null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
@@ -54,30 +74,89 @@ export function DoctorPlayerReadinessModal({
           </button>
         </div>
 
-        {/* СТАТУС СВІТЛОФОРА ТА РЕКОМЕНДАЦІЯ */}
+        {/* 7-ДЕННИЙ МІНІ-КАЛЕНДАР ДЛЯ ПЕРЕГЛЯДУ ІСТОРІЇ ГРАВЦЯ */}
+        <div className="p-3 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+              <span>🗓️</span>
+              <span>Історія анкети за 7 днів</span>
+            </span>
+            <span className="text-[10px] text-slate-500 font-medium">
+              Оберіть день для перегляду
+            </span>
+          </div>
+
+          <div className="grid grid-cols-7 gap-1.5">
+            {player.trendLast7Days.map((pt) => {
+              const isSelected = pt.date === activeDate;
+              const isTodayDay = pt.date === player.date;
+              const dotBg =
+                pt.status === "green"
+                  ? "bg-emerald-400"
+                  : pt.status === "yellow"
+                  ? "bg-amber-400"
+                  : pt.status === "red"
+                  ? "bg-rose-500"
+                  : "bg-slate-600";
+
+              const parts = pt.date.split("-");
+              const shortDate = parts.length === 3 ? `${parts[2]}.${parts[1]}` : pt.date;
+
+              return (
+                <button
+                  key={pt.date}
+                  type="button"
+                  onClick={() => setActiveDate(pt.date)}
+                  className={`flex flex-col items-center p-2 rounded-xl border text-center transition-all cursor-pointer ${
+                    isSelected
+                      ? "bg-sky-500/20 border-sky-400 text-white shadow-[0_0_12px_rgba(56,189,248,0.3)] ring-1 ring-sky-400"
+                      : "bg-slate-900/60 border-slate-800 text-slate-300 hover:border-slate-700 hover:bg-slate-800/60"
+                  }`}
+                >
+                  <span className="text-[11px] font-mono font-bold leading-tight">
+                    {shortDate}
+                  </span>
+                  <span className="text-[9px] text-slate-400 leading-tight mt-0.5 truncate max-w-full">
+                    {isTodayDay ? "Сьогодні" : pt.label}
+                  </span>
+                  <span className={`w-2 h-2 rounded-full mt-1.5 ${dotBg}`} />
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* СТАТУС СВІТЛОФОРА ТА РЕКОМЕНДАЦІЯ ДЛЯ ОБРАНОГО ДНЯ */}
         <div className="p-3.5 rounded-2xl bg-slate-950/60 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <span className="text-[11px] text-slate-500 uppercase tracking-wider block">
-              Статус готовності
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-slate-500 uppercase tracking-wider block">
+                Статус готовності на {activeDate}
+              </span>
+              {!isSelectedToday && (
+                <span className="text-[10px] px-2 py-0.2 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                  Архівний день
+                </span>
+              )}
+            </div>
             <div className="flex items-center gap-2 mt-0.5">
               <span className="text-sm font-bold text-white">
-                {player.statusLabel}
+                {isSelectedToday ? player.statusLabel : (activePoint?.label || (activePoint?.status === "gray" ? "Не заповнив" : "Заповнено"))}
               </span>
               <span className="text-xs text-slate-400">
-                • {player.actionPrompt}
+                • {isSelectedToday ? player.actionPrompt : (details ? "Звіт збережено" : "Анкету в цей день не заповнено")}
               </span>
             </div>
           </div>
 
           {onAcknowledge && (
             <div className="shrink-0 flex flex-col sm:items-end gap-1">
-              {player.isAcknowledged ? (
+              {isAck ? (
                 <div className="flex flex-col sm:items-end gap-1">
                   <span className="px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center gap-1.5 shadow-sm">
                     <span>✓</span>
                     <span>
-                      Взято до уваги ({player.reviewedByRole === "doctor" ? "лікар" : "штаб"})
+                      Взято до уваги ({ackRole === "doctor" ? "лікар" : "штаб"})
                     </span>
                   </span>
                   <span className="text-[10px] text-emerald-400/90 font-medium flex items-center gap-1">
@@ -88,9 +167,9 @@ export function DoctorPlayerReadinessModal({
               ) : (
                 <button
                   type="button"
-                  disabled={isPendingAck}
-                  onClick={() => onAcknowledge(player.playerId, player.date)}
-                  className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-bold transition-all shadow-md shadow-sky-600/25 active:scale-95 disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+                  disabled={isPendingAck || !details}
+                  onClick={() => onAcknowledge(player.playerId, activeDate)}
+                  className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-bold transition-all shadow-md shadow-sky-600/25 active:scale-95 disabled:opacity-40 flex items-center gap-1.5 cursor-pointer"
                 >
                   <span>👁️</span>
                   <span>{isPendingAck ? "Збереження..." : "Взято до уваги"}</span>
@@ -155,8 +234,12 @@ export function DoctorPlayerReadinessModal({
               </div>
             </div>
           ) : (
-            <div className="p-3 text-center text-xs text-slate-500">
-              Анкету сьогодні ще не заповнено
+            <div className="p-6 text-center rounded-2xl bg-slate-950/40 border border-slate-800 text-slate-400 text-xs space-y-1">
+              <span className="text-2xl block">📭</span>
+              <span className="font-semibold text-slate-300">Анкету за {activeDate} не заповнено</span>
+              <p className="text-[11px] text-slate-500">
+                Гравець у цей день не надсилав ранковий звіт самопочуття.
+              </p>
             </div>
           )}
 

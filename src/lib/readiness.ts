@@ -28,6 +28,21 @@ export interface ReadinessTrendPoint {
   compositeScore: number | null; // 3-15 (сон + втома + крепатура)
   status: ReadinessColor;
   label: string;
+  isAcknowledged?: boolean;
+  reviewedByRole?: "coach" | "doctor" | "admin" | null;
+  reviewedAt?: string | null;
+  details?: {
+    pain: boolean;
+    painVas: number | null;
+    painLocations: string[] | null;
+    illness: boolean;
+    stress: number | null;
+    comment: string | null;
+    sleepHours: number | null;
+    sleepQuality: number;
+    fatigue: number;
+    soreness: number;
+  } | null;
 }
 
 export interface PlayerReadinessResult {
@@ -470,6 +485,8 @@ function generate7DayTrend(
         compositeScore: null,
         status: "gray",
         label: "Пропуск",
+        isAcknowledged: false,
+        details: null,
       });
       continue;
     }
@@ -487,6 +504,21 @@ function generate7DayTrend(
       compositeScore: comp,
       status: st,
       label: `${comp}/15`,
+      isAcknowledged: Boolean(entry.acknowledged || entry.reviewed_at),
+      reviewedByRole: entry.reviewed_by_role || null,
+      reviewedAt: entry.reviewed_at || null,
+      details: {
+        pain: entry.pain,
+        painVas: entry.pain_vas,
+        painLocations: entry.pain_locations,
+        illness: entry.illness,
+        stress: entry.stress,
+        comment: entry.comment,
+        sleepHours: entry.sleep_hours,
+        sleepQuality: entry.sleep_quality,
+        fatigue: entry.fatigue,
+        soreness: entry.soreness,
+      },
     });
   }
 
@@ -627,5 +659,11 @@ export function sanitizeReadinessForCoach(
     monotonyDays: 0,
     monotonyPrompt: null,
     doctorDetails: null, // Тренер ніколи не бачить doctorDetails
+    trendLast7Days: result.trendLast7Days.map((pt) => ({
+      date: pt.date,
+      compositeScore: pt.compositeScore,
+      status: pt.status,
+      label: pt.label,
+    })),
   };
 }

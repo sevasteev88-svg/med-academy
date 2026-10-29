@@ -40,6 +40,7 @@ export default function CoachReadinessClient({
   const [searchQuery, setSearchQuery] = useState("");
   const [pendingPlayerId, setPendingPlayerId] = useState<string | null>(null);
   const [selectedDoctorPlayer, setSelectedDoctorPlayer] = useState<PlayerReadinessResult | null>(null);
+  const [selectedDoctorDate, setSelectedDoctorDate] = useState<string | undefined>(undefined);
   const [ackToast, setAckToast] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
@@ -443,7 +444,10 @@ export default function CoachReadinessClient({
               userRole={userRole}
               onAcknowledge={handleAcknowledge}
               isPendingAck={pendingPlayerId === player.playerId}
-              onOpenDoctorModal={(p) => setSelectedDoctorPlayer(p)}
+              onOpenDoctorModal={(p, d) => {
+                setSelectedDoctorPlayer(p);
+                setSelectedDoctorDate(d);
+              }}
               onSelectDate={changeDate}
               selectedDate={currentDate}
             />
@@ -455,7 +459,11 @@ export default function CoachReadinessClient({
       {selectedDoctorPlayer && isDoctorOrAdmin && (
         <DoctorPlayerReadinessModal
           player={selectedDoctorPlayer}
-          onClose={() => setSelectedDoctorPlayer(null)}
+          initialDate={selectedDoctorDate}
+          onClose={() => {
+            setSelectedDoctorPlayer(null);
+            setSelectedDoctorDate(undefined);
+          }}
           onAcknowledge={handleAcknowledge}
           isPendingAck={pendingPlayerId === selectedDoctorPlayer.playerId}
         />
@@ -480,7 +488,7 @@ function PlayerReadinessCard({
   userRole: "coach" | "doctor" | "admin";
   onAcknowledge: (playerId: string, date: string) => void;
   isPendingAck: boolean;
-  onOpenDoctorModal?: (player: PlayerReadinessResult) => void;
+  onOpenDoctorModal?: (player: PlayerReadinessResult, initialDate?: string) => void;
   onSelectDate?: (date: string) => void;
   selectedDate?: string;
 }) {
@@ -669,9 +677,13 @@ function PlayerReadinessCard({
                   <button
                     key={pt.date}
                     type="button"
-                    onClick={() => onSelectDate && onSelectDate(pt.date)}
+                    onClick={() => {
+                      if (isDoctorOrAdmin && onOpenDoctorModal) {
+                        onOpenDoctorModal(player, pt.date);
+                      }
+                    }}
                     className="group relative flex flex-col items-center cursor-pointer p-0.5 rounded focus:outline-none"
-                    title={`Переглянути звіт за ${pt.date}: ${pt.label}`}
+                    title={`Переглянути анкету за ${pt.date}: ${pt.label} (без перезавантаження сторінки)`}
                   >
                     <div
                       style={{ height: `${heightPx}px` }}
@@ -695,7 +707,7 @@ function PlayerReadinessCard({
           {isDoctorOrAdmin && onOpenDoctorModal && (
             <button
               type="button"
-              onClick={() => onOpenDoctorModal(player)}
+              onClick={() => onOpenDoctorModal(player, currentDate)}
               className="px-3 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-700/80 shadow-sm whitespace-nowrap"
             >
               <span>🩺</span>
