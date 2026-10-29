@@ -1,9 +1,57 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import type { PlayerReadinessResult } from "@/lib/readiness";
 import { WEARABLES_DISCLAIMER_TEXT } from "@/lib/wearables-constants";
 import { formatPainLocation } from "@/lib/dictionaries";
+import {
+  getPlayerTelegramBindingAction,
+  sendDoctorRecommendationAction,
+} from "@/actions/telegram-actions";
+
+export const PAIN_SYMPTOM_MAP_UA: Record<string, string> = {
+  sharp_movement: "⚡ Різкий при русі",
+  shooting: "🎯 Прострілює / коле",
+  aching: "🌊 Ниючий / тягне",
+  stiffness: "🧱 Скутість / спазм",
+  pulsing: "💥 Пульсуючий",
+  impact_contusion: "🤕 Наслідок удару / стику",
+  pain_at_rest: "🛏️ Біль у спокої",
+};
+
+export const ILLNESS_SYMPTOM_MAP_UA: Record<string, string> = {
+  sore_throat: "🗣️ Біль у горлі",
+  runny_nose: "🤧 Нежить / закладеність",
+  cough: "😮‍💨 Кашель",
+  fever_chills: "🌡️ Озноб / жар",
+  body_aches: "🦴 Ломота в тілі",
+  headache: "🤕 Головний біль",
+  nausea_gi: "🤢 Нудота / розлад",
+  weakness: "🥱 Слабкість",
+};
+
+export const DOCTOR_TEMPLATES = [
+  {
+    icon: "🏠",
+    title: "Залишайся вдома",
+    text: "Залишайся вдома, призначено постільний режим та рясне тепле пиття. Тренування в загальній групі скасовано. О 14:00 вийдемо на зв'язок для контролю стану.",
+  },
+  {
+    icon: "🩺",
+    title: "Чекаю на базі",
+    text: "Приїжджай на базу на 45 хвилин раніше початку тренування. Чекаю в медичному кабінеті на індивідуальний огляд та тестування перед виходом на поле.",
+  },
+  {
+    icon: "🏋️",
+    title: "Індивідуальний зал",
+    text: "Сьогодні працюєш за індивідуальною відновлювальною програмою в тренажерному залі / з реабілітологом без осьового навантаження на травмовану зону.",
+  },
+  {
+    icon: "💊",
+    title: "Знеболювальне / схема",
+    text: "Прийми призначений протизапальний препарат за схемою після їжі. Нанеси охолоджувальний гель на уражену ділянку. Повторний звіт про стан о 12:00.",
+  },
+];
 
 export interface DoctorPlayerReadinessModalProps {
   player: PlayerReadinessResult;
@@ -40,6 +88,79 @@ export function DoctorPlayerReadinessModal({
     : activePoint?.reviewedByRole;
 
   const wearables = isSelectedToday ? player.doctorDetails?.wearables : null;
+
+  // Telegram та відповідь лікаря
+  const [telegramStatus, setTelegramStatus] = useState<{
+    loading: boolean;
+    isBound: boolean;
+    username?: string | null;
+  }>({ loading: true, isBound: false });
+
+  const [recommendationText, setRecommendationText] = useState("");
+  const [isSendingRec, setIsSendingRec] = useState(false);
+  const [recFeedback, setRecFeedback] = useState<{ success?: boolean; msg?: string } | null>(null);
+  const [savedRecommendation, setSavedRecommendation] = useState<any>(
+    details?.doctorRecommendation || null
+  );
+
+  useEffect(() => {
+    let isMounted = true;
+    if (player.playerId) {
+      getPlayerTelegramBindingAction(player.playerId).then((res) => {
+        if (isMounted) {
+          setTelegramStatus({
+            loading: false,
+            isBound: Boolean(res.isBound),
+            username: res.username || null,
+          });
+        }
+      });
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [player.playerId]);
+
+  useEffect(() => {
+    setSavedRecommendation(details?.doctorRecommendation || null);
+    setRecommendationText(details?.doctorRecommendation?.text || "");
+    setRecFeedback(null);
+  }, [activeDate, details]);
+
+  const handleSendRecommendation = async () => {
+    if (!recommendationText.trim()) return;
+    setIsSendingRec(true);
+    setRecFeedback(null);
+    try {
+      const res = await sendDoctorRecommendationAction({
+        playerId: player.playerId,
+        date: activeDate,
+        recommendation: recommendationText.trim(),
+      });
+      if (res.success) {
+        setSavedRecommendation({
+          text: recommendationText.trim(),
+          sentAt: new Date().toISOString(),
+          sentToTelegram: res.sentToTelegram,
+        });
+        setRecFeedback({
+          success: true,
+          msg: res.sentToTelegram
+            ? "Вказівку збережено та успішно надіслано гравцю в Telegram! ✈️"
+            : "Вказівку збережено в картку гравця (Telegram гравцем ще не підключено).",
+        });
+        if (onAcknowledge) {
+          onAcknowledge(player.playerId, activeDate);
+        }
+      } else {
+        setRecFeedback({ success: false, msg: res.error || "Помилка відправки" });
+      }
+    } catch (e: any) {
+      setRecFeedback({ success: false, msg: e.message || "Помилка мережі" });
+    } finally {
+      setIsSendingRec(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
@@ -245,54 +366,221 @@ export function DoctorPlayerReadinessModal({
 
           {/* Біль та стан здоров'я */}
           {details && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              <div className={`p-3 rounded-xl border ${
-                details.pain
-                  ? "bg-rose-950/20 border-rose-500/40 text-rose-200"
-                  : "bg-slate-950/60 border-slate-800 text-slate-300"
-              }`}>
-                <span className="text-[10px] font-bold uppercase tracking-wider block">
-                  {details.pain ? "⚠️ Біль присутній" : "🍏 Скарг на біль немає"}
-                </span>
-                {details.pain && (
-                  <div className="mt-1 text-xs">
-                    <div>Шкала ВАШ: <strong className="text-white">{details.painVas ?? 0}/10</strong></div>
-                    {details.painLocations && details.painLocations.length > 0 && (
-                      <div className="mt-1 text-[11px] text-slate-200 bg-slate-900/60 p-1.5 rounded-lg border border-slate-800">
-                        <span className="text-slate-400">Локалізація: </span>
-                        <strong className="text-sky-300 font-semibold">
-                          {details.painLocations.map((loc) => formatPainLocation(loc)).join(", ")}
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {/* Картка болю */}
+                <div className={`p-3.5 rounded-2xl border ${
+                  details.pain
+                    ? "bg-rose-950/20 border-rose-500/40 text-rose-200"
+                    : "bg-slate-950/60 border-slate-800 text-slate-300"
+                }`}>
+                  <span className="text-[10px] font-bold uppercase tracking-wider block">
+                    {details.pain ? "⚠️ Біль присутній" : "🍏 Скарг на біль немає"}
+                  </span>
+                  {details.pain && (
+                    <div className="mt-2 space-y-2 text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-400">Шкала ВАШ:</span>
+                        <strong className="text-rose-400 font-mono text-sm px-2 py-0.5 rounded bg-rose-500/20 border border-rose-500/30">
+                          {details.painVas ?? 0} / 10
                         </strong>
                       </div>
+                      {details.painLocations && details.painLocations.length > 0 && (
+                        <div className="text-[11px] text-slate-200 bg-slate-900/60 p-2 rounded-xl border border-slate-800">
+                          <span className="text-slate-400 block mb-0.5">Локалізація:</span>
+                          <strong className="text-sky-300 font-semibold">
+                            {details.painLocations.map((loc) => formatPainLocation(loc)).join(", ")}
+                          </strong>
+                        </div>
+                      )}
+                      {/* Характер болю */}
+                      {details.painSymptoms && details.painSymptoms.length > 0 && (
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-amber-300 font-bold uppercase block">
+                            Характер болю:
+                          </span>
+                          <div className="flex flex-wrap gap-1">
+                            {details.painSymptoms.map((sym: string) => (
+                              <span
+                                key={sym}
+                                className="text-[10px] px-2 py-0.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-200 font-medium"
+                              >
+                                {PAIN_SYMPTOM_MAP_UA[sym] || sym}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {/* Коментар до болю */}
+                      {details.painComment && (
+                        <div className="p-2 rounded-xl bg-slate-900/80 border border-amber-500/30 text-[11px] text-amber-200 italic">
+                          📝 «{details.painComment}»
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Картка хвороби / ГРВІ */}
+                <div className={`p-3.5 rounded-2xl border ${
+                  details.illness
+                    ? "bg-rose-950/20 border-rose-500/40 text-rose-200"
+                    : "bg-slate-950/60 border-slate-800 text-slate-300"
+                }`}>
+                  <span className="text-[10px] font-bold uppercase tracking-wider block">
+                    {details.illness ? "🤒 Ознаки захворювання / ГРВІ" : "🍏 Соматично здоровий"}
+                  </span>
+                  {details.illness ? (
+                    <div className="mt-2 space-y-2 text-xs">
+                      {/* Температура */}
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-400">Температура:</span>
+                        <strong className={`font-mono text-sm px-2 py-0.5 rounded border ${
+                          details.temperature && Number(String(details.temperature).replace("+", "")) >= 37.2
+                            ? "bg-rose-500/25 border-rose-500/40 text-rose-300"
+                            : "bg-amber-500/20 border-amber-500/30 text-amber-200"
+                        }`}>
+                          🌡️ {details.temperature ? `${details.temperature}°C` : "Не вказано"}
+                        </strong>
+                      </div>
+
+                      {/* Симптоми ГРВІ */}
+                      {details.illnessSymptoms && details.illnessSymptoms.length > 0 && (
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-rose-300 font-bold uppercase block">
+                            Симптоми:
+                          </span>
+                          <div className="flex flex-wrap gap-1">
+                            {details.illnessSymptoms.map((sym: string) => (
+                              <span
+                                key={sym}
+                                className="text-[10px] px-2 py-0.5 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-200 font-medium"
+                              >
+                                {ILLNESS_SYMPTOM_MAP_UA[sym] || sym}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Коментар до хвороби */}
+                      {details.illnessComment && (
+                        <div className="p-2 rounded-xl bg-slate-900/80 border border-rose-500/30 text-[11px] text-rose-200 italic">
+                          💬 «{details.illnessComment}»
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-[11px] text-slate-400 mt-2 block">
+                      Симптоми ГРВІ та підвищена температура відсутні.
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Загальний коментар для лікаря */}
+              {details.comment && (
+                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
+                  <span className="text-[10px] font-bold text-sky-400 uppercase tracking-wider block">
+                    💬 Особистий коментар гравця для лікаря (приховано для тренера):
+                  </span>
+                  <p className="text-xs text-white leading-relaxed italic">
+                    «{details.comment}»
+                  </p>
+                </div>
+              )}
+
+              {/* СЕКЦІЯ ВІДПОВІДІ / РЕКОМЕНДАЦІЇ ЛІКАРЯ В TELEGRAM */}
+              <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-950 to-slate-900 border border-sky-500/30 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-b border-slate-800 pb-2.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">👨‍⚕️</span>
+                    <span className="text-xs font-bold text-sky-300 tracking-tight">
+                      Оперативна вказівка / Рекомендація лікаря
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {telegramStatus.loading ? (
+                      <span className="text-[10px] text-slate-500">Перевірка Telegram...</span>
+                    ) : telegramStatus.isBound ? (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-medium flex items-center gap-1">
+                        <span>📲</span> Telegram підключено {telegramStatus.username ? `(@${telegramStatus.username})` : ""}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 font-medium flex items-center gap-1">
+                        <span>⚠️</span> Telegram не прив&apos;язано (буде в кабінеті)
+                      </span>
                     )}
                   </div>
+                </div>
+
+                {/* Швидкі шаблони */}
+                <div className="space-y-1.5">
+                  <span className="text-[10px] text-slate-400 font-medium block">
+                    Швидкі шаблони в один клік:
+                  </span>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                    {DOCTOR_TEMPLATES.map((tpl) => (
+                      <button
+                        key={tpl.title}
+                        type="button"
+                        onClick={() => setRecommendationText(tpl.text)}
+                        className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-sky-500/50 text-left transition-all active:scale-95 group cursor-pointer"
+                      >
+                        <div className="text-sm mb-0.5">{tpl.icon}</div>
+                        <div className="text-[11px] font-bold text-slate-200 group-hover:text-sky-300 truncate">
+                          {tpl.title}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Поле вводу рекомендації */}
+                <div className="space-y-1.5">
+                  <textarea
+                    rows={3}
+                    value={recommendationText}
+                    onChange={(e) => setRecommendationText(e.target.value)}
+                    placeholder="Введіть рекомендацію або оберіть шаблон вище (наприклад: залишайся вдома, спокій, зв'язок о 14:00)..."
+                    className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 focus:border-sky-500 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors leading-relaxed"
+                  />
+                </div>
+
+                {/* Фідбек відправки */}
+                {recFeedback && (
+                  <div className={`p-2.5 rounded-xl text-xs flex items-center gap-2 ${
+                    recFeedback.success
+                      ? "bg-emerald-950/40 border border-emerald-500/30 text-emerald-200"
+                      : "bg-rose-950/40 border border-rose-500/30 text-rose-200"
+                  }`}>
+                    <span>{recFeedback.success ? "✓" : "⚠️"}</span>
+                    <span>{recFeedback.msg}</span>
+                  </div>
                 )}
-              </div>
 
-              <div className={`p-3 rounded-xl border ${
-                details.illness
-                  ? "bg-rose-950/20 border-rose-500/40 text-rose-200"
-                  : "bg-slate-950/60 border-slate-800 text-slate-300"
-              }`}>
-                <span className="text-[10px] font-bold uppercase tracking-wider block">
-                  {details.illness ? "🤒 Ознаки захворювання" : "🍏 Соматично здоровий"}
-                </span>
-                <span className="text-[11px] text-slate-400 mt-1 block">
-                  {details.illness ? "Гравець повідомив про температуру / нездужання" : "Симптоми ГРВІ відсутні"}
-                </span>
-              </div>
-            </div>
-          )}
+                {/* Кнопка відправки */}
+                <div className="flex items-center justify-between pt-1">
+                  {savedRecommendation?.sentAt ? (
+                    <span className="text-[10px] text-slate-400">
+                      Надіслано: {new Date(savedRecommendation.sentAt).toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" })}
+                      {savedRecommendation.sentToTelegram ? " (в Telegram ✓)" : " (в кабінет)"}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-slate-500">Вказівка ще не надсилалась</span>
+                  )}
 
-          {/* Коментар лікарю */}
-          {details?.comment && (
-            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
-              <span className="text-[10px] font-bold text-sky-400 uppercase tracking-wider block">
-                💬 Особистий коментар гравця для лікаря (приховано для тренера):
-              </span>
-              <p className="text-xs text-white leading-relaxed italic">
-                «{details.comment}»
-              </p>
+                  <button
+                    type="button"
+                    disabled={isSendingRec || !recommendationText.trim()}
+                    onClick={handleSendRecommendation}
+                    className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs transition-all flex items-center gap-2 shadow-md active:scale-95"
+                  >
+                    <span>{isSendingRec ? "⏳" : "✈️"}</span>
+                    <span>{isSendingRec ? "Відправка..." : "Надіслати вказівку гравцю"}</span>
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>

@@ -35,13 +35,25 @@ export interface ReadinessTrendPoint {
     pain: boolean;
     painVas: number | null;
     painLocations: string[] | null;
+    painSymptoms?: string[] | null;
+    painComment?: string | null;
     illness: boolean;
+    temperature?: number | string | null;
+    illnessSymptoms?: string[] | null;
+    illnessComment?: string | null;
     stress: number | null;
     comment: string | null;
     sleepHours: number | null;
     sleepQuality: number;
     fatigue: number;
     soreness: number;
+    doctorRecommendation?: {
+      text: string;
+      template?: string | null;
+      doctor?: string | null;
+      sentAt: string;
+      sentToTelegram?: boolean;
+    } | null;
   } | null;
 }
 
@@ -92,13 +104,25 @@ export interface PlayerReadinessResult {
     pain: boolean;
     painVas: number | null;
     painLocations: string[] | null;
+    painSymptoms?: string[] | null;
+    painComment?: string | null;
     illness: boolean;
+    temperature?: number | string | null;
+    illnessSymptoms?: string[] | null;
+    illnessComment?: string | null;
     stress: number | null;
     comment: string | null;
     sleepHours: number | null;
     sleepQuality: number;
     fatigue: number;
     soreness: number;
+    doctorRecommendation?: {
+      text: string;
+      template?: string | null;
+      doctor?: string | null;
+      sentAt: string;
+      sentToTelegram?: boolean;
+    } | null;
     wearables?: {
       deviceType: string;
       hrvMetric: string;
@@ -312,13 +336,19 @@ export function evaluatePlayerReadiness(
       pain: todayEntry.pain,
       painVas: todayEntry.pain_vas,
       painLocations: todayEntry.pain_locations,
+      painSymptoms: todayEntry.pain_symptoms || (todayEntry as any).painSymptoms || [],
+      painComment: todayEntry.pain_comment || (todayEntry as any).painComment || null,
       illness: todayEntry.illness,
+      temperature: todayEntry.body_temperature || (todayEntry as any).temperature || null,
+      illnessSymptoms: todayEntry.illness_symptoms || (todayEntry as any).illnessSymptoms || [],
+      illnessComment: todayEntry.illness_comment || (todayEntry as any).illnessComment || null,
       stress: todayEntry.stress,
       comment: todayEntry.comment,
       sleepHours: todayEntry.sleep_hours,
       sleepQuality: todayEntry.sleep_quality,
       fatigue: todayEntry.fatigue,
       soreness: todayEntry.soreness,
+      doctorRecommendation: todayEntry.doctor_recommendation || (todayEntry as any).doctorRecommendation || null,
       wearables: options.wearablesReport?.todayEntry
         ? {
             deviceType: options.wearablesReport.deviceType,
@@ -511,13 +541,19 @@ function generate7DayTrend(
         pain: entry.pain,
         painVas: entry.pain_vas,
         painLocations: entry.pain_locations,
+        painSymptoms: entry.pain_symptoms || (entry as any).painSymptoms || [],
+        painComment: entry.pain_comment || (entry as any).painComment || null,
         illness: entry.illness,
+        temperature: entry.body_temperature || (entry as any).temperature || null,
+        illnessSymptoms: entry.illness_symptoms || (entry as any).illnessSymptoms || [],
+        illnessComment: entry.illness_comment || (entry as any).illnessComment || null,
         stress: entry.stress,
         comment: entry.comment,
         sleepHours: entry.sleep_hours,
         sleepQuality: entry.sleep_quality,
         fatigue: entry.fatigue,
         soreness: entry.soreness,
+        doctorRecommendation: entry.doctor_recommendation || (entry as any).doctorRecommendation || null,
       },
     });
   }

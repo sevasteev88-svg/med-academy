@@ -15,7 +15,12 @@ export interface WellnessEntry {
   pain: boolean;
   pain_vas: number | null; // 0-10
   pain_locations: string[] | null;
+  pain_symptoms?: string[] | null;
+  pain_comment?: string | null;
   illness: boolean;
+  body_temperature?: number | string | null;
+  illness_symptoms?: string[] | null;
+  illness_comment?: string | null;
   comment: string | null; // Null для тренера!
   submitted_at: string;
   source: WellnessEntrySource;
@@ -23,6 +28,13 @@ export interface WellnessEntry {
   reviewed_by_role?: "coach" | "doctor" | "admin" | null;
   reviewed_by_name?: string | null;
   acknowledged?: boolean;
+  doctor_recommendation?: {
+    text: string;
+    template?: string | null;
+    doctor?: string | null;
+    sentAt: string;
+    sentToTelegram?: boolean;
+  } | null;
 }
 
 export interface PlayerComplianceStats {

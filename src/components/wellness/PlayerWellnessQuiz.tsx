@@ -20,6 +20,27 @@ import {
 import type { WearableInputData } from "@/types/wearables";
 import Link from "next/link";
 
+export const PAIN_SYMPTOMS_LIST = [
+  { id: "sharp_movement", label: "⚡ Різкий при русі" },
+  { id: "shooting", label: "🎯 Прострілює / коле" },
+  { id: "aching", label: "🌊 Ниючий / тягне" },
+  { id: "stiffness", label: "🧱 Скутість / спазм" },
+  { id: "pulsing", label: "💥 Пульсуючий" },
+  { id: "impact_contusion", label: "🤕 Наслідок удару / стику" },
+  { id: "pain_at_rest", label: "🛏️ Біль у спокої" },
+];
+
+export const ILLNESS_SYMPTOMS_LIST = [
+  { id: "sore_throat", label: "🗣️ Біль у горлі" },
+  { id: "runny_nose", label: "🤧 Нежить / закладеність" },
+  { id: "cough", label: "😮‍💨 Кашель" },
+  { id: "fever_chills", label: "🌡️ Озноб / жар" },
+  { id: "body_aches", label: "🦴 Ломота в тілі" },
+  { id: "headache", label: "🤕 Головний біль" },
+  { id: "nausea_gi", label: "🤢 Нудота / розлад" },
+  { id: "weakness", label: "🥱 Слабкість" },
+];
+
 interface Props {
   playerId: string;
   playerName: string;
@@ -93,8 +114,18 @@ export default function PlayerWellnessQuiz({
   const [hasPain, setHasPain] = useState<boolean | null>(initialEntry ? initialEntry.pain : null);
   const [painVas, setPainVas] = useState<number | null>(initialEntry?.pain_vas ?? null);
   const [painLocations, setPainLocations] = useState<string[]>(initialEntry?.pain_locations || []);
+  const [painSymptoms, setPainSymptoms] = useState<string[]>(initialEntry?.pain_symptoms || []);
+  const [painComment, setPainComment] = useState<string>(initialEntry?.pain_comment || "");
 
   const [isIll, setIsIll] = useState<boolean | null>(initialEntry ? initialEntry.illness : null);
+  const [bodyTemperature, setBodyTemperature] = useState<string>(
+    initialEntry?.body_temperature !== undefined && initialEntry?.body_temperature !== null
+      ? String(initialEntry.body_temperature)
+      : ""
+  );
+  const [illnessSymptoms, setIllnessSymptoms] = useState<string[]>(initialEntry?.illness_symptoms || []);
+  const [illnessComment, setIllnessComment] = useState<string>(initialEntry?.illness_comment || "");
+  const [doctorRecommendation, setDoctorRecommendation] = useState<any>(initialEntry?.doctor_recommendation || null);
   const [comment, setComment] = useState<string>(initialEntry?.comment || "");
   const [trainingRpe, setTrainingRpe] = useState<number | null>(null);
   const [wearablesData, setWearablesData] = useState<WearableInputData | null>(null);
@@ -146,7 +177,17 @@ export default function PlayerWellnessQuiz({
           setHasPain(res.entry.pain);
           setPainVas(res.entry.pain_vas);
           setPainLocations(res.entry.pain_locations || []);
+          setPainSymptoms(res.entry.pain_symptoms || (res.entry as any).painSymptoms || []);
+          setPainComment(res.entry.pain_comment || (res.entry as any).painComment || "");
           setIsIll(res.entry.illness);
+          setBodyTemperature(
+            res.entry.body_temperature !== undefined && res.entry.body_temperature !== null
+              ? String(res.entry.body_temperature)
+              : ""
+          );
+          setIllnessSymptoms(res.entry.illness_symptoms || (res.entry as any).illnessSymptoms || []);
+          setIllnessComment(res.entry.illness_comment || (res.entry as any).illnessComment || "");
+          setDoctorRecommendation(res.entry.doctor_recommendation || (res.entry as any).doctorRecommendation || null);
           setComment(res.entry.comment || "");
         }
       });
@@ -272,7 +313,12 @@ export default function PlayerWellnessQuiz({
         pain: hasPain,
         painVas: hasPain ? (painVas ?? 0) : null,
         painLocations: hasPain ? painLocations : [],
+        painSymptoms: hasPain && (painVas ?? 0) >= 3 ? painSymptoms : [],
+        painComment: hasPain && (painVas ?? 0) >= 3 ? painComment.trim() : null,
         illness: isIll,
+        temperature: isIll && bodyTemperature ? bodyTemperature : null,
+        illnessSymptoms: isIll ? illnessSymptoms : [],
+        illnessComment: isIll ? illnessComment.trim() : null,
         comment: comment.trim() || null,
         trainingRpe: trainingRpe !== null ? trainingRpe : undefined,
         source,
@@ -655,6 +701,51 @@ export default function PlayerWellnessQuiz({
                 </div>
               </div>
 
+              {/* Якщо біль >= 3 та обрано зону — швидкий опис характеру болю для лікаря */}
+              {painVas !== null && painVas >= 3 && painLocations.length > 0 && (
+                <div className="space-y-2.5 pt-3 border-t border-rose-500/20 animate-fadeIn">
+                  <label className="text-[11px] font-bold text-amber-300 flex items-center gap-1.5">
+                    <span>⚡</span>
+                    <span>Опишіть характер болю (для лікаря):</span>
+                  </label>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {PAIN_SYMPTOMS_LIST.map((sym) => {
+                      const isSel = painSymptoms.includes(sym.id);
+                      return (
+                        <button
+                          key={sym.id}
+                          type="button"
+                          onClick={() => {
+                            setPainSymptoms((prev) =>
+                              prev.includes(sym.id)
+                                ? prev.filter((x) => x !== sym.id)
+                                : [...prev, sym.id]
+                            );
+                          }}
+                          className={`p-2 rounded-xl border text-left text-xs transition-all ${
+                            isSel
+                              ? "bg-amber-500/25 border-amber-400 text-amber-200 font-semibold shadow-sm"
+                              : "bg-slate-950/80 border-slate-800 text-slate-400 hover:border-slate-700"
+                          }`}
+                        >
+                          {sym.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div>
+                    <input
+                      type="text"
+                      value={painComment}
+                      onChange={(e) => setPainComment(e.target.value)}
+                      placeholder="Що посилює біль (біг, нахил, дотик, після навантаження)..."
+                      className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 transition-colors"
+                    />
+                  </div>
+                </div>
+              )}
+
               <button
                 type="button"
                 onClick={() => setCurrentStep(6)}
@@ -708,7 +799,6 @@ export default function PlayerWellnessQuiz({
               type="button"
               onClick={() => {
                 setIsIll(true);
-                setTimeout(() => setCurrentStep(7), 180);
               }}
               className={`min-h-[64px] p-3 rounded-2xl border transition-all flex flex-col items-center justify-center gap-1 active:scale-95 cursor-pointer ${
                 isIll === true
@@ -720,6 +810,97 @@ export default function PlayerWellnessQuiz({
               <span className="text-xs font-bold">Так, хворію / нездужання</span>
             </button>
           </div>
+
+          {/* Деталізація температури та симптомів ГРВІ */}
+          {isIll === true && (
+            <div className="space-y-3.5 pt-3 border-t border-rose-500/20 animate-fadeIn">
+              {/* Температура */}
+              <div className="p-3 rounded-2xl bg-slate-950/90 border border-rose-500/30 space-y-2">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="font-bold text-slate-200 flex items-center gap-1.5">
+                    <span>🌡️</span> Температура тіла:
+                  </span>
+                  <span className="font-mono font-bold text-rose-400">
+                    {bodyTemperature ? `${bodyTemperature}°C` : "Не вимірював"}
+                  </span>
+                </div>
+                <div className="flex gap-1.5 flex-wrap items-center">
+                  {["36.6", "37.0", "37.2", "37.5", "38.0+"].map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setBodyTemperature(t)}
+                      className={`px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold border transition-all ${
+                        bodyTemperature === t
+                          ? "bg-rose-500 text-white border-rose-400 shadow-sm"
+                          : "bg-slate-900 text-slate-300 border-slate-800 hover:border-slate-700"
+                      }`}
+                    >
+                      {t}°
+                    </button>
+                  ))}
+                  <input
+                    type="text"
+                    value={bodyTemperature}
+                    onChange={(e) => setBodyTemperature(e.target.value)}
+                    placeholder="Своє (напр. 37.4)"
+                    className="w-28 px-2.5 py-1 text-xs bg-slate-900 border border-slate-800 rounded-lg text-white font-mono placeholder-slate-500 focus:outline-none focus:border-rose-400 transition-colors"
+                  />
+                </div>
+              </div>
+
+              {/* Симптоми ГРВІ */}
+              <div className="space-y-2">
+                <label className="text-[11px] font-bold text-slate-300 block">
+                  🤧 Що саме турбує (симптоми):
+                </label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {ILLNESS_SYMPTOMS_LIST.map((sym) => {
+                    const isSel = illnessSymptoms.includes(sym.id);
+                    return (
+                      <button
+                        key={sym.id}
+                        type="button"
+                        onClick={() => {
+                          setIllnessSymptoms((prev) =>
+                            prev.includes(sym.id)
+                              ? prev.filter((x) => x !== sym.id)
+                              : [...prev, sym.id]
+                          );
+                        }}
+                        className={`p-2 rounded-xl border text-left text-xs transition-all ${
+                          isSel
+                            ? "bg-rose-500/25 border-rose-400 text-rose-200 font-semibold shadow-sm"
+                            : "bg-slate-950/80 border-slate-800 text-slate-400 hover:border-slate-700"
+                        }`}
+                      >
+                        {sym.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Коментар */}
+              <div>
+                <input
+                  type="text"
+                  value={illnessComment}
+                  onChange={(e) => setIllnessComment(e.target.value)}
+                  placeholder="Додатковий коментар (коли піднялася t°, які ліки приймав)..."
+                  className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-rose-400 transition-colors"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setCurrentStep(7)}
+                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-orange-600 text-white font-bold text-xs uppercase tracking-wider transition-all shadow-md active:scale-95"
+              >
+                Далі →
+              </button>
+            </div>
+          )}
 
           <div className="flex justify-start pt-2">
             <button
@@ -736,6 +917,25 @@ export default function PlayerWellnessQuiz({
       {/* FINAL STEP: Коментар та кнопка відправки */}
       {currentStep === 7 && (
         <form onSubmit={handleSubmit} className="space-y-4 animate-fadeIn">
+          {/* Рекомендація лікаря, якщо вже надана */}
+          {doctorRecommendation && (
+            <div className="p-3.5 rounded-2xl bg-sky-950/40 border border-sky-500/40 space-y-1.5 shadow-md animate-fadeIn">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold text-sky-300 flex items-center gap-1.5">
+                  <span>👨‍⚕️</span> Рекомендація лікаря ({doctorRecommendation.doctor || "Штаб"}):
+                </span>
+                {doctorRecommendation.sentAt && (
+                  <span className="text-[10px] text-slate-400 font-mono">
+                    {new Date(doctorRecommendation.sentAt).toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-white leading-relaxed font-medium">
+                «{doctorRecommendation.text}»
+              </p>
+            </div>
+          )}
+
           <div className="text-center space-y-1">
             <h3 className="text-base font-bold text-white tracking-tight">
               Завершення анкети

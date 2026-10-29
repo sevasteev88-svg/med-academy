@@ -25,7 +25,12 @@ export interface SubmitWellnessEntryInput {
   pain: boolean;
   painVas?: number | null;
   painLocations?: string[] | null;
+  painSymptoms?: string[] | null;
+  painComment?: string | null;
   illness: boolean;
+  temperature?: number | string | null;
+  illnessSymptoms?: string[] | null;
+  illnessComment?: string | null;
   comment?: string | null;
   trainingRpe?: number | null;
   source: WellnessEntrySource;
@@ -120,10 +125,16 @@ export async function getTodayWellnessEntryForPlayerAction(playerId: string): Pr
         pain: Boolean(extra.pain),
         pain_vas: extra.pain_vas ?? null,
         pain_locations: extra.pain_locations || (s.soreness_location ? [s.soreness_location] : []),
+        pain_symptoms: extra.pain_symptoms || extra.painSymptoms || [],
+        pain_comment: extra.pain_comment || extra.painComment || null,
         illness: Boolean(extra.illness),
+        body_temperature: extra.body_temperature || extra.temperature || null,
+        illness_symptoms: extra.illness_symptoms || extra.illnessSymptoms || [],
+        illness_comment: extra.illness_comment || extra.illnessComment || null,
         comment: extra.comment || (s.notes?.startsWith("{") ? null : s.notes),
         submitted_at: s.created_at,
         source: extra.source || "player",
+        doctor_recommendation: extra.doctor_recommendation || extra.doctorRecommendation || null,
       };
       return { entry, today, timezone };
     }
@@ -205,7 +216,12 @@ export async function submitWellnessEntryAction(input: SubmitWellnessEntryInput)
     pain: Boolean(input.pain),
     pain_vas: input.pain && input.painVas !== undefined && input.painVas !== null ? Number(input.painVas) : null,
     pain_locations: input.pain && input.painLocations?.length ? input.painLocations : [],
+    pain_symptoms: input.pain && input.painSymptoms?.length ? input.painSymptoms : [],
+    pain_comment: input.pain && input.painComment ? input.painComment.trim() : null,
     illness: Boolean(input.illness),
+    body_temperature: input.illness && input.temperature ? input.temperature : null,
+    illness_symptoms: input.illness && input.illnessSymptoms?.length ? input.illnessSymptoms : [],
+    illness_comment: input.illness && input.illnessComment ? input.illnessComment.trim() : null,
     comment: input.comment?.trim() || null,
     submitted_at: new Date().toISOString(),
     source: input.source || "player",
@@ -243,7 +259,12 @@ export async function submitWellnessEntryAction(input: SubmitWellnessEntryInput)
       pain: entryPayload.pain,
       pain_vas: entryPayload.pain_vas,
       pain_locations: entryPayload.pain_locations,
+      pain_symptoms: entryPayload.pain_symptoms,
+      pain_comment: entryPayload.pain_comment,
       illness: entryPayload.illness,
+      body_temperature: entryPayload.body_temperature,
+      illness_symptoms: entryPayload.illness_symptoms,
+      illness_comment: entryPayload.illness_comment,
       comment: entryPayload.comment,
       source: entryPayload.source,
     };
