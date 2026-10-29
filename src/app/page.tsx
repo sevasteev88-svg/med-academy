@@ -162,13 +162,23 @@ export default async function Home() {
   // Єдине джерело правди для готових до матчу гравців
   const readyCount = availability.summary.available;
   const totalPlayers = availability.summary.total;
+  const isCoach = user?.role === "coach";
 
-  const STAT_CARDS: StatCard[] = [
-    { icon: <Bandage     size={14} />, value: activeInjuries ?? 0,  label: "Активні травми",  accent: "red",   href: "/injuries" },
-    { icon: <Activity    size={14} />, value: onRehab        ?? 0,  label: "На реабілітації", accent: "amber", href: "/rtp" },
-    { icon: <CheckCircle size={14} />, value: readyCount,           label: "Готові до матчу", accent: "green", href: "/availability" },
-    { icon: <Calendar    size={14} />, value: examsThisWeek  ?? 0,  label: "Огляди на тижні", accent: "blue",  href: "/exams/upcoming" },
-  ];
+  const STAT_CARDS: StatCard[] = isCoach
+    ? [
+        { icon: <CheckCircle size={14} />, value: readyCount, label: "Готові до матчу", accent: "green", href: "/availability" },
+        { icon: <Activity size={14} />, value: onRehab ?? 0, label: "На реабілітації", accent: "amber", href: "/rtp" },
+        { icon: <Activity size={14} />, value: totalPlayers, label: "Всього у складі", accent: "blue", href: "/coach-briefing" },
+        { icon: <Calendar size={14} />, value: "Сесія", label: "Внести тренування", accent: "blue", href: "/training" },
+      ]
+    : [
+        { icon: <Bandage size={14} />, value: activeInjuries ?? 0, label: "Активні травми", accent: "red", href: "/injuries" },
+        { icon: <Activity size={14} />, value: onRehab ?? 0, label: "На реабілітації", accent: "amber", href: "/rtp" },
+        { icon: <CheckCircle size={14} />, value: readyCount, label: "Готові до матчу", accent: "green", href: "/availability" },
+        { icon: <Calendar size={14} />, value: examsThisWeek ?? 0, label: "Огляди на тижні", accent: "blue", href: "/exams/upcoming" },
+      ];
+
+  const displayAlerts = isCoach ? alerts.filter((a: any) => a.type !== "pharmacy") : alerts;
 
   // ── Тріаж: активні + реабілітація, сортування за ВАШ ──
   const { data: triageInjuries } = await supabase
@@ -242,30 +252,56 @@ export default async function Home() {
               <p className="text-xs uppercase tracking-wider text-slate-400 font-mono capitalize">{todayUk()}</p>
             </div>
             <h1 className="text-2xl md:text-3xl font-black text-white tracking-tight mt-1">
-              Медичний Штаб <span className="text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-blue-500">{clubName}</span>
+              {isCoach ? "Тренерський Штаб" : "Медичний Штаб"}{" "}
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-blue-500">{clubName}</span>
             </h1>
           </div>
 
           {/* Quick Action Buttons */}
           <div className="flex items-center gap-2.5 flex-wrap">
-            <Link
-              href="/injuries/new"
-              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 shadow-lg shadow-sky-600/20 active:scale-95 transition-all"
-            >
-              <Plus size={15} /> Фіксувати травму
-            </Link>
-            <Link
-              href="/exams/new"
-              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold text-sky-300 bg-slate-900/80 hover:bg-slate-800 border border-sky-500/25 active:scale-95 transition-all"
-            >
-              <Stethoscope size={15} /> Новий огляд
-            </Link>
-            <Link
-              href="/coach-briefing"
-              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold text-emerald-300 bg-slate-900/80 hover:bg-slate-800 border border-emerald-500/25 active:scale-95 transition-all"
-            >
-              🛡️ Брифінг тренера
-            </Link>
+            {isCoach ? (
+              <>
+                <Link
+                  href="/training"
+                  className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 shadow-lg shadow-sky-600/20 active:scale-95 transition-all"
+                >
+                  ⏱️ Внести тренування
+                </Link>
+                <Link
+                  href="/team/readiness"
+                  className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold text-sky-300 bg-slate-900/80 hover:bg-slate-800 border border-sky-500/25 active:scale-95 transition-all"
+                >
+                  🚦 Готовність команди
+                </Link>
+                <Link
+                  href="/coach-briefing"
+                  className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold text-emerald-300 bg-slate-900/80 hover:bg-slate-800 border border-emerald-500/25 active:scale-95 transition-all"
+                >
+                  🛡️ Брифінг тренера
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link
+                  href="/injuries/new"
+                  className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 shadow-lg shadow-sky-600/20 active:scale-95 transition-all"
+                >
+                  <Plus size={15} /> Фіксувати травму
+                </Link>
+                <Link
+                  href="/exams/new"
+                  className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold text-sky-300 bg-slate-900/80 hover:bg-slate-800 border border-sky-500/25 active:scale-95 transition-all"
+                >
+                  <Stethoscope size={15} /> Новий огляд
+                </Link>
+                <Link
+                  href="/coach-briefing"
+                  className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold text-emerald-300 bg-slate-900/80 hover:bg-slate-800 border border-emerald-500/25 active:scale-95 transition-all"
+                >
+                  🛡️ Брифінг тренера
+                </Link>
+              </>
+            )}
           </div>
         </div>
 
@@ -299,7 +335,7 @@ export default async function Home() {
 
         {/* Центр Оперативних Ризиків та Сповіщень */}
         <section>
-          <RiskAlertsCenter alerts={alerts} standaloneWidget={true} />
+          <RiskAlertsCenter alerts={displayAlerts} standaloneWidget={true} />
         </section>
 
         {/* Two Column Grid: Triage & Squad Readiness */}
@@ -311,11 +347,14 @@ export default async function Home() {
               <div className="flex items-center gap-2">
                 <span className="text-base">🚨</span>
                 <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-                  Клінічний Тріаж (Гостра фаза та рецидиви)
+                  {isCoach ? "Гравці з обмеженнями та травмами" : "Клінічний Тріаж (Гостра фаза та рецидиви)"}
                 </h3>
               </div>
-              <Link href="/injuries" className="text-xs text-sky-400 hover:text-sky-300 transition flex items-center gap-1 font-semibold">
-                Всі травми <ChevronRight size={13} />
+              <Link
+                href={isCoach ? "/coach-briefing" : "/injuries"}
+                className="text-xs text-sky-400 hover:text-sky-300 transition flex items-center gap-1 font-semibold"
+              >
+                {isCoach ? "Брифінг тренера" : "Всі травми"} <ChevronRight size={13} />
               </Link>
             </div>
 
@@ -334,7 +373,7 @@ export default async function Home() {
                   return (
                     <Link
                       key={inj.id}
-                      href={`/injuries/${inj.id}`}
+                      href={isCoach ? "/coach-briefing" : `/injuries/${inj.id}`}
                       className="group bg-slate-900/60 backdrop-blur-md border border-sky-500/15 hover:border-sky-400/40 rounded-xl p-3.5 flex items-center justify-between gap-3 transition-all hover:shadow-lg"
                     >
                       <div className="flex items-center gap-3 min-w-0">

@@ -262,6 +262,38 @@ export async function acknowledgeReadinessAction(input: {
     },
   });
 
+  // 4. Надсилаємо сповіщення гравцю в Telegram (якщо прив'язаний бот)
+  try {
+    const { data: binding } = await supabase
+      .from("player_telegram_bindings")
+      .select("telegram_chat_id, status")
+      .eq("player_id", input.playerId)
+      .eq("status", "active")
+      .maybeSingle();
+
+    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+    if (binding?.telegram_chat_id && botToken) {
+      const parts = targetDate.split("-");
+      const formattedDate = parts.length === 3 ? `${parts[2]}.${parts[1]}.${parts[0]}` : targetDate;
+      const msg =
+        `✅ *Вашу анкету переглянуто*\n\n` +
+        `Медичний штаб (${staffName}) переглянув(ла) ваш звіт за *${formattedDate}* та взяв(ла) його до уваги.\n\n` +
+        `Дякуємо за регулярність! Гарного та продуктивного тренування! ⚽`;
+
+      await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: binding.telegram_chat_id,
+          text: msg,
+          parse_mode: "Markdown",
+        }),
+      });
+    }
+  } catch (tgErr) {
+    console.warn("Could not send Telegram notification on acknowledge:", tgErr);
+  }
+
   revalidatePath("/team/readiness");
   revalidatePath("/rehab-portal");
   revalidatePath("/coach-briefing");
@@ -413,14 +445,16 @@ export async function getTeamReadinessAction(params?: {
   const playerIds = playerList.map((p) => p.id);
 
   // 5. Отримуємо активні пристрої гравців (чи активовано хоча б 1 пристрій)
+  const nowIso = new Date().toISOString();
   const { data: devicesData } = await supabase
     .from("player_devices")
-    .select("player_id, status")
+    .select("player_id")
     .in("player_id", playerIds)
-    .eq("status", "active");
+    .is("revoked_at", null)
+    .gt("expires_at", nowIso);
 
   const activeDevicePlayerIds = new Set<string>(
-    (devicesData ?? []).map((d) => d.player_id)
+    (devicesData ?? []).map((d: any) => d.player_id)
   );
 
   // 6. Розраховуємо діапазон 28 днів для вибірки анкет
@@ -430,17 +464,90 @@ export async function getTeamReadinessAction(params?: {
   const minDateStr = past28DateObj.toISOString().split("T")[0];
 
   // 7. Отримуємо всі анкети за останні 28 днів для цих гравців
-  const { data: wellnessEntries } = await supabase
-    .from("wellness_entries")
-    .select("*")
-    .in("player_id", playerIds)
-    .gte("date", minDateStr)
-    .lte("date", today)
-    .order("date", { ascending: true });
+  let wellnessEntriesList: WellnessEntry[] = [];
+
+  // 7a. Спершу пробуємо таблицю wellness_entries
+  try {
+    const { data: weData, error: weErr } = await supabase
+      .from("wellness_entries")
+      .select("*")
+      .in("player_id", playerIds)
+      .gte("date", minDateStr)
+      .lte("date", today)
+      .order("date", { ascending: true });
+
+    if (!weErr && weData) {
+      wellnessEntriesList = weData as WellnessEntry[];
+    }
+  } catch {}
+
+  // 7b. Також перевіряємо таблицю wellness_surveys (існуючу в базі даних Supabase)
+  try {
+    const { data: wsData } = await supabase
+      .from("wellness_surveys")
+      .select("*")
+      .in("player_id", playerIds)
+      .gte("date", minDateStr)
+      .lte("date", today)
+      .order("date", { ascending: true });
+
+    if (wsData && wsData.length > 0) {
+      const existingKeySet = new Set(wellnessEntriesList.map((e) => `${e.player_id}_${e.date}`));
+      for (const s of wsData) {
+        const key = `${s.player_id}_${s.date}`;
+        if (!existingKeySet.has(key)) {
+          let extra: any = {};
+          if (s.notes && typeof s.notes === "string" && s.notes.startsWith("{")) {
+            try { extra = JSON.parse(s.notes); } catch {}
+          }
+          wellnessEntriesList.push({
+            id: s.id,
+            club_id: s.club_id || DEFAULT_CLUB_ID,
+            player_id: s.player_id,
+            date: s.date,
+            sleep_quality: s.sleep_quality,
+            fatigue: s.fatigue_level,
+            soreness: s.muscle_soreness,
+            stress: s.stress_level,
+            sleep_hours: extra.sleep_hours ?? null,
+            pain: Boolean(extra.pain),
+            pain_vas: extra.pain_vas ?? null,
+            pain_locations: extra.pain_locations || (s.soreness_location ? [s.soreness_location] : []),
+            illness: Boolean(extra.illness),
+            comment: extra.comment || (s.notes?.startsWith("{") ? null : s.notes),
+            submitted_at: s.created_at,
+            source: extra.source || "player",
+          });
+          existingKeySet.add(key);
+        }
+      }
+    }
+  } catch {}
+
+  // 7c. Також перевіряємо клубно-збережені анкети в settings.wellness_entries_store
+  try {
+    const { data: clubData } = await supabase
+      .from("clubs")
+      .select("settings")
+      .eq("id", user.clubId || DEFAULT_CLUB_ID)
+      .maybeSingle();
+
+    const storedMap = (clubData as any)?.settings?.wellness_entries_store || {};
+    const existingKeySet = new Set(wellnessEntriesList.map((e) => `${e.player_id}_${e.date}`));
+    for (const [key, storedEntry] of Object.entries(storedMap)) {
+      const entry = storedEntry as WellnessEntry;
+      if (playerIds.includes(entry.player_id) && entry.date >= minDateStr && entry.date <= today) {
+        if (!existingKeySet.has(`${entry.player_id}_${entry.date}`)) {
+          wellnessEntriesList.push(entry);
+          existingKeySet.add(`${entry.player_id}_${entry.date}`);
+        }
+      }
+    }
+  } catch {}
 
   // Групуємо анкети по player_id та накладаємо acknowledgements
   const entriesByPlayer = new Map<string, WellnessEntry[]>();
-  for (const rawEntry of wellnessEntries ?? []) {
+  for (const rawEntry of wellnessEntriesList) {
     const entry = { ...(rawEntry as WellnessEntry) };
     const ackKey = `${entry.player_id}_${entry.date}`;
     const clubAck = clubAcknowledgements[ackKey];
@@ -490,8 +597,8 @@ export async function getTeamReadinessAction(params?: {
       }
     }
 
-    const hasActiveDevice = activeDevicePlayerIds.has(p.id);
     const pEntries = entriesByPlayer.get(p.id) || [];
+    const hasActiveDevice = activeDevicePlayerIds.has(p.id) || pEntries.length > 0;
 
     // Розрахунок особистої норми з носимих пристроїв для лікаря/адміна
     let pWearablesReport: WearableBaselineReport | null = null;

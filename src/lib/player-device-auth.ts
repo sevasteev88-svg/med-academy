@@ -2,8 +2,8 @@ import crypto from "crypto";
 import type { PlayerDevice } from "../types/player-device.ts";
 
 export const DEVICE_COOKIE_NAME = "rehab_device_session";
-export const DEVICE_SESSION_MAX_AGE_SECONDS = 90 * 24 * 60 * 60; // 90 днів
-export const ACTIVATION_TOKEN_MAX_AGE_SECONDS = 14 * 24 * 60 * 60; // 14 днів
+export const DEVICE_SESSION_MAX_AGE_SECONDS = 365 * 24 * 60 * 60; // 365 днів (1 сезон)
+export const ACTIVATION_TOKEN_MAX_AGE_SECONDS = 365 * 24 * 60 * 60; // 365 днів (1 сезон)
 export const MAX_ACTIVE_DEVICES_PER_PLAYER = 2; // Максимум 2 активні пристрої
 
 /**

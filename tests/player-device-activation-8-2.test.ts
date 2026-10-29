@@ -49,12 +49,12 @@ describe("8.2 Активація пристрою по QR (player-device-activat
       assert.notEqual(rawToken, hash1);
     });
 
-    it("термін дії токена активації складає рівно 14 днів", () => {
-      assert.equal(ACTIVATION_TOKEN_MAX_AGE_SECONDS, 14 * 24 * 60 * 60);
+    it("термін дії токена активації складає 365 днів (сезон)", () => {
+      assert.equal(ACTIVATION_TOKEN_MAX_AGE_SECONDS, 365 * 24 * 60 * 60);
     });
 
-    it("термін сесії пристрою складає рівно 90 днів", () => {
-      assert.equal(DEVICE_SESSION_MAX_AGE_SECONDS, 90 * 24 * 60 * 60);
+    it("термін сесії пристрою складає 365 днів (сезон)", () => {
+      assert.equal(DEVICE_SESSION_MAX_AGE_SECONDS, 365 * 24 * 60 * 60);
     });
   });
 

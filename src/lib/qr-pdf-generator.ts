@@ -8,7 +8,7 @@ export const INSTRUCTIONS_STEPS_UA = [
   "3. Щоранку заповнюйте велнес за 1 хв",
 ] as const;
 
-export const CARD_TERMS_UA = "Одноразовий доступ · Дійсний 14 днів";
+export const CARD_TERMS_UA = "Сезонний доступ · Дійсний 365 днів";
 export const CLUB_BRAND_UA = "СПОРТИВНА АКАДЕМІЯ · МЕДИЧНИЙ ШТАБ";
 
 /**

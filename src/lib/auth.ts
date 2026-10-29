@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createClient } from "@/utils/supabase/server";
 import type { UserRole } from "@/types/database";
 
@@ -14,14 +15,14 @@ export type AppUser = {
   teamId?: string | null;
 };
 
-export async function getCurrentUser(): Promise<AppUser | null> {
+async function fetchCurrentUser(): Promise<AppUser | null> {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
 
   // 1. Спробуємо отримати членство в клубі та роль з club_members
   let clubId = DEFAULT_CLUB_ID;
-  let role: UserRole = "doctor";
+  let role: UserRole | null = null;
   let teamId: string | null = null;
 
   try {
@@ -34,7 +35,7 @@ export async function getCurrentUser(): Promise<AppUser | null> {
 
     if (member && member.club_id) {
       clubId = member.club_id;
-      role = (member.role as UserRole) || "doctor";
+      role = (member.role as UserRole) || null;
       teamId = (member as any).team_id || null;
     }
   } catch {
@@ -48,7 +49,7 @@ export async function getCurrentUser(): Promise<AppUser | null> {
         .maybeSingle();
       if (fallbackMember && fallbackMember.club_id) {
         clubId = fallbackMember.club_id;
-        role = (fallbackMember.role as UserRole) || "doctor";
+        role = (fallbackMember.role as UserRole) || null;
       }
     } catch {}
   }
@@ -68,7 +69,7 @@ export async function getCurrentUser(): Promise<AppUser | null> {
     }
     // Якщо club_members не знайдено, беремо роль з profiles
     if (!role && profile?.role) {
-      role = (profile.role as UserRole) || "doctor";
+      role = (profile.role as UserRole) || null;
     }
   } catch {
     try {
@@ -79,9 +80,17 @@ export async function getCurrentUser(): Promise<AppUser | null> {
         .maybeSingle();
       fullName = profile?.full_name ?? "";
       if (!role && profile?.role) {
-        role = (profile.role as UserRole) || "doctor";
+        role = (profile.role as UserRole) || null;
       }
     } catch {}
+  }
+
+  // 3. Резервна перевірка user_metadata з auth.users
+  if (!role && user.user_metadata?.role) {
+    role = (user.user_metadata.role as UserRole) || null;
+  }
+  if (!fullName && user.user_metadata?.full_name) {
+    fullName = user.user_metadata.full_name;
   }
 
   return {
@@ -93,6 +102,8 @@ export async function getCurrentUser(): Promise<AppUser | null> {
     teamId,
   };
 }
+
+export const getCurrentUser = cache(fetchCurrentUser);
 
 export function isAdmin(role: UserRole): boolean {
   return role === "admin";

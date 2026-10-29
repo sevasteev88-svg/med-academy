@@ -61,6 +61,7 @@ export interface GeneratedQrCard {
   playerId: string;
   fullName: string;
   teamName: string;
+  position?: string;
   token: string;
   activationUrl: string;
   qrDataUrl?: string;

@@ -60,6 +60,13 @@ export default function TeamQrCardsClient({
   // Стан для прямого друку (Print Sheet View)
   const [showPrintSheet, setShowPrintSheet] = useState(false);
   const [printCards, setPrintCards] = useState<GeneratedQrCard[]>([]);
+  const [copiedType, setCopiedType] = useState<"text" | "link" | null>(null);
+
+  // Стан модального вікна списку посилань для Telegram / месенджерів
+  const [showTelegramModal, setShowTelegramModal] = useState(false);
+  const [isGeneratingTelegramList, setIsGeneratingTelegramList] = useState(false);
+  const [telegramListText, setTelegramListText] = useState("");
+  const [copiedTelegramList, setCopiedTelegramList] = useState(false);
 
   const isCoachRole = userRole === "coach";
   const currentTeam = teams.find((t) => t.id === selectedTeamId);
@@ -142,8 +149,72 @@ export default function TeamQrCardsClient({
     }
   };
 
+  // 2. Формування електронного списку персональних посилань для Telegram / месенджерів
+  const handleOpenTelegramModal = async (forceRegenerate: boolean = false) => {
+    setShowTelegramModal(true);
+    setCopiedTelegramList(false);
+
+    // Якщо список уже згенеровано і не запрошено примусове оновлення — показуємо наявний
+    if (telegramListText && !forceRegenerate) {
+      return;
+    }
+
+    setIsGeneratingTelegramList(true);
+    setErrorMsg(null);
+
+    try {
+      // forceAll: true гарантує створення свіжого 365-денного токена для кожного гравця
+      const res = await generateTeamActivationBatchAction(selectedTeamId, {
+        forceAll: true,
+      });
+
+      if (!res.success || !res.cards) {
+        setErrorMsg(res.error || "Не вдалося сформувати список посилань");
+        setIsGeneratingTelegramList(false);
+        return;
+      }
+
+      // Оновлюємо статус у фоновій таблиці
+      const summaryRes = await getTeamActivationSummaryAction(selectedTeamId);
+      if (summaryRes.success && summaryRes.players) {
+        setPlayers(summaryRes.players);
+      }
+
+      const origin =
+        typeof window !== "undefined" && window.location.origin
+          ? window.location.origin
+          : "https://med-academy-alpha.vercel.app";
+
+      // Сортуємо гравців за алфавітом
+      const sortedCards = [...res.cards].sort((a, b) =>
+        a.fullName.localeCompare(b.fullName, "uk")
+      );
+
+      const header = `⚽ Персональні посилання для команди ${currentTeamName}\n\nХлопці, привіт! Нижче ваші персональні посилання для швидкого входу в кабінет та щоденного велнесу.\n\n📲 Знайдіть своє прізвище, перейдіть за посиланням та додайте сторінку на головний екран свого телефону (Поділитися -> На початковий екран).\nТермін дії доступу: 365 днів (сезон).\n\n────────────────────\n`;
+
+      const lines = sortedCards.map((card, idx) => {
+        const fullUrl = card.activationUrl.startsWith("http")
+          ? card.activationUrl
+          : `${origin}${card.activationUrl}`;
+        const posInfo = card.position ? ` (${card.position})` : "";
+        return `${idx + 1}. ${card.fullName}${posInfo}:\n${fullUrl}\n`;
+      });
+
+      const footer = `────────────────────\n⚠️ Кожне посилання індивідуальне — переходьте лише за своїм!`;
+
+      const formatted = header + lines.join("\n") + footer;
+      setTelegramListText(formatted);
+      setSuccessMsg(`Згенеровано персональні посилання для ${sortedCards.length} гравців!`);
+    } catch (err: any) {
+      setErrorMsg(err?.message || "Помилка формування списку для Telegram");
+    } finally {
+      setIsGeneratingTelegramList(false);
+    }
+  };
+
   // 4. Окремий QR на одного гравця (заміна втраченої картки)
   const handleSinglePlayerOpen = async (player: TeamPlayerActivationSummary) => {
+    setCopiedType(null);
     setSinglePlayerModal({
       player,
       loading: true,
@@ -252,10 +323,20 @@ export default function TeamQrCardsClient({
             </div>
           )}
 
+          {/* Кнопка «Список для Telegram» */}
+          <button
+            onClick={() => handleOpenTelegramModal(false)}
+            disabled={isPending || isGeneratingPdf || isGeneratingTelegramList || players.length === 0}
+            className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 to-sky-600 hover:from-indigo-400 hover:to-sky-500 text-white font-bold text-xs shadow-lg shadow-indigo-500/20 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2 cursor-pointer"
+          >
+            <span>📱</span>
+            <span>Список для Telegram / чату</span>
+          </button>
+
           {/* Головна кнопка «Сформувати картки» */}
           <button
             onClick={() => setShowBatchModal(true)}
-            disabled={isPending || isGeneratingPdf || players.length === 0}
+            disabled={isPending || isGeneratingPdf || isGeneratingTelegramList || players.length === 0}
             className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold text-xs shadow-lg shadow-sky-500/20 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2 cursor-pointer"
           >
             <span>✨</span>
@@ -333,8 +414,8 @@ export default function TeamQrCardsClient({
             </span>
           </div>
           <div className="text-[11px] text-slate-400">
-            Термін дії токена: <span className="text-sky-400 font-semibold">14 днів</span> · Сесія:{" "}
-            <span className="text-emerald-400 font-semibold">90 днів</span>
+            Термін дії токена: <span className="text-sky-400 font-semibold">365 днів (сезон)</span> · Сесія:{" "}
+            <span className="text-emerald-400 font-semibold">365 днів</span>
           </div>
         </div>
 
@@ -486,8 +567,8 @@ export default function TeamQrCardsClient({
             <div className="text-center space-y-2">
               <h3 className="text-lg font-black text-white">Сформувати QR-картки команди?</h3>
               <p className="text-xs text-slate-300 leading-relaxed">
-                Для кожного активного гравця без діючої активації буде згенеровано новий 128-бітний токен (термін дії:{" "}
-                <strong>14 днів</strong>).
+                Для кожного активного гравця буде згенеровано новий 128-бітний токен (термін дії:{" "}
+                <strong>365 днів</strong>).
               </p>
             </div>
 
@@ -578,38 +659,192 @@ export default function TeamQrCardsClient({
                 <span>Генерація нового токена...</span>
               </div>
             ) : singlePlayerModal.qrDataUrl ? (
-              <div className="space-y-4">
-                {/* QR-код у рамці */}
-                <div className="w-48 h-48 mx-auto bg-white p-3 rounded-2xl shadow-lg border border-slate-700 flex items-center justify-center">
-                  <img
-                    src={singlePlayerModal.qrDataUrl}
-                    alt="QR Код активації"
-                    className="w-full h-full object-contain"
+              (() => {
+                const raw = singlePlayerModal.card?.activationUrl || "";
+                const fullUrl = raw
+                  ? (raw.startsWith("http")
+                      ? raw
+                      : `${typeof window !== "undefined" ? window.location.origin : ""}${raw}`)
+                  : "";
+                const playerName = singlePlayerModal.player.firstName || "Гравець";
+                const messageText = `${playerName}, привіт! Твоє персональне посилання для входу в кабінет: ${fullUrl} — просто натисни на нього і збережи іконку на домашній екран.`;
+
+                return (
+                  <div className="space-y-3.5">
+                    {/* QR-код у рамці */}
+                    <div className="w-44 h-44 mx-auto bg-white p-2.5 rounded-2xl shadow-lg border border-slate-700 flex items-center justify-center">
+                      <img
+                        src={singlePlayerModal.qrDataUrl}
+                        alt="QR Код активації"
+                        className="w-full h-full object-contain"
+                      />
+                    </div>
+
+                    {/* Готовий текст для повідомлення гравцю */}
+                    <div className="p-3 rounded-xl bg-slate-950/90 border border-slate-800 text-left space-y-1.5 shadow-inner">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-sky-400 flex items-center gap-1">
+                          <span>💬</span> Готовий текст для Telegram / Viber:
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-mono">для {playerName}</span>
+                      </div>
+                      <p className="text-[11px] leading-relaxed text-slate-300 font-sans bg-slate-900/90 p-2.5 rounded-lg border border-slate-800 select-all break-words">
+                        {messageText}
+                      </p>
+                    </div>
+
+                    {/* Кнопки дій */}
+                    <div className="space-y-2">
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(messageText);
+                          setCopiedType("text");
+                          setTimeout(() => setCopiedType(null), 2500);
+                        }}
+                        className={`w-full py-2.5 px-3 rounded-xl font-bold text-xs transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer ${
+                          copiedType === "text"
+                            ? "bg-emerald-600 text-white border border-emerald-500"
+                            : "bg-sky-600 hover:bg-sky-500 text-white"
+                        }`}
+                      >
+                        <span>{copiedType === "text" ? "✓" : "📋"}</span>
+                        <span>
+                          {copiedType === "text"
+                            ? "Текст скопійовано! Вставте в чат гравця"
+                            : "Скопіювати готовий текст для Telegram"}
+                        </span>
+                      </button>
+
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(fullUrl);
+                            setCopiedType("link");
+                            setTimeout(() => setCopiedType(null), 2500);
+                          }}
+                          className={`flex-1 py-2 px-2.5 rounded-xl font-medium text-[11px] transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                            copiedType === "link"
+                              ? "bg-emerald-950 text-emerald-300 border border-emerald-600"
+                              : "bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300"
+                          }`}
+                        >
+                          <span>{copiedType === "link" ? "✓" : "🔗"}</span>
+                          <span>{copiedType === "link" ? "Скопійовано!" : "Лише посилання"}</span>
+                        </button>
+
+                        <button
+                          onClick={handleDownloadSingleCardPdf}
+                          className="flex-1 py-2 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-medium text-[11px] transition-all flex items-center justify-center gap-1 cursor-pointer"
+                        >
+                          <span>📄</span>
+                          <span>Завантажити PDF</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()
+            ) : (
+              <div className="text-rose-400 text-xs">Не вдалося завантажити QR-код</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 6. Модальне вікно списку посилань для Telegram / месенджерів */}
+      {showTelegramModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+          <div className="max-w-2xl w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4 shadow-2xl flex flex-col max-h-[90vh]">
+            {/* Заголовок */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <span className="w-9 h-9 rounded-xl bg-indigo-950 border border-indigo-500/30 flex items-center justify-center text-lg">
+                  📱
+                </span>
+                <div>
+                  <h3 className="text-base font-black text-white">
+                    Список посилань для Telegram / месенджерів
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Команда: <span className="text-sky-300 font-semibold">{currentTeamName}</span> · {players.length} гравців
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowTelegramModal(false)}
+                className="text-slate-400 hover:text-white font-bold text-sm p-1 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Опис / підказка */}
+            <div className="p-3 rounded-2xl bg-indigo-950/30 border border-indigo-500/30 text-xs text-indigo-200 flex items-start gap-2.5">
+              <span className="text-base mt-0.5">💡</span>
+              <p className="text-[11px] leading-relaxed text-indigo-300">
+                Скопіюйте цей список та надішліть його одним повідомленням у спільну групу команди.
+                Кожен гравець знайде своє прізвище, перейде за своїм посиланням і збереже сторінку на головний екран.
+                Доступ діє <strong>365 днів (сезон)</strong>.
+              </p>
+            </div>
+
+            {/* Тіло модального вікна */}
+            {isGeneratingTelegramList ? (
+              <div className="py-20 flex flex-col items-center justify-center gap-3 text-sky-400">
+                <span className="text-3xl animate-spin">⏳</span>
+                <span className="text-xs font-semibold">Генерація персональних посилань на 365 днів для всіх гравців...</span>
+              </div>
+            ) : (
+              <>
+                <div className="flex-1 min-h-[220px] flex flex-col">
+                  <div className="flex items-center justify-between text-[11px] text-slate-400 pb-1.5 px-1">
+                    <span>Текст повідомлення (готовий до відправки):</span>
+                    <span className="font-mono text-slate-500">{telegramListText.length} симв.</span>
+                  </div>
+                  <textarea
+                    readOnly
+                    value={telegramListText}
+                    rows={12}
+                    className="w-full flex-1 p-3.5 rounded-2xl bg-slate-950 border border-slate-800 text-slate-200 font-mono text-[11px] leading-relaxed resize-none focus:outline-none focus:border-indigo-500 select-all"
                   />
                 </div>
 
-                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-[11px] text-slate-300 space-y-1 text-left">
-                  <div className="font-bold text-sky-400">Інструкція для гравця:</div>
-                  {INSTRUCTIONS_STEPS_UA.map((s, idx) => (
-                    <div key={idx} className="text-slate-400">
-                      {s}
-                    </div>
-                  ))}
-                  <div className="text-[10px] text-amber-400 pt-1">🔒 {CARD_TERMS_UA}</div>
-                </div>
-
-                <div className="flex gap-2">
+                {/* Нижні кнопки дій */}
+                <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-2">
                   <button
-                    onClick={handleDownloadSingleCardPdf}
-                    className="flex-1 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-white font-bold text-xs transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+                    type="button"
+                    onClick={() => {
+                      if (!telegramListText) return;
+                      navigator.clipboard.writeText(telegramListText);
+                      setCopiedTelegramList(true);
+                      setTimeout(() => setCopiedTelegramList(false), 3000);
+                    }}
+                    className={`w-full sm:flex-1 py-3 px-4 rounded-xl font-bold text-xs transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer ${
+                      copiedTelegramList
+                        ? "bg-emerald-600 text-white border border-emerald-500 shadow-emerald-600/30"
+                        : "bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-600/30"
+                    }`}
                   >
-                    <span>📄</span>
-                    <span>Завантажити PDF (1 картка)</span>
+                    <span>{copiedTelegramList ? "✓" : "📋"}</span>
+                    <span>
+                      {copiedTelegramList
+                        ? "Скопійовано! Вставте в групу Telegram (Ctrl+V)"
+                        : "Скопіювати весь список для Telegram"}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleOpenTelegramModal(true)}
+                    disabled={isGeneratingTelegramList}
+                    title="Перегенерувати всі посилання наново"
+                    className="w-full sm:w-auto px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <span>🔄</span>
+                    <span>Оновити / Створити заново</span>
                   </button>
                 </div>
-              </div>
-            ) : (
-              <div className="text-rose-400 text-xs">Не вдалося завантажити QR-код</div>
+              </>
             )}
           </div>
         </div>

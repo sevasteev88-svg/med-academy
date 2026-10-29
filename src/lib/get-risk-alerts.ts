@@ -1,10 +1,11 @@
+import { cache } from "react";
 import { createClient } from "@/utils/supabase/server";
 import type { RiskAlertItem } from "@/components/alerts/RiskAlertsCenter";
 import type { WearableBiometricsEntry } from "@/types/wearables";
 import { getPharmacyStockAction } from "@/actions/pharmacy-actions";
 import { getExpiryStatus } from "@/types/pharmacy";
 
-export async function getRiskAlerts(): Promise<RiskAlertItem[]> {
+export const getRiskAlerts = cache(async (): Promise<RiskAlertItem[]> => {
   const supabase = await createClient();
 
   const [playersRes, injuriesRes, maturationRes, wearableLogsRes, pharmacyStock] = await Promise.all([
@@ -220,4 +221,4 @@ export async function getRiskAlerts(): Promise<RiskAlertItem[]> {
   }
 
   return alerts;
-}
+});

@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import type { PlayerReadinessResult } from "@/lib/readiness";
 import { WEARABLES_DISCLAIMER_TEXT } from "@/lib/wearables-constants";
+import { formatPainLocation } from "@/lib/dictionaries";
 
 export interface DoctorPlayerReadinessModalProps {
   player: PlayerReadinessResult;
@@ -70,20 +71,26 @@ export function DoctorPlayerReadinessModal({
           </div>
 
           {onAcknowledge && (
-            <div className="shrink-0">
+            <div className="shrink-0 flex flex-col sm:items-end gap-1">
               {player.isAcknowledged ? (
-                <span className="px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center gap-1.5">
-                  <span>✓</span>
-                  <span>
-                    Переглянуто ({player.reviewedByRole === "doctor" ? "лікар" : "штаб"})
+                <div className="flex flex-col sm:items-end gap-1">
+                  <span className="px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center gap-1.5 shadow-sm">
+                    <span>✓</span>
+                    <span>
+                      Взято до уваги ({player.reviewedByRole === "doctor" ? "лікар" : "штаб"})
+                    </span>
                   </span>
-                </span>
+                  <span className="text-[10px] text-emerald-400/90 font-medium flex items-center gap-1">
+                    <span>📱</span>
+                    <span>Футболіст бачить відмітку у додатку</span>
+                  </span>
+                </div>
               ) : (
                 <button
                   type="button"
                   disabled={isPendingAck}
                   onClick={() => onAcknowledge(player.playerId, player.date)}
-                  className="px-3.5 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold transition-all shadow-md active:scale-95 disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+                  className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-bold transition-all shadow-md shadow-sky-600/25 active:scale-95 disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
                 >
                   <span>👁️</span>
                   <span>{isPendingAck ? "Збереження..." : "Взято до уваги"}</span>
@@ -168,8 +175,11 @@ export function DoctorPlayerReadinessModal({
                   <div className="mt-1 text-xs">
                     <div>Шкала ВАШ: <strong className="text-white">{details.painVas ?? 0}/10</strong></div>
                     {details.painLocations && details.painLocations.length > 0 && (
-                      <div className="mt-0.5 text-[11px] text-slate-300">
-                        Локалізація: {details.painLocations.join(", ")}
+                      <div className="mt-1 text-[11px] text-slate-200 bg-slate-900/60 p-1.5 rounded-lg border border-slate-800">
+                        <span className="text-slate-400">Локалізація: </span>
+                        <strong className="text-sky-300 font-semibold">
+                          {details.painLocations.map((loc) => formatPainLocation(loc)).join(", ")}
+                        </strong>
                       </div>
                     )}
                   </div>

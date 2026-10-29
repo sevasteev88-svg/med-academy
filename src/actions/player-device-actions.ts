@@ -133,7 +133,7 @@ export async function generatePlayerActivationQrAction(playerId: string): Promis
       playerId: playerId,
       userId: user.id,
       meta: {
-        expires_in_days: 14,
+        expires_in_days: 365,
       },
     });
 
@@ -149,6 +149,7 @@ export async function generatePlayerActivationQrAction(playerId: string): Promis
         playerId,
         fullName,
         teamName,
+        position: (player as any)?.position || undefined,
         token: rawToken,
         activationUrl,
       },
@@ -238,7 +239,7 @@ export async function verifyAndActivateDeviceAction(
     };
   }
 
-  // Перевірка терміну дії (14 днів)
+  // Перевірка терміну дії (365 днів)
   const now = new Date();
   const expiresAt = new Date(tokenRecord.expires_at);
   if (now > expiresAt) {
@@ -246,7 +247,7 @@ export async function verifyAndActivateDeviceAction(
     recordFailedAttempt(tokenHash, false);
     return {
       success: false,
-      error: "Термін дії цього QR-коду закінчився (термін дії: 14 днів). Зверніться до лікаря для генерації нового коду.",
+      error: "Термін дії цього QR-коду закінчився (термін дії: 365 днів). Зверніться до тренера/лікаря для генерації нового коду.",
     };
   }
 
@@ -843,6 +844,7 @@ export async function generateTeamActivationBatchAction(
         playerId: player.id,
         fullName: `${player.last_name} ${player.first_name}`.trim(),
         teamName,
+        position: player.position || undefined,
         token: rawToken,
         activationUrl: `/a/${rawToken}`,
       });

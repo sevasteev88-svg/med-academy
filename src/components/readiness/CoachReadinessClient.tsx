@@ -40,9 +40,43 @@ export default function CoachReadinessClient({
   const [searchQuery, setSearchQuery] = useState("");
   const [pendingPlayerId, setPendingPlayerId] = useState<string | null>(null);
   const [selectedDoctorPlayer, setSelectedDoctorPlayer] = useState<PlayerReadinessResult | null>(null);
+  const [ackToast, setAckToast] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
   const isDoctorOrAdmin = userRole === "doctor" || userRole === "admin";
+
+  // Навігація по датах
+  const todayStr = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Kyiv",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+
+  const isToday = currentDate === todayStr;
+  const isFuture = currentDate > todayStr;
+
+  const changeDate = (newDate: string) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("date", newDate);
+    window.location.href = url.toString();
+  };
+
+  const handlePrevDay = () => {
+    const parts = currentDate.split("-").map(Number);
+    const d = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
+    d.setUTCDate(d.getUTCDate() - 1);
+    const prevStr = d.toISOString().split("T")[0];
+    changeDate(prevStr);
+  };
+
+  const handleNextDay = () => {
+    const parts = currentDate.split("-").map(Number);
+    const d = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
+    d.setUTCDate(d.getUTCDate() + 1);
+    const nextStr = d.toISOString().split("T")[0];
+    changeDate(nextStr);
+  };
 
   const handleAcknowledge = (playerId: string, date: string) => {
     setPendingPlayerId(playerId);
@@ -61,6 +95,20 @@ export default function CoachReadinessClient({
               : p
           )
         );
+        setSelectedDoctorPlayer((prev) =>
+          prev && prev.playerId === playerId
+            ? {
+                ...prev,
+                isAcknowledged: true,
+                reviewedByRole: res.reviewedByRole || (userRole as any),
+                reviewedAt: res.reviewedAt || new Date().toISOString(),
+              }
+            : prev
+        );
+        setAckToast("✓ Анкету взято до уваги! Футболіст бачить відмітку у додатку.");
+        setTimeout(() => setAckToast(null), 4000);
+      } else {
+        alert(res.error || "Помилка при збереженні відмітки перегляду");
       }
       setPendingPlayerId(null);
     });
@@ -194,10 +242,49 @@ export default function CoachReadinessClient({
             </div>
           )}
 
-          {/* Дата моніторингу */}
-          <div className="flex items-center gap-1.5 text-xs text-slate-300 bg-slate-800/80 px-3 py-1.5 rounded-xl border border-slate-700/80">
-            <span>📅</span>
-            <span className="font-medium">{currentDate}</span>
+          {/* Дата моніторингу та навігація по днях */}
+          <div className="flex items-center gap-1 bg-slate-800/90 p-1 rounded-xl border border-slate-700/80 shadow-sm">
+            <button
+              type="button"
+              onClick={handlePrevDay}
+              title="Попередній день"
+              className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-700/60 hover:bg-slate-700 text-slate-200 hover:text-white transition-colors cursor-pointer text-xs font-bold"
+            >
+              ◀
+            </button>
+
+            <div className="flex items-center gap-1.5 px-2">
+              <span className="text-xs">📅</span>
+              <input
+                type="date"
+                value={currentDate}
+                max={todayStr}
+                onChange={(e) => {
+                  if (e.target.value) changeDate(e.target.value);
+                }}
+                className="bg-transparent text-slate-100 text-xs font-semibold focus:outline-none cursor-pointer"
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={handleNextDay}
+              disabled={isToday || isFuture}
+              title="Наступний день"
+              className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-700/60 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed text-slate-200 hover:text-white transition-colors cursor-pointer text-xs font-bold"
+            >
+              ▶
+            </button>
+
+            {!isToday && (
+              <button
+                type="button"
+                onClick={() => changeDate(todayStr)}
+                className="ml-1 px-2.5 py-1 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-[11px] font-bold transition-all shadow-sm cursor-pointer whitespace-nowrap"
+              >
+                Сьогодні
+              </button>
+            )}
           </div>
 
           {/* Пошук */}
@@ -301,6 +388,47 @@ export default function CoachReadinessClient({
         </button>
       </div>
 
+      {/* ПОВІДОМЛЕННЯ ПРО ВДАЛЕ ПІДТВЕРДЖЕННЯ */}
+      {ackToast && (
+        <div className="p-3.5 rounded-2xl bg-emerald-950/40 border border-emerald-500/50 text-emerald-200 text-xs font-semibold flex items-center justify-between gap-3 shadow-lg animate-fadeIn">
+          <div className="flex items-center gap-2">
+            <span>✅</span>
+            <span>{ackToast}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setAckToast(null)}
+            className="text-slate-400 hover:text-white"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* РЕЖИМ ПЕРЕГЛЯДУ ІСТОРІЇ (ЯКЩО ДАТА НЕ СЬОГОДНІ) */}
+      {!isToday && (
+        <div className="p-4 rounded-2xl bg-amber-950/30 border border-amber-500/40 text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-md">
+          <div className="flex items-center gap-2.5">
+            <span className="text-xl">🗓️</span>
+            <div>
+              <strong className="text-amber-100 font-bold block text-sm">
+                Режим перегляду історії: анкетування за {currentDate}
+              </strong>
+              <p className="text-[11px] text-amber-300/80 mt-0.5">
+                Ви переглядаєте заповнені анкети, скарги на біль, ВАШ та показники датчиків за минулий день.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => changeDate(todayStr)}
+            className="px-3.5 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 font-bold transition-colors whitespace-nowrap cursor-pointer self-start sm:self-auto shadow-sm"
+          >
+            Повернутися до сьогодні →
+          </button>
+        </div>
+      )}
+
       {/* 4. СПИСОК ГРАВЦІВ (СВІТЛОФОР) */}
       <div className="space-y-3">
         {filteredPlayers.length === 0 ? (
@@ -316,6 +444,8 @@ export default function CoachReadinessClient({
               onAcknowledge={handleAcknowledge}
               isPendingAck={pendingPlayerId === player.playerId}
               onOpenDoctorModal={(p) => setSelectedDoctorPlayer(p)}
+              onSelectDate={changeDate}
+              selectedDate={currentDate}
             />
           ))
         )}
@@ -343,12 +473,16 @@ function PlayerReadinessCard({
   onAcknowledge,
   isPendingAck,
   onOpenDoctorModal,
+  onSelectDate,
+  selectedDate,
 }: {
   player: PlayerReadinessResult;
   userRole: "coach" | "doctor" | "admin";
   onAcknowledge: (playerId: string, date: string) => void;
   isPendingAck: boolean;
   onOpenDoctorModal?: (player: PlayerReadinessResult) => void;
+  onSelectDate?: (date: string) => void;
+  selectedDate?: string;
 }) {
   const isDoctorOrAdmin = userRole === "doctor" || userRole === "admin";
 
@@ -510,14 +644,14 @@ function PlayerReadinessCard({
             </div>
           )}
 
-          {/* 7-денний міні-графік тренду */}
+          {/* 7-денний міні-графік тренду (клікабельний для перегляду дня) */}
           <div className="flex items-center gap-2 bg-slate-950/40 px-3 py-2 rounded-xl border border-slate-800/80">
             <span className="text-[11px] text-slate-500 font-medium mr-1">
               7 днів:
             </span>
             <div className="flex items-end gap-1.5 h-6">
               {player.trendLast7Days.map((pt, idx) => {
-                const isToday = idx === player.trendLast7Days.length - 1;
+                const isSelected = selectedDate ? pt.date === selectedDate : idx === player.trendLast7Days.length - 1;
                 const dotColor =
                   pt.status === "green"
                     ? "bg-emerald-400"
@@ -532,23 +666,26 @@ function PlayerReadinessCard({
                   : 6;
 
                 return (
-                  <div
+                  <button
                     key={pt.date}
-                    className="group relative flex flex-col items-center cursor-pointer"
+                    type="button"
+                    onClick={() => onSelectDate && onSelectDate(pt.date)}
+                    className="group relative flex flex-col items-center cursor-pointer p-0.5 rounded focus:outline-none"
+                    title={`Переглянути звіт за ${pt.date}: ${pt.label}`}
                   >
                     <div
                       style={{ height: `${heightPx}px` }}
-                      className={`w-2.5 rounded-sm transition-all group-hover:opacity-80 ${dotColor} ${
-                        isToday ? "ring-2 ring-white/40" : ""
+                      className={`w-2.5 rounded-sm transition-all group-hover:scale-125 ${dotColor} ${
+                        isSelected ? "ring-2 ring-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.6)]" : "opacity-80 group-hover:opacity-100"
                       }`}
                     />
                     {/* Tooltip */}
-                    <div className="absolute bottom-full mb-1.5 hidden group-hover:flex flex-col items-center z-20">
+                    <div className="absolute bottom-full mb-1.5 hidden group-hover:flex flex-col items-center z-20 pointer-events-none">
                       <div className="bg-slate-900 border border-slate-700 text-white text-[10px] rounded px-1.5 py-0.5 whitespace-nowrap shadow-lg">
-                        {pt.date.slice(5)}: {pt.label}
+                        {pt.date.slice(5)}: {pt.label} (клік для перегляду)
                       </div>
                     </div>
-                  </div>
+                  </button>
                 );
               })}
             </div>

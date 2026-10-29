@@ -21,13 +21,15 @@ export async function middleware(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   const path = request.nextUrl.pathname;
 
-  // Публічні сторінки — не вимагають авторизації лікаря (вхід, реєстрація, портал гравця за PIN, згоди батьків за токеном та політика конфіденційності)
+  // Публічні сторінки — не вимагають авторизації лікаря (вхід, реєстрація, активація гравця за QR-кодом /a/[token], портал гравця за PIN, згоди батьків за токеном, вебхуки та політика конфіденційності)
   if (
     path === "/login" ||
     path === "/register" ||
     path === "/privacy" ||
     path.startsWith("/rehab-portal") ||
-    path.startsWith("/consent/")
+    path.startsWith("/consent/") ||
+    path.startsWith("/a/") ||
+    path.startsWith("/api/telegram/webhook")
   ) {
     if (user && (path === "/login" || path === "/register")) {
       return NextResponse.redirect(new URL("/", request.url));

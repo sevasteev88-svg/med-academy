@@ -46,7 +46,8 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const user = await getCurrentUser();
-  const alerts = user ? await getRiskAlerts() : [];
+  const rawAlerts = user ? await getRiskAlerts() : [];
+  const alerts = user?.role === "coach" ? rawAlerts.filter((a) => a.type !== "pharmacy") : rawAlerts;
 
   return (
     <html

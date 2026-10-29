@@ -326,6 +326,44 @@ export function formatDominantSide(side?: string | null): string {
   return DOMINANT_SIDE_UA[side.toLowerCase()] ?? "—";
 }
 
+export const PAIN_LOCATION_MAP_UA: Record<string, string> = {
+  head: "Голова",
+  neck_shoulder: "Шия / Плече",
+  back_lumbar: "Спина / Поперек",
+  groin: "Пах / Привідні м'язи",
+  thigh_anterior: "Стегно спереду (Квадрицепс)",
+  thigh_posterior: "Стегно ззаду (Хамстрінг)",
+  knee_left: "Коліно ліве",
+  knee_right: "Коліно праве",
+  calf_shin: "Гомілка / Литка",
+  achilles: "Ахілл / П'ята",
+  foot_ankle: "Стопа / Гомілковостоп",
+  hamstring: "Задня поверхня стегна (Хамстрінг)",
+  quadriceps: "Передня поверхня стегна (Квадрицепс)",
+  adductor: "Привідний м'яз (Пах)",
+  knee: "Коліно",
+  ankle: "Гомілковостоп",
+  calf: "Литка",
+  foot: "Стопа",
+  back: "Спина",
+  spine: "Хребет",
+  shoulder: "Плече",
+  neck: "Шия",
+  elbow: "Лікоть",
+  wrist: "Кисть",
+  thigh: "Стегно",
+  other: "Інше",
+};
+
+export function formatPainLocation(location?: string | null): string {
+  if (!location) return "—";
+  const trimmed = location.trim();
+  const lower = trimmed.toLowerCase();
+  if (PAIN_LOCATION_MAP_UA[lower]) return PAIN_LOCATION_MAP_UA[lower];
+  if (LOCATION_UA[lower]) return LOCATION_UA[lower];
+  return trimmed;
+}
+
 export function formatTeamCategory(cat?: string | null): string {
   if (!cat) return "—";
   return TEAM_CATEGORY_UA[cat.toLowerCase()] ?? "—";

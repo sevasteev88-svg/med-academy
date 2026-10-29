@@ -93,6 +93,55 @@ export async function getTodayWellnessEntryForPlayerAction(playerId: string): Pr
     }
   } catch {}
 
+  // 1b. Перевіряємо таблицю wellness_surveys у Supabase
+  try {
+    const { data: s } = await supabase
+      .from("wellness_surveys")
+      .select("*")
+      .eq("player_id", playerId)
+      .eq("date", today)
+      .maybeSingle();
+
+    if (s) {
+      let extra: any = {};
+      if (s.notes && typeof s.notes === "string" && s.notes.startsWith("{")) {
+        try { extra = JSON.parse(s.notes); } catch {}
+      }
+      const entry: WellnessEntry = {
+        id: s.id,
+        club_id: s.club_id || clubId,
+        player_id: s.player_id,
+        date: s.date,
+        sleep_quality: s.sleep_quality,
+        fatigue: s.fatigue_level,
+        soreness: s.muscle_soreness,
+        stress: s.stress_level,
+        sleep_hours: extra.sleep_hours ?? null,
+        pain: Boolean(extra.pain),
+        pain_vas: extra.pain_vas ?? null,
+        pain_locations: extra.pain_locations || (s.soreness_location ? [s.soreness_location] : []),
+        illness: Boolean(extra.illness),
+        comment: extra.comment || (s.notes?.startsWith("{") ? null : s.notes),
+        submitted_at: s.created_at,
+        source: extra.source || "player",
+      };
+      return { entry, today, timezone };
+    }
+  } catch {}
+
+  // 1c. Перевіряємо клубно-збережені анкети в settings.wellness_entries_store
+  try {
+    const { data: club } = await supabase
+      .from("clubs")
+      .select("settings")
+      .eq("id", clubId)
+      .maybeSingle();
+    const stored = (club as any)?.settings?.wellness_entries_store?.[`${playerId}_${today}`];
+    if (stored) {
+      return { entry: stored as WellnessEntry, today, timezone };
+    }
+  } catch {}
+
   // 2. Резервна перевірка в injury_logs
   try {
     const { data: logs } = await supabase
@@ -180,7 +229,72 @@ export async function submitWellnessEntryAction(input: SubmitWellnessEntryInput)
     }
   } catch {}
 
-  // 5. Завжди зберігаємо надійну резервну копію у injury_logs для повної сумісності
+  // 4b. Завжди зберігаємо в wellness_surveys (існуюча таблиця у БД Supabase)
+  try {
+    const totalScore =
+      Number(input.sleepQuality) +
+      Number(input.fatigue) +
+      Number(input.soreness) +
+      Number(input.stress);
+    const readinessStatus =
+      totalScore >= 16 ? "optimal" : totalScore >= 12 ? "warning" : "risk";
+    const extraDetails = {
+      sleep_hours: entryPayload.sleep_hours,
+      pain: entryPayload.pain,
+      pain_vas: entryPayload.pain_vas,
+      pain_locations: entryPayload.pain_locations,
+      illness: entryPayload.illness,
+      comment: entryPayload.comment,
+      source: entryPayload.source,
+    };
+
+    const { error: wsErr } = await supabase.from("wellness_surveys").upsert(
+      {
+        id: crypto.randomUUID(),
+        club_id: clubId,
+        player_id: input.playerId,
+        date: targetDate,
+        sleep_quality: input.sleepQuality,
+        fatigue_level: input.fatigue,
+        muscle_soreness: input.soreness,
+        stress_level: input.stress,
+        soreness_location: input.painLocations?.[0] || null,
+        total_score: totalScore,
+        readiness_status: readinessStatus,
+        notes: JSON.stringify(extraDetails),
+        created_at: entryPayload.submitted_at,
+      } as any,
+      { onConflict: "player_id, date" }
+    );
+    if (!wsErr) {
+      isSavedInDb = true;
+    }
+  } catch {}
+
+  // 4c. Зберігаємо в clubs.settings.wellness_entries_store для 100% гарантованої персистентності
+  try {
+    const { data: clubData } = await supabase
+      .from("clubs")
+      .select("settings")
+      .eq("id", clubId)
+      .maybeSingle();
+
+    const currSettings = (clubData as any)?.settings || {};
+    const store = currSettings.wellness_entries_store || {};
+    store[`${input.playerId}_${targetDate}`] = entryPayload;
+
+    await supabase
+      .from("clubs")
+      .update({
+        settings: {
+          ...currSettings,
+          wellness_entries_store: store,
+        },
+      } as any)
+      .eq("id", clubId);
+  } catch {}
+
+  // 5. Завжди зберігаємо надійну резервну копію у injury_logs для повної сумісності (якщо є відкрита травма)
   try {
     let targetInjuryId: string | null = null;
     const { data: existingInj } = await supabase
@@ -192,38 +306,36 @@ export async function submitWellnessEntryAction(input: SubmitWellnessEntryInput)
 
     if (existingInj && existingInj.length > 0) {
       targetInjuryId = existingInj[0].id;
+      await supabase.from("injury_logs").insert({
+        club_id: clubId,
+        injury_id: targetInjuryId,
+        category: "examination",
+        date: targetDate,
+        note: `[WELLNESS_ENTRY] ${JSON.stringify(entryPayload)}`,
+      } as any);
+
+      const totalScore = Number(input.sleepQuality) + Number(input.fatigue) + Number(input.soreness) + Number(input.stress);
+      const legacySurvey = {
+        id: entryPayload.id,
+        player_id: input.playerId,
+        date: targetDate,
+        sleep_quality: input.sleepQuality,
+        fatigue_level: input.fatigue,
+        muscle_soreness: input.soreness,
+        stress_level: input.stress,
+        total_score: totalScore,
+        readiness_status: totalScore >= 16 ? "optimal" : totalScore >= 12 ? "warning" : "risk",
+        notes: input.comment || null,
+        created_at: entryPayload.submitted_at,
+      };
+      await supabase.from("injury_logs").insert({
+        club_id: clubId,
+        injury_id: targetInjuryId,
+        category: "note",
+        date: targetDate,
+        note: `[WELLNESS] ${JSON.stringify(legacySurvey)}`,
+      } as any);
     }
-
-    await supabase.from("injury_logs").insert({
-      club_id: clubId,
-      injury_id: targetInjuryId,
-      category: "examination",
-      date: targetDate,
-      note: `[WELLNESS_ENTRY] ${JSON.stringify(entryPayload)}`,
-    } as any);
-
-    // Також підтримуємо старий маркер [WELLNESS] для зворотної сумісності зі старими графіками
-    const totalScore = Number(input.sleepQuality) + Number(input.fatigue) + Number(input.soreness) + Number(input.stress);
-    const legacySurvey = {
-      id: entryPayload.id,
-      player_id: input.playerId,
-      date: targetDate,
-      sleep_quality: input.sleepQuality,
-      fatigue_level: input.fatigue,
-      muscle_soreness: input.soreness,
-      stress_level: input.stress,
-      total_score: totalScore,
-      readiness_status: totalScore >= 16 ? "optimal" : totalScore >= 12 ? "warning" : "risk",
-      notes: input.comment || null,
-      created_at: entryPayload.submitted_at,
-    };
-    await supabase.from("injury_logs").insert({
-      club_id: clubId,
-      injury_id: targetInjuryId,
-      category: "note",
-      date: targetDate,
-      note: `[WELLNESS] ${JSON.stringify(legacySurvey)}`,
-    } as any);
   } catch {}
 
   // 8.6 Фіксація власної оцінки навантаження тренування гравцем (RPE)
@@ -242,6 +354,8 @@ export async function submitWellnessEntryAction(input: SubmitWellnessEntryInput)
     } catch {}
   }
 
+  revalidatePath("/team/readiness");
+  revalidatePath("/coach-briefing");
   revalidatePath("/rehab-portal");
   revalidatePath("/wellness");
   revalidatePath("/wellness/kiosk");
@@ -293,7 +407,63 @@ export async function getWellnessEntriesForDashboardAction(
     }
   } catch {}
 
-  // Якщо таблиця ще не заповнена, беремо з injury_logs
+  // Якщо таблиця ще не заповнена, пробуємо wellness_surveys у Supabase
+  if (rawEntries.length === 0) {
+    try {
+      const { data: wsData } = await supabase
+        .from("wellness_surveys")
+        .select("*")
+        .eq("date", targetDate);
+
+      if (wsData && wsData.length > 0) {
+        for (const s of wsData) {
+          let extra: any = {};
+          if (s.notes && typeof s.notes === "string" && s.notes.startsWith("{")) {
+            try { extra = JSON.parse(s.notes); } catch {}
+          }
+          rawEntries.push({
+            id: s.id,
+            club_id: s.club_id || clubId,
+            player_id: s.player_id,
+            date: s.date,
+            sleep_quality: s.sleep_quality,
+            fatigue: s.fatigue_level,
+            soreness: s.muscle_soreness,
+            stress: s.stress_level,
+            sleep_hours: extra.sleep_hours ?? null,
+            pain: Boolean(extra.pain),
+            pain_vas: extra.pain_vas ?? null,
+            pain_locations: extra.pain_locations || (s.soreness_location ? [s.soreness_location] : []),
+            illness: Boolean(extra.illness),
+            comment: extra.comment || (s.notes?.startsWith("{") ? null : s.notes),
+            submitted_at: s.created_at,
+            source: extra.source || "player",
+          });
+        }
+      }
+    } catch {}
+  }
+
+  // Також перевіряємо clubs.settings.wellness_entries_store
+  if (rawEntries.length === 0) {
+    try {
+      const { data: club } = await supabase
+        .from("clubs")
+        .select("settings")
+        .eq("id", clubId)
+        .maybeSingle();
+
+      const store = (club as any)?.settings?.wellness_entries_store || {};
+      for (const entry of Object.values(store)) {
+        const e = entry as WellnessEntry;
+        if (e.date === targetDate) {
+          rawEntries.push(e);
+        }
+      }
+    } catch {}
+  }
+
+  // Якщо даних немає, беремо з injury_logs
   if (rawEntries.length === 0) {
     try {
       const { data: logs } = await supabase
@@ -398,6 +568,67 @@ export async function getPlayerWeeklySummaryAction(playerId: string): Promise<{
 
     if (data) {
       allEntries = data as WellnessEntry[];
+    }
+  } catch {}
+
+  // Якщо таблиця wellness_entries не повернула даних, перевіряємо wellness_surveys у Supabase
+  if (allEntries.length === 0) {
+    try {
+      const { data: wsData } = await supabase
+        .from("wellness_surveys")
+        .select("*")
+        .eq("player_id", playerId)
+        .gte("date", minDateStr)
+        .lte("date", today)
+        .order("date", { ascending: true });
+
+      if (wsData && wsData.length > 0) {
+        for (const s of wsData) {
+          let extra: any = {};
+          if (s.notes && typeof s.notes === "string" && s.notes.startsWith("{")) {
+            try { extra = JSON.parse(s.notes); } catch {}
+          }
+          allEntries.push({
+            id: s.id,
+            club_id: s.club_id || clubId,
+            player_id: s.player_id,
+            date: s.date,
+            sleep_quality: s.sleep_quality,
+            fatigue: s.fatigue_level,
+            soreness: s.muscle_soreness,
+            stress: s.stress_level,
+            sleep_hours: extra.sleep_hours ?? null,
+            pain: Boolean(extra.pain),
+            pain_vas: extra.pain_vas ?? null,
+            pain_locations: extra.pain_locations || (s.soreness_location ? [s.soreness_location] : []),
+            illness: Boolean(extra.illness),
+            comment: extra.comment || (s.notes?.startsWith("{") ? null : s.notes),
+            submitted_at: s.created_at,
+            source: extra.source || "player",
+          });
+        }
+      }
+    } catch {}
+  }
+
+  // Також перевіряємо clubs.settings.wellness_entries_store
+  try {
+    const { data: club } = await supabase
+      .from("clubs")
+      .select("settings")
+      .eq("id", clubId)
+      .maybeSingle();
+
+    const store = (club as any)?.settings?.wellness_entries_store || {};
+    const existingDates = new Set(allEntries.map((e) => e.date));
+    for (const [key, storedEntry] of Object.entries(store)) {
+      const entry = storedEntry as WellnessEntry;
+      if (entry.player_id === playerId && entry.date >= minDateStr && entry.date <= today) {
+        if (!existingDates.has(entry.date)) {
+          allEntries.push(entry);
+          existingDates.add(entry.date);
+        }
+      }
     }
   } catch {}
 
