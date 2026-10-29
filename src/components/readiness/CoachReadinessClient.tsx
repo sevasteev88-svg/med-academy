@@ -42,6 +42,7 @@ export default function CoachReadinessClient({
   const [selectedDoctorPlayer, setSelectedDoctorPlayer] = useState<PlayerReadinessResult | null>(null);
   const [selectedDoctorDate, setSelectedDoctorDate] = useState<string | undefined>(undefined);
   const [ackToast, setAckToast] = useState<string | null>(null);
+  const [isGuideOpen, setIsGuideOpen] = useState(true);
   const [, startTransition] = useTransition();
 
   const isDoctorOrAdmin = userRole === "doctor" || userRole === "admin";
@@ -430,6 +431,100 @@ export default function CoachReadinessClient({
         </div>
       )}
 
+      {/* ПІДКАЗКА: ШКАЛА МІНІ-СТОВПЧИКІВ ТА ГРАДАЦІЯ БАЛІВ (3-15) */}
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/50 backdrop-blur-sm p-3.5 sm:p-4 text-xs transition-all shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-base">📊</span>
+            <span className="font-bold text-slate-200">
+              Шпаргалка: як читати міні-стовпчики 7 днів
+            </span>
+            <span className="hidden sm:inline-block text-[11px] text-slate-400">
+              (Шкала самопочуття: 3–15 балів)
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsGuideOpen((prev) => !prev)}
+            className="text-[11px] font-semibold text-sky-400 hover:text-sky-300 transition-colors flex items-center gap-1 cursor-pointer px-2 py-1 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/20"
+          >
+            <span>{isGuideOpen ? "Згорнути" : "Розгорнути підказку"}</span>
+            <span className="text-xs">{isGuideOpen ? "▲" : "▼"}</span>
+          </button>
+        </div>
+
+        {isGuideOpen && (
+          <div className="mt-3 pt-3 border-t border-slate-800/80 space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+              {/* Зелений */}
+              <div className="flex items-start gap-2.5 p-2.5 rounded-xl bg-emerald-950/20 border border-emerald-500/20">
+                <span className="w-2.5 h-5 rounded-sm bg-emerald-400 flex-shrink-0 mt-0.5 shadow-[0_0_6px_rgba(52,211,153,0.5)]" />
+                <div>
+                  <div className="font-bold text-emerald-300 flex items-center gap-1.5">
+                    <span>10 – 15 балів</span>
+                    <span className="text-[10px] font-normal text-emerald-400/80">Оптимально</span>
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-0.5 leading-snug">
+                    Гарний сон, відновленість, скарги на біль чи хворобу відсутні.
+                  </div>
+                </div>
+              </div>
+
+              {/* Жовтий */}
+              <div className="flex items-start gap-2.5 p-2.5 rounded-xl bg-amber-950/20 border border-amber-500/20">
+                <span className="w-2.5 h-3.5 rounded-sm bg-amber-400 flex-shrink-0 mt-1 shadow-[0_0_6px_rgba(251,191,36,0.5)]" />
+                <div>
+                  <div className="font-bold text-amber-300 flex items-center gap-1.5">
+                    <span>7 – 9 балів</span>
+                    <span className="text-[10px] font-normal text-amber-400/80">Увага</span>
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-0.5 leading-snug">
+                    Знижений тонус (втома, недосип, крепатура) <strong className="text-amber-200">або</strong> помірний біль (ВАШ 3–4).
+                  </div>
+                </div>
+              </div>
+
+              {/* Червоний */}
+              <div className="flex items-start gap-2.5 p-2.5 rounded-xl bg-rose-950/20 border border-rose-500/20">
+                <span className="w-2.5 h-2 rounded-sm bg-rose-500 flex-shrink-0 mt-2 shadow-[0_0_6px_rgba(244,63,94,0.5)]" />
+                <div>
+                  <div className="font-bold text-rose-300 flex items-center gap-1.5">
+                    <span>≤ 6 балів</span>
+                    <span className="text-[10px] font-normal text-rose-400/80">Ризик</span>
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-0.5 leading-snug">
+                    Сильне виснаження <strong className="text-rose-200">або</strong> нездужання / хвороба <strong className="text-rose-200">або</strong> гострий біль (ВАШ ≥ 5).
+                  </div>
+                </div>
+              </div>
+
+              {/* Сірий */}
+              <div className="flex items-start gap-2.5 p-2.5 rounded-xl bg-slate-800/40 border border-slate-700/40">
+                <span className="w-2.5 h-1.5 rounded-sm bg-slate-600 flex-shrink-0 mt-2.5" />
+                <div>
+                  <div className="font-bold text-slate-300 flex items-center gap-1.5">
+                    <span>Пропуск</span>
+                    <span className="text-[10px] font-normal text-slate-400">Немає анкети</span>
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-0.5 leading-snug">
+                    Гравець не заповнив ранкову анкету за вказаний день.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-slate-400 bg-slate-950/40 px-3 py-2 rounded-xl border border-slate-800">
+              <div>
+                💡 <span className="font-medium text-slate-300">Формула балу:</span> Сон (1–5) + Енергія/Втома (1–5) + М&apos;язовий стан/Крепатура (1–5). Максимум — 15 балів.
+              </div>
+              <div className="text-sky-300/90 font-medium">
+                👆 Клікніть на будь-який стовпчик, щоб відкрити анкету гравця за цей день.
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* 4. СПИСОК ГРАВЦІВ (СВІТЛОФОР) */}
       <div className="space-y-3">
         {filteredPlayers.length === 0 ? (
@@ -707,7 +802,7 @@ function PlayerReadinessCard({
           {isDoctorOrAdmin && onOpenDoctorModal && (
             <button
               type="button"
-              onClick={() => onOpenDoctorModal(player, currentDate)}
+              onClick={() => onOpenDoctorModal(player, selectedDate || player.date)}
               className="px-3 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-700/80 shadow-sm whitespace-nowrap"
             >
               <span>🩺</span>
