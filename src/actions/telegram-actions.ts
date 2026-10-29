@@ -848,7 +848,7 @@ export async function sendDoctorRecommendationAction(params: {
 
     const supabase = createAdminClient();
     const nowIso = new Date().toISOString();
-    const docName = doctorName || user.name || "Медичний штаб";
+    const docName = doctorName || (user as any)?.name || user.email || "Медичний штаб";
 
     // 1. Шукаємо Telegram Chat ID
     let chatId: string | null = null;

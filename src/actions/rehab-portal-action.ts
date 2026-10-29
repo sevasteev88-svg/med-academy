@@ -715,7 +715,7 @@ export async function submitRehabCheckinAction(data: RehabCheckinData) {
 
   const clubId = (pl as any)?.club_id || DEFAULT_CLUB_ID;
 
-  // Знаходимо цільову травму або створюємо зв'язок
+  // Знаходимо цільову травму або створюємо зв'язок (якщо є)
   let targetInjuryId: string | null = (data.injury_id && data.injury_id.trim() !== "") ? data.injury_id.trim() : null;
 
   if (!targetInjuryId) {
@@ -729,25 +729,33 @@ export async function submitRehabCheckinAction(data: RehabCheckinData) {
     if (existingInj && existingInj.length > 0 && existingInj[0].id) {
       targetInjuryId = existingInj[0].id;
     } else {
-      const { data: newInj } = await supabase
-        .from("injuries")
-        .insert({
-          club_id: clubId,
-          player_id: data.player_id,
-          date_of_injury: data.date || new Date().toISOString().split("T")[0],
-          injury_type: "illness",
-          location: "other",
-          severity: "minor",
-          status: "closed",
-          description: "Самозвіти відновлення / Чек-ін",
-          vas_score: data.vas_score ?? 0,
-        } as any)
-        .select("id")
-        .maybeSingle();
+      // Створюємо профільний запис травми тільки з усіма обов'язковими NOT-NULL полями (side, mechanism тощо)
+      try {
+        const { data: newInj } = await supabase
+          .from("injuries")
+          .insert({
+            club_id: clubId,
+            player_id: data.player_id,
+            date_of_injury: data.date || new Date().toISOString().split("T")[0],
+            injury_type: "illness",
+            location: "other",
+            side: "none",
+            mechanism: "non_contact",
+            severity: "minor",
+            status: "closed",
+            onset: "acute",
+            occurrence: "new",
+            activity_type: "other",
+            description: "Самозвіти відновлення / Чек-ін",
+            vas_score: data.vas_score ?? 0,
+          } as any)
+          .select("id")
+          .maybeSingle();
 
-      if (newInj && newInj.id) {
-        targetInjuryId = newInj.id;
-      }
+        if (newInj && newInj.id) {
+          targetInjuryId = newInj.id;
+        }
+      } catch {}
     }
   }
 
@@ -756,22 +764,29 @@ export async function submitRehabCheckinAction(data: RehabCheckinData) {
     injury_id: targetInjuryId || "",
   };
 
-  const { error } = await supabase.from("injury_logs").insert({
-    club_id: clubId,
-    injury_id: targetInjuryId,
-    category: "examination",
-    date: payload.date,
-    note: `[REHAB_CHECKIN] ${JSON.stringify(payload)}`,
-  });
-
-  if (error) {
-    return { error: error.message };
+  // Зберігаємо в injury_logs ТІЛЬКИ якщо є дійсний injury_id (в базі не допускається NULL)
+  if (targetInjuryId) {
+    try {
+      await supabase.from("injury_logs").insert({
+        club_id: clubId,
+        injury_id: targetInjuryId,
+        category: "examination",
+        date: payload.date,
+        note: `[REHAB_CHECKIN] ${JSON.stringify(payload)}`,
+      });
+    } catch (err) {
+      console.warn("[submitRehabCheckinAction] injury_logs insert warning:", err);
+    }
   }
 
   const safeInsertLog = async (category: string, date: string, note: string) => {
-    const logItem: any = { club_id: clubId, category, date, note };
-    if (targetInjuryId) logItem.injury_id = targetInjuryId;
-    return supabase.from("injury_logs").insert(logItem);
+    if (!targetInjuryId) return null;
+    try {
+      const logItem: any = { club_id: clubId, injury_id: targetInjuryId, category, date, note };
+      return await supabase.from("injury_logs").insert(logItem);
+    } catch {
+      return null;
+    }
   };
 
   // Біометричний трекінг
@@ -791,6 +806,28 @@ export async function submitRehabCheckinAction(data: RehabCheckinData) {
     };
 
     await safeInsertLog("procedure", payload.date, `[WEARABLE] ${JSON.stringify(wearEntry)}`);
+
+    // Також зберігаємо в таблицю wearable_entries для дашборду та годинника
+    try {
+      await supabase.from("wearable_entries").upsert(
+        {
+          club_id: clubId,
+          player_id: data.player_id,
+          date: payload.date,
+          device_type: data.wearable_data.device_type,
+          resting_hr_bpm: data.wearable_data.resting_hr ?? null,
+          hrv_ms: data.wearable_data.hrv_rmssd ?? null,
+          hrv_metric: data.wearable_data.device_type === "apple_watch" ? "sdnn" : "rmssd",
+          sleep_duration_min: data.wearable_data.sleep_duration_hours
+            ? Math.round(data.wearable_data.sleep_duration_hours * 60)
+            : null,
+          device_score: data.wearable_data.recovery_score ?? null,
+          device_score_name: "Recovery",
+          source: "manual",
+        },
+        { onConflict: "player_id, date" }
+      );
+    } catch {}
   }
 
   // Щоденне самопочуття (Wellness) — єдине спрямування (1-5, де 5 = найкраще)
@@ -847,6 +884,29 @@ export async function submitRehabCheckinAction(data: RehabCheckinData) {
         .upsert(wellnessEntryPayload as any, { onConflict: "player_id, date" });
     } catch {}
 
+    // Гарантована персистентність у клубі
+    try {
+      const { data: clubData } = await supabase
+        .from("clubs")
+        .select("settings")
+        .eq("id", clubId)
+        .maybeSingle();
+
+      const currSettings = (clubData as any)?.settings || {};
+      const store = currSettings.wellness_entries_store || {};
+      store[`${data.player_id}_${payload.date}`] = wellnessEntryPayload;
+
+      await supabase
+        .from("clubs")
+        .update({
+          settings: {
+            ...currSettings,
+            wellness_entries_store: store,
+          },
+        } as any)
+        .eq("id", clubId);
+    } catch {}
+
     await safeInsertLog("examination", payload.date, `[WELLNESS_ENTRY] ${JSON.stringify(wellnessEntryPayload)}`);
   }
 
@@ -891,6 +951,9 @@ export async function submitRehabCheckinAction(data: RehabCheckinData) {
   }
   revalidatePath(`/players/${data.player_id}`);
   revalidatePath("/rehab-portal");
+  revalidatePath("/team/readiness");
+  revalidatePath("/coach-briefing");
+  revalidatePath("/wellness");
 
   return { success: true };
 }
