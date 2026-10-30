@@ -7,6 +7,9 @@ import { formatPainLocation } from "@/lib/dictionaries";
 import {
   getPlayerTelegramBindingAction,
   sendDoctorRecommendationAction,
+  getPlayerDoctorRecommendationAction,
+  DEFAULT_DOCTOR_PHONE,
+  DEFAULT_DOCTOR_TG_URL,
 } from "@/actions/telegram-actions";
 
 export const PAIN_SYMPTOM_MAP_UA: Record<string, string> = {
@@ -102,6 +105,34 @@ export function DoctorPlayerReadinessModal({
   const [savedRecommendation, setSavedRecommendation] = useState<any>(
     details?.doctorRecommendation || null
   );
+  const [isRefreshingReplies, setIsRefreshingReplies] = useState(false);
+
+  const fetchLatestRecommendation = React.useCallback(async () => {
+    if (!player.playerId || !activeDate) return;
+    try {
+      const res = await getPlayerDoctorRecommendationAction({
+        playerId: player.playerId,
+        date: activeDate,
+      });
+      if (res.success && res.recommendation) {
+        setSavedRecommendation(res.recommendation);
+      }
+    } catch {}
+  }, [player.playerId, activeDate]);
+
+  useEffect(() => {
+    fetchLatestRecommendation();
+    const timer = setInterval(() => {
+      fetchLatestRecommendation();
+    }, 6000);
+    return () => clearInterval(timer);
+  }, [fetchLatestRecommendation]);
+
+  const handleManualRefresh = async () => {
+    setIsRefreshingReplies(true);
+    await fetchLatestRecommendation();
+    setTimeout(() => setIsRefreshingReplies(false), 500);
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -142,6 +173,9 @@ export function DoctorPlayerReadinessModal({
           text: recommendationText.trim(),
           sentAt: new Date().toISOString(),
           sentToTelegram: res.sentToTelegram,
+          doctorPhone: DEFAULT_DOCTOR_PHONE,
+          playerReply: savedRecommendation?.playerReply || null,
+          replies: savedRecommendation?.replies || [],
         });
         setRecFeedback({
           success: true,
@@ -580,6 +614,97 @@ export function DoctorPlayerReadinessModal({
                     <span>{isSendingRec ? "Відправка..." : "Надіслати вказівку гравцю"}</span>
                   </button>
                 </div>
+
+                {/* ПРЯМИЙ КОНТАКТ З ЛІКАРЕМ */}
+                <div className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                  <div className="flex items-center gap-2 text-slate-300">
+                    <span className="text-sm">📞</span>
+                    <span>
+                      Прямий контакт лікаря:{" "}
+                      <span className="font-mono font-bold text-sky-400">{DEFAULT_DOCTOR_PHONE}</span>
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <a
+                      href={DEFAULT_DOCTOR_TG_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-300 text-[11px] font-medium transition-colors"
+                    >
+                      <span>💬</span>
+                      <span>Відкрити мій Telegram</span>
+                    </a>
+                    <button
+                      type="button"
+                      onClick={handleManualRefresh}
+                      disabled={isRefreshingReplies}
+                      title="Оновити відповіді з Telegram"
+                      className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-medium transition-colors flex items-center gap-1 disabled:opacity-50"
+                    >
+                      <span className={isRefreshingReplies ? "animate-spin" : ""}>🔄</span>
+                      <span>{isRefreshingReplies ? "Оновлення..." : "Оновити"}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* ВІДПОВІДЬ ГРАВЦЯ З TELEGRAM */}
+                {savedRecommendation?.playerReply ? (
+                  <div className="p-3 rounded-2xl bg-gradient-to-br from-indigo-950/50 to-slate-900 border border-indigo-500/40 space-y-2 animate-fadeIn">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-bold text-indigo-300 flex items-center gap-1.5">
+                        <span className="text-sm">💬</span>
+                        <span>Відповідь гравця з Telegram:</span>
+                        {savedRecommendation.playerReply.username && (
+                          <span className="text-[11px] text-indigo-200/80 font-normal">
+                            ({savedRecommendation.playerReply.username})
+                          </span>
+                        )}
+                      </span>
+                      <span className="text-[10px] text-slate-400">
+                        {new Date(savedRecommendation.playerReply.receivedAt).toLocaleTimeString("uk-UA", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </span>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-slate-950/90 border border-indigo-500/25 text-xs text-slate-100 font-medium whitespace-pre-wrap leading-relaxed shadow-inner">
+                      {savedRecommendation.playerReply.text}
+                    </div>
+
+                    {/* Історія попередніх повідомлень гравця за день, якщо їх декілька */}
+                    {Array.isArray(savedRecommendation.replies) && savedRecommendation.replies.length > 1 && (
+                      <div className="space-y-1 pt-1.5 border-t border-indigo-500/20">
+                        <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                          Попередня історія за день ({savedRecommendation.replies.length}):
+                        </span>
+                        <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
+                          {savedRecommendation.replies.slice(0, -1).map((r: any, idx: number) => (
+                            <div
+                              key={idx}
+                              className="text-[11px] text-slate-300 bg-slate-900/60 p-2 rounded-lg border border-slate-800 flex items-start justify-between gap-2"
+                            >
+                              <span className="line-clamp-2">{r.text}</span>
+                              <span className="text-[9px] text-slate-500 shrink-0 font-mono">
+                                {new Date(r.receivedAt).toLocaleTimeString("uk-UA", {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : savedRecommendation?.sentToTelegram ? (
+                  <div className="p-2.5 rounded-xl bg-slate-950/50 border border-slate-800/80 text-[11px] text-slate-400 flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                      <span className="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                      <span>Вказівку доставлено в Telegram. Очікується відповідь гравця або дзвінок.</span>
+                    </span>
+                  </div>
+                ) : null}
               </div>
             </div>
           )}

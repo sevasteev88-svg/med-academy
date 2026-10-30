@@ -51,8 +51,21 @@ export interface ReadinessTrendPoint {
       text: string;
       template?: string | null;
       doctor?: string | null;
+      doctorPhone?: string | null;
       sentAt: string;
       sentToTelegram?: boolean;
+      playerReply?: {
+        text: string;
+        receivedAt: string;
+        source: "telegram" | "web";
+        username?: string | null;
+      } | null;
+      replies?: Array<{
+        text: string;
+        receivedAt: string;
+        source: "telegram" | "web";
+        username?: string | null;
+      }>;
     } | null;
   } | null;
 }
@@ -120,8 +133,21 @@ export interface PlayerReadinessResult {
       text: string;
       template?: string | null;
       doctor?: string | null;
+      doctorPhone?: string | null;
       sentAt: string;
       sentToTelegram?: boolean;
+      playerReply?: {
+        text: string;
+        receivedAt: string;
+        source: "telegram" | "web";
+        username?: string | null;
+      } | null;
+      replies?: Array<{
+        text: string;
+        receivedAt: string;
+        source: "telegram" | "web";
+        username?: string | null;
+      }>;
     } | null;
     wearables?: {
       deviceType: string;

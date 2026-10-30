@@ -59,6 +59,9 @@ export interface TelegramWebhookUpdate {
     };
     date: number;
     text?: string;
+    caption?: string;
+    photo?: any[];
+    voice?: any;
   };
 }
 

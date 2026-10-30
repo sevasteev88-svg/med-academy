@@ -933,6 +933,20 @@ export default function PlayerWellnessQuiz({
               <p className="text-xs text-white leading-relaxed font-medium">
                 «{doctorRecommendation.text}»
               </p>
+              <div className="pt-2 border-t border-sky-500/20 flex flex-wrap items-center justify-between gap-2 text-xs">
+                <span className="text-[11px] text-sky-200">
+                  📞 Контакт лікаря: <span className="font-mono font-bold text-white">+380935623945</span>
+                </span>
+                <a
+                  href="https://t.me/+380935623945"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-2.5 py-1 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 font-semibold text-[11px] flex items-center gap-1 transition-colors"
+                >
+                  <span>💬</span>
+                  <span>Написати в Telegram</span>
+                </a>
+              </div>
             </div>
           )}
 

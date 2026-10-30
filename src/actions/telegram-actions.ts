@@ -26,6 +26,9 @@ import type {
   PlayerTelegramBinding,
 } from "@/types/telegram";
 
+export const DEFAULT_DOCTOR_PHONE = "+380935623945";
+export const DEFAULT_DOCTOR_TG_URL = "https://t.me/+380935623945";
+
 /**
  * 1. Генерація deep-link та QR-коду для прив'язки гравця до Telegram-бота (п. 8.7.1 & 8.7.5).
  * - 128-бітний одноразовий токен, у базі лише SHA-256 хэш.
@@ -275,11 +278,20 @@ export async function processTelegramWebhookUpdateAction(
 ): Promise<{ success: boolean; replyText?: string; error?: string }> {
   try {
     const message = update.message;
-    if (!message || !message.text) {
+    if (!message) {
       return { success: true };
     }
 
-    const text = message.text.trim();
+    const text = (
+      message.text ||
+      message.caption ||
+      (message.voice ? "🎙️ [Голосове повідомлення від гравця]" : "") ||
+      (message.photo ? "📷 [Фотографія від гравця]" : "")
+    ).trim();
+
+    if (!text) {
+      return { success: true };
+    }
     const chatId = String(message.chat.id);
     const username = message.from?.username || message.chat.username || null;
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -515,7 +527,143 @@ export async function processTelegramWebhookUpdateAction(
       return { success: true, replyText: statusMsg };
     }
 
-    return { success: true };
+    // 4. Вільне повідомлення / відповідь гравця лікарю (симптоми, самопочуття, коментар)
+    const supabase = createAdminClient();
+    const nowIso = new Date().toISOString();
+    const today = nowIso.split("T")[0];
+
+    let boundPlayerId: string | null = null;
+    let boundPlayerName = "";
+
+    // 4a. Пошук у clubs.settings.telegram_bindings
+    const { data: club } = await supabase
+      .from("clubs")
+      .select("id, settings")
+      .eq("id", DEFAULT_CLUB_ID)
+      .maybeSingle();
+
+    const clubSettings = (club?.settings as any) || {};
+    const tBindings = clubSettings.telegram_bindings || {};
+    for (const [pId, b] of Object.entries(tBindings)) {
+      if ((b as any)?.chatId === chatId && (b as any)?.status === "active") {
+        boundPlayerId = pId;
+        break;
+      }
+    }
+
+    // 4b. Пошук у таблиці player_telegram_bindings
+    if (!boundPlayerId) {
+      try {
+        const { data: bRow } = await supabase
+          .from("player_telegram_bindings")
+          .select("player_id, players ( first_name, last_name )")
+          .eq("telegram_chat_id", chatId)
+          .eq("status", "active")
+          .maybeSingle();
+        if (bRow?.player_id) {
+          boundPlayerId = bRow.player_id;
+          boundPlayerName = `${(bRow as any)?.players?.first_name || ""} ${(bRow as any)?.players?.last_name || ""}`.trim();
+        }
+      } catch {}
+    }
+
+    // 4c. Пошук в in-memory
+    if (!boundPlayerId) {
+      for (const b of memoryTelegramBindings.values()) {
+        if (b.telegram_chat_id === chatId && b.status === "active") {
+          boundPlayerId = b.player_id;
+          break;
+        }
+      }
+    }
+
+    if (!boundPlayerId) {
+      const notBoundMsg =
+        "ℹ️ Ваш акаунт Telegram ще не прив'язано до медичної картки гравця.\n\n" +
+        "Будь ласка, зверніться до лікаря клубу або відскануйте персональний QR-код для прив'язки.";
+      await reply(notBoundMsg);
+      return { success: true, replyText: notBoundMsg };
+    }
+
+    // Зберігаємо відповідь гравця в медичну картку (wellness_entries_store)
+    const store = clubSettings.wellness_entries_store || {};
+    const entryKey = `${boundPlayerId}_${today}`;
+    const currEntry = store[entryKey] || {};
+    const rec = currEntry.doctor_recommendation || {};
+
+    const replyItem = {
+      text,
+      receivedAt: nowIso,
+      source: "telegram" as const,
+      username: username ? `@${username}` : null,
+    };
+
+    const existingReplies = Array.isArray(rec.replies) ? rec.replies : [];
+    existingReplies.push(replyItem);
+
+    currEntry.doctor_recommendation = {
+      ...rec,
+      playerReply: replyItem,
+      replies: existingReplies,
+    };
+    store[entryKey] = currEntry;
+
+    await supabase
+      .from("clubs")
+      .update({
+        settings: {
+          ...clubSettings,
+          wellness_entries_store: store,
+        },
+      })
+      .eq("id", club?.id || DEFAULT_CLUB_ID);
+
+    try {
+      await logAudit({
+        action: "receive_telegram_player_reply",
+        entity: "wellness_entries",
+        playerId: boundPlayerId,
+        meta: {
+          textLength: text.length,
+          source: "telegram",
+          chatId,
+        },
+      });
+    } catch {}
+
+    // Підтвердження гравцю з прямим переходом на контакт лікаря
+    const ackMsg =
+      `✅ *Вашу відповідь отримано та збережено в медичній картці!*\n\n` +
+      `💬 _«${text}»_\n\n` +
+      `👨‍⚕️ Лікар бачить ваше повідомлення в системі.\n` +
+      `📞 *Прямий контакт лікаря:* \`${DEFAULT_DOCTOR_PHONE}\`\n\n` +
+      `Якщо потрібна термінова консультація або посилився біль, напишіть лікарю особисто за кнопкою нижче:`;
+
+    if (botToken) {
+      try {
+        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: ackMsg,
+            parse_mode: "Markdown",
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  {
+                    text: "💬 Написати лікарю в Telegram",
+                    url: DEFAULT_DOCTOR_TG_URL,
+                  },
+                ],
+              ],
+            },
+          }),
+        });
+      } catch {}
+    }
+
+    return { success: true, replyText: ackMsg };
   } catch (err: any) {
     return { success: false, error: err?.message };
   }
@@ -891,7 +1039,8 @@ export async function sendDoctorRecommendationAction(params: {
           `👨‍⚕️ *Рекомендація медичного штабу на ${date}:*\n\n` +
           `${recommendation.trim()}\n\n` +
           `_Лікар: ${docName}_\n` +
-          `Будь на зв'язку та дотримуйся рекомендацій!`;
+          `📞 *Контакт лікаря:* \`${DEFAULT_DOCTOR_PHONE}\`\n\n` +
+          `💬 _Натисніть кнопку нижче, щоб одразу написати лікарю особисто, або просто відповідайте на це повідомлення._`;
 
         const tgRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: "POST",
@@ -900,6 +1049,16 @@ export async function sendDoctorRecommendationAction(params: {
             chat_id: chatId,
             text: messageText,
             parse_mode: "Markdown",
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  {
+                    text: "💬 Написати лікарю в Telegram",
+                    url: DEFAULT_DOCTOR_TG_URL,
+                  },
+                ],
+              ],
+            },
           }),
         });
         const tgData = await tgRes.json();
@@ -915,8 +1074,11 @@ export async function sendDoctorRecommendationAction(params: {
       text: recommendation.trim(),
       template: templateTitle || null,
       doctor: docName,
+      doctorPhone: DEFAULT_DOCTOR_PHONE,
       sentAt: nowIso,
       sentToTelegram,
+      playerReply: currEntry.doctor_recommendation?.playerReply || null,
+      replies: currEntry.doctor_recommendation?.replies || [],
     };
     store[key] = currEntry;
 
@@ -954,3 +1116,39 @@ export async function sendDoctorRecommendationAction(params: {
     };
   }
 }
+
+
+/**
+ * Отримання рекомендації лікаря та відповідей гравця для вказаної дати
+ */
+export async function getPlayerDoctorRecommendationAction(params: {
+  playerId: string;
+  date: string;
+}): Promise<{
+  success: boolean;
+  recommendation?: any;
+  error?: string;
+}> {
+  try {
+    const supabase = createAdminClient();
+    const { data: club } = await supabase
+      .from("clubs")
+      .select("settings")
+      .eq("id", DEFAULT_CLUB_ID)
+      .maybeSingle();
+
+    const store = (club?.settings as any)?.wellness_entries_store || {};
+    const key = `${params.playerId}_${params.date}`;
+    const rec = store[key]?.doctor_recommendation || null;
+
+    return {
+      success: true,
+      recommendation: rec,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err?.message,
+    };
+  }
+}
