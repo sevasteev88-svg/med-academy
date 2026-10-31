@@ -823,6 +823,7 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
               <PlayerSubscriptionQuotaCard
                 playerId={id}
                 playerName={`${player.last_name} ${player.first_name}`}
+                userRole={currentUser?.role}
                 initialSubscription={
                   playerSub
                     ? {

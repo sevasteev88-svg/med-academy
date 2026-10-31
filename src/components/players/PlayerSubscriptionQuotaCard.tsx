@@ -152,23 +152,39 @@ export default function PlayerSubscriptionQuotaCard({
 
         {/* Статус-бейдж */}
         <div>
-          {isComped && (
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              Квота клубу (Безкоштовно)
-            </span>
-          )}
-          {isActive && (
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-500/15 text-sky-300 border border-sky-500/30">
-              <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
-              Оплачено батьками
-            </span>
-          )}
-          {isUnpaid && (
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-              Очікує оплати (Soft-lock)
-            </span>
+          {isCoach ? (
+            sub?.isActive ? (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                Активний профіль
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                Очікує оплати (Soft-lock)
+              </span>
+            )
+          ) : (
+            <>
+              {isComped && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Квота клубу (Безкоштовно)
+                </span>
+              )}
+              {isActive && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-500/15 text-sky-300 border border-sky-500/30">
+                  <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
+                  Оплачено батьками
+                </span>
+              )}
+              {isUnpaid && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                  Очікує оплати (Soft-lock)
+                </span>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -194,7 +210,34 @@ export default function PlayerSubscriptionQuotaCard({
 
       {/* Опис стану підписки */}
       <div className="bg-slate-950/60 rounded-xl p-3.5 border border-slate-800/80 text-xs space-y-2">
-        {isComped ? (
+        {isCoach ? (
+          sub?.isActive ? (
+            <div className="space-y-1.5 text-slate-300">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-400">Статус паспорта:</span>
+                <span className="font-semibold text-emerald-300">Доступ відкрито</span>
+              </div>
+              {sub.currentPeriodEnd && (
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">Діє до:</span>
+                  <span className="font-semibold text-white">
+                    {new Date(sub.currentPeriodEnd).toLocaleDateString("uk-UA")} (залишилось {getDaysLeft(sub.currentPeriodEnd)} дн.)
+                  </span>
+                </div>
+              )}
+              <p className="text-[11px] text-slate-400 pt-1 border-t border-slate-800/60">
+                Гравець має активний доступ до свого кабінету та щоденних анкет велнесу.
+              </p>
+            </div>
+          ) : (
+            <div className="text-slate-400 space-y-1">
+              <p className="text-amber-300/90 font-medium">⚠️ Вхід у кабінет обмежено (Soft-lock)</p>
+              <p className="text-[11px]">
+                Очікується оплата за цифровий медичний паспорт. У світлофорі готовності цей гравець відображається сірим бейджем «Очікує оплати».
+              </p>
+            </div>
+          )
+        ) : isComped ? (
           <>
             <div className="flex justify-between items-center text-slate-300">
               <span className="text-slate-400">Причина квоти:</span>
@@ -236,45 +279,51 @@ export default function PlayerSubscriptionQuotaCard({
       </div>
 
       {/* Кнопки дій */}
-      <div className="flex flex-wrap items-center gap-2.5 pt-1">
-        {/* Кнопка 1: Підтвердити реальну оплату батьків */}
-        <button
-          type="button"
-          onClick={() => setIsPayModalOpen(true)}
-          disabled={isPending}
-          className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-sky-500 hover:from-emerald-400 hover:to-sky-400 text-slate-950 font-bold text-xs tracking-wide shadow-md transition-all flex items-center gap-1.5 disabled:opacity-50"
-        >
-          <span>💳</span>
-          <span>{isActive ? "Продовжити оплату батьків" : "Підтвердити оплату батьків"}</span>
-        </button>
-
-        {/* Кнопка 2: Надати безкоштовну квоту клубу */}
-        <button
-          type="button"
-          onClick={() => setIsModalOpen(true)}
-          disabled={isPending}
-          className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs border border-slate-700 transition-all flex items-center gap-1.5 disabled:opacity-50"
-        >
-          <span>🎁</span>
-          <span>{isComped ? "Змінити квоту клубу" : "Надати квоту клубу (безкоштовно)"}</span>
-        </button>
-
-        {/* Кнопка 3: Скасування доступу / переведення на Soft-lock */}
-        {(isComped || isActive) && (
+      {isCoach ? (
+        <div className="text-[11px] text-slate-500 italic pt-1">
+          Керування доступом та фінансовим обліком здійснюється медичним штабом клубу.
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-2.5 pt-1">
+          {/* Кнопка 1: Підтвердити реальну оплату батьків */}
           <button
             type="button"
-            onClick={handleRevokeQuota}
+            onClick={() => setIsPayModalOpen(true)}
             disabled={isPending}
-            className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-rose-500/20 hover:text-rose-300 hover:border-rose-500/30 text-slate-400 font-medium text-xs border border-slate-800 transition-all flex items-center gap-1.5 disabled:opacity-50"
+            className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-sky-500 hover:from-emerald-400 hover:to-sky-400 text-slate-950 font-bold text-xs tracking-wide shadow-md transition-all flex items-center gap-1.5 disabled:opacity-50"
           >
-            <span>🔒</span>
-            <span>{isComped ? "Скасувати квоту" : "Скасувати доступ"}</span>
+            <span>💳</span>
+            <span>{isActive ? "Продовжити оплату батьків" : "Підтвердити оплату батьків"}</span>
           </button>
-        )}
-      </div>
+
+          {/* Кнопка 2: Надати безкоштовну квоту клубу */}
+          <button
+            type="button"
+            onClick={() => setIsModalOpen(true)}
+            disabled={isPending}
+            className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs border border-slate-700 transition-all flex items-center gap-1.5 disabled:opacity-50"
+          >
+            <span>🎁</span>
+            <span>{isComped ? "Змінити квоту клубу" : "Надати квоту клубу (безкоштовно)"}</span>
+          </button>
+
+          {/* Кнопка 3: Скасування доступу / переведення на Soft-lock */}
+          {(isComped || isActive) && (
+            <button
+              type="button"
+              onClick={handleRevokeQuota}
+              disabled={isPending}
+              className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-rose-500/20 hover:text-rose-300 hover:border-rose-500/30 text-slate-400 font-medium text-xs border border-slate-800 transition-all flex items-center gap-1.5 disabled:opacity-50"
+            >
+              <span>🔒</span>
+              <span>{isComped ? "Скасувати квоту" : "Скасувати доступ"}</span>
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Модальне вікно підтвердження оплати батьків */}
-      {isPayModalOpen && (
+      {!isCoach && isPayModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-2xl space-y-5 text-slate-100 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
@@ -373,7 +422,7 @@ export default function PlayerSubscriptionQuotaCard({
       )}
 
       {/* Модальне вікно призначення квоти */}
-      {isModalOpen && (
+      {!isCoach && isModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-2xl space-y-5 text-slate-100 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
