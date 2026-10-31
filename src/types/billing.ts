@@ -25,6 +25,8 @@ export type PaymentStatus =
   | "failed"
   | "refunded";
 
+export const DEFAULT_MONOBANK_JAR_URL = "https://send.monobank.ua/jar/jzGthBnmx";
+
 export const PRICING_PLANS = {
   MONTHLY: {
     code: "monthly_150_uah" as BillingPlanCode,

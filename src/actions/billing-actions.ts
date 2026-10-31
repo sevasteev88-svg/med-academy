@@ -176,12 +176,17 @@ export async function createCheckoutSessionAction(params: {
   ];
   const signature = generateWayForPaySignature(signatureFields, merchantSecret);
 
+  const jarBase = process.env.NEXT_PUBLIC_MONOBANK_JAR_URL || "https://send.monobank.ua/jar/jzGthBnmx";
+  const commentText = `Паспорт здоров'я: ${player.last_name} ${player.first_name}`;
+  const monobankUrl = `${jarBase}?a=${plan.amountUah}&t=${encodeURIComponent(commentText)}`;
+
   return {
     success: true,
     orderReference,
     amountUah: plan.amountUah,
     currency: "UAH",
     planName: plan.name,
+    monobankUrl,
     checkoutData: {
       merchantAccount,
       merchantDomainName: merchantDomain,

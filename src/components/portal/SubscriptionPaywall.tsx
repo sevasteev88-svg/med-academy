@@ -28,6 +28,7 @@ export default function SubscriptionPaywall({
   const [isProcessing, startTransition] = useTransition();
   const [payerPhone, setPayerPhone] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [openedJar, setOpenedJar] = useState(false);
 
   const isAnnual = selectedPlan === "annual_1500_uah";
   const currentAmount = isAnnual ? 1500 : 150;
@@ -42,42 +43,14 @@ export default function SubscriptionPaywall({
           payerPhone: payerPhone || undefined,
         });
 
-        if (!res.success || !res.checkoutData) {
-          setErrorMessage(res.error || "Не вдалося ініціалізувати оплату");
-          return;
-        }
+        const jarUrl =
+          (res as any).monobankUrl ||
+          `https://send.monobank.ua/jar/jzGthBnmx?a=${currentAmount}&t=${encodeURIComponent(`Паспорт: ${playerName}`)}`;
 
-        // Автоматична відправка форми WayForPay через POST
-        const form = document.createElement("form");
-        form.method = "POST";
-        form.action = "https://secure.wayforpay.com/pay";
-        form.target = "_blank"; // Відкриття у новій вкладці для зручності батьків
-
-        const data: Record<string, any> = res.checkoutData;
-        for (const key of Object.keys(data)) {
-          const val = data[key];
-          if (Array.isArray(val)) {
-            val.forEach((item) => {
-              const input = document.createElement("input");
-              input.type = "hidden";
-              input.name = `${key}[]`;
-              input.value = item;
-              form.appendChild(input);
-            });
-          } else {
-            const input = document.createElement("input");
-            input.type = "hidden";
-            input.name = key;
-            input.value = val;
-            form.appendChild(input);
-          }
-        }
-
-        document.body.appendChild(form);
-        form.submit();
-        document.body.removeChild(form);
+        window.open(jarUrl, "_blank", "noopener,noreferrer");
+        setOpenedJar(true);
       } catch (err: any) {
-        setErrorMessage(err.message || "Помилка при створенні платіжної сесії");
+        setErrorMessage(err.message || "Помилка відкриття платіжної сторінки Monobank");
       }
     });
   };
@@ -168,7 +141,7 @@ export default function SubscriptionPaywall({
         </div>
       )}
 
-      {/* Кнопка швидкої оплати */}
+      {/* Кнопка швидкої оплати через Monobank */}
       <button
         type="button"
         disabled={isProcessing}
@@ -181,9 +154,33 @@ export default function SubscriptionPaywall({
           <span>💳</span>
         )}
         <span>
-          Оплатити {currentAmount} грн · Apple Pay / Google Pay / Картка
+          Оплатити {currentAmount} грн · Monobank / Apple Pay
         </span>
       </button>
+
+      {/* Підказка після переходу до Банки */}
+      {openedJar && (
+        <div className="p-4 rounded-2xl bg-sky-950/60 border border-sky-500/40 text-xs space-y-2 animate-in fade-in duration-200">
+          <div className="flex items-center gap-2 text-sky-300 font-bold">
+            <span>✨</span>
+            <span>Сторінку Monobank відкрито у новій вкладці!</span>
+          </div>
+          <p className="text-slate-300 leading-relaxed text-[11px]">
+            У призначенні платежу перевірте коментар: <strong className="text-white bg-slate-900 px-1.5 py-0.5 rounded border border-slate-700">Паспорт: {playerName}</strong>
+          </p>
+          <div className="pt-1 flex items-center justify-between text-[11px] text-slate-400 border-t border-slate-800/80">
+            <span>Після оплати доступ відкриється лікарем або автоматично.</span>
+            <a
+              href="https://t.me/+380935623945"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sky-400 hover:text-sky-300 font-bold flex items-center gap-1"
+            >
+              <span>📩</span> Надіслати квитанцію
+            </a>
+          </div>
+        </div>
+      )}
 
       {/* Розширений перелік цінності для батьків */}
       <div className="bg-slate-950/70 rounded-2xl p-4 border border-slate-800/90 space-y-3">
@@ -278,7 +275,7 @@ export default function SubscriptionPaywall({
       </div>
 
       <div className="text-center text-[10px] text-slate-500">
-        Безпечна оплата відповідно до стандарту безпеки PCI DSS через WayForPay.
+        🔒 Безпечна оплата через Monobank (Apple Pay, Google Pay або картка будь-якого банку України).
       </div>
     </div>
   );
