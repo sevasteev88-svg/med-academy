@@ -70,15 +70,15 @@ function toDbPositionEn(pos?: string | null): string {
     RB: "RB",
     CDM: "CDM",
     DM: "CDM",
-    CM: "CM",
+    CM: "CDM",
     CAM: "CAM",
     AM: "CAM",
     LW: "LW",
     RW: "RW",
     ST: "ST",
-    CF: "ST",
+    CF: "CF",
   };
-  return map[p] || "CM";
+  return map[p] || "CDM";
 }
 
 async function runSeed() {
@@ -180,7 +180,7 @@ async function runSeed() {
   console.log("✅ Створено 3 команди (U-19, U-17, U-15)");
 
   // 5. Вставка 26 гравців
-  let playersToInsert = DEMO_PLAYERS.map((p) => ({
+  const playersToInsert = DEMO_PLAYERS.map((p, idx) => ({
     id: p.id,
     club_id: DEMO_CLUB_ID,
     team_id: p.team_id,
@@ -190,28 +190,11 @@ async function runSeed() {
     position: toDbPositionEn(p.position),
     dominant_leg: p.dominant_side === "left" ? "left" : "right",
     dominant_arm: p.dominant_side === "left" ? "left" : "right",
-    portal_token: `demo-portal-${p.id.replace(/-/g, "").slice(0, 16)}`,
+    portal_token: `demo-portal-${p.id.replace(/-/g, "").slice(-12)}-${idx}`,
     archived_at: null,
   }));
 
-  let { error: pErr } = await admin.from("players").insert(playersToInsert);
-  if (pErr && (pErr.message.includes("chk_player_canonical_position") || pErr.message.includes("enum"))) {
-    playersToInsert = DEMO_PLAYERS.map((p) => ({
-      id: p.id,
-      club_id: DEMO_CLUB_ID,
-      team_id: p.team_id,
-      first_name: p.first_name,
-      last_name: p.last_name,
-      date_of_birth: p.date_of_birth,
-      position: p.position,
-      dominant_leg: p.dominant_side === "left" ? "left" : "right",
-      dominant_arm: p.dominant_side === "left" ? "left" : "right",
-      portal_token: `demo-portal-${p.id.replace(/-/g, "").slice(0, 16)}`,
-      archived_at: null,
-    }));
-    const retryRes = await admin.from("players").insert(playersToInsert);
-    pErr = retryRes.error;
-  }
+  const { error: pErr } = await admin.from("players").insert(playersToInsert);
   if (pErr) {
     console.error("❌ Помилка вставки гравців:", pErr.message);
   } else {

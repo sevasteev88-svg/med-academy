@@ -18,7 +18,7 @@ import {
 } from "@/lib/demo-generator";
 
 function toDbPositionEn(pos?: string | null): string {
-  if (!pos) return "CM";
+  if (!pos) return "CDM";
   const p = pos.trim().toUpperCase();
   const map: Record<string, string> = {
     ВР: "GK",
@@ -27,7 +27,7 @@ function toDbPositionEn(pos?: string | null): string {
     ПЗ: "RB",
     ОП: "CDM",
     ЦОП: "CDM",
-    ЦП: "CM",
+    ЦП: "CDM",
     ЦАП: "CAM",
     АП: "CAM",
     ЛВ: "LW",
@@ -40,15 +40,15 @@ function toDbPositionEn(pos?: string | null): string {
     RB: "RB",
     CDM: "CDM",
     DM: "CDM",
-    CM: "CM",
+    CM: "CDM",
     CAM: "CAM",
     AM: "CAM",
     LW: "LW",
     RW: "RW",
     ST: "ST",
-    CF: "ST",
+    CF: "CF",
   };
-  return map[p] || "CM";
+  return map[p] || "CDM";
 }
 
 /**
@@ -219,6 +219,7 @@ export async function resetDemoClubAction(): Promise<{
 
       // Також видаляємо скринінги, прив'язані через note '[SCREENING]'
       await admin.from("wellness_entries").delete().in("player_id", existingPlayerIds);
+      await admin.from("wellness_surveys").delete().in("player_id", existingPlayerIds);
       await admin.from("anthropometry_logs").delete().in("player_id", existingPlayerIds);
       await admin.from("workload_sessions").delete().in("player_id", existingPlayerIds);
       await admin.from("player_subscriptions").delete().eq("club_id", DEMO_CLUB_ID);
@@ -238,8 +239,7 @@ export async function resetDemoClubAction(): Promise<{
     }
 
     // 4. Вставка 26 гравців
-    // Пробуємо англійські коди для enum player_position (GK, CB...)
-    let playersToInsert = DEMO_PLAYERS.map((p) => ({
+    const playersToInsert = DEMO_PLAYERS.map((p, idx) => ({
       id: p.id,
       club_id: DEMO_CLUB_ID,
       team_id: p.team_id,
@@ -249,15 +249,15 @@ export async function resetDemoClubAction(): Promise<{
       position: toDbPositionEn(p.position),
       dominant_leg: p.dominant_side === "left" ? "left" : "right",
       dominant_arm: p.dominant_side === "left" ? "left" : "right",
-      portal_token: `demo-portal-${p.id.replace(/-/g, "").slice(0, 16)}`,
+      portal_token: `demo-portal-${p.id.replace(/-/g, "").slice(-12)}-${idx}`,
       archived_at: null,
     }));
 
     let { error: playersErr } = await admin.from("players").insert(playersToInsert);
 
-    // Якщо в базі застосовано український CHECK constraint або текст:
-    if (playersErr && (playersErr.message.includes("chk_player_canonical_position") || playersErr.message.includes("enum"))) {
-      playersToInsert = DEMO_PLAYERS.map((p) => ({
+    // Якщо в тестовій базі задано український текстовий constraint:
+    if (playersErr && playersErr.message.includes("chk_player_canonical_position")) {
+      const fallbackPlayers = DEMO_PLAYERS.map((p, idx) => ({
         id: p.id,
         club_id: DEMO_CLUB_ID,
         team_id: p.team_id,
@@ -267,10 +267,10 @@ export async function resetDemoClubAction(): Promise<{
         position: normalizePosition(p.position),
         dominant_leg: p.dominant_side === "left" ? "left" : "right",
         dominant_arm: p.dominant_side === "left" ? "left" : "right",
-        portal_token: `demo-portal-${p.id.replace(/-/g, "").slice(0, 16)}`,
+        portal_token: `demo-portal-${p.id.replace(/-/g, "").slice(-12)}-${idx}`,
         archived_at: null,
       }));
-      const retryRes = await admin.from("players").insert(playersToInsert);
+      const retryRes = await admin.from("players").insert(fallbackPlayers);
       playersErr = retryRes.error;
     }
 
@@ -312,7 +312,18 @@ export async function resetDemoClubAction(): Promise<{
     }
 
     // 4c. Вставка законних представників (guardians)
-    const { error: guardErr } = await admin.from("guardians").insert(DEMO_GUARDIANS);
+    const guardiansToInsert = DEMO_GUARDIANS.map((g) => ({
+      id: g.id,
+      club_id: DEMO_CLUB_ID,
+      player_id: g.player_id,
+      full_name: g.full_name,
+      relation: g.relation || (g as any).relationship || "parent",
+      phone: g.phone,
+      email: g.email || null,
+      telegram_chat_id: g.telegram_chat_id || null,
+      is_primary: g.is_primary ?? true,
+    }));
+    const { error: guardErr } = await admin.from("guardians").insert(guardiansToInsert);
     if (guardErr) {
       console.warn("Попередження створення законних представників:", guardErr.message);
     }
@@ -353,19 +364,19 @@ export async function resetDemoClubAction(): Promise<{
     // 6. Вставка травм
     let injRows: any[] = DEMO_INJURIES.map((inj) => ({
       id: inj.id,
-      club_id: inj.club_id,
+      club_id: DEMO_CLUB_ID,
       player_id: inj.player_id,
       injury_type: inj.injury_type,
       location: inj.location,
-      side: inj.side,
+      side: inj.side || "left",
       date_of_injury: inj.date_of_injury,
       actual_return_date: (inj as any).actual_return_date || null,
       expected_return_date: (inj as any).expected_return_date || null,
       status: inj.status,
-      vas_score: inj.vas_score,
-      description: inj.description,
-      severity: inj.severity,
-      mechanism: inj.mechanism,
+      vas_score: inj.vas_score ?? 0,
+      description: inj.description || "Травма",
+      severity: inj.severity || "moderate",
+      mechanism: inj.mechanism || "non_contact",
       osiics_code: inj.osiics_code,
       activity_type: "training",
       onset: "acute",
@@ -376,26 +387,26 @@ export async function resetDemoClubAction(): Promise<{
     if (injErr && (injErr.message.includes("column") || injErr.message.includes("does not exist"))) {
       injRows = DEMO_INJURIES.map((inj) => ({
         id: inj.id,
-        club_id: inj.club_id,
+        club_id: DEMO_CLUB_ID,
         player_id: inj.player_id,
         injury_type: inj.injury_type,
         location: inj.location,
-        side: inj.side,
+        side: inj.side || "left",
         date_of_injury: inj.date_of_injury,
         actual_return_date: (inj as any).actual_return_date || null,
         expected_return_date: (inj as any).expected_return_date || null,
         status: inj.status,
-        vas_score: inj.vas_score,
-        description: inj.description,
-        severity: inj.severity,
-        mechanism: inj.mechanism,
+        vas_score: inj.vas_score ?? 0,
+        description: inj.description || "Травма",
+        severity: inj.severity || "moderate",
+        mechanism: inj.mechanism || "non_contact",
       }));
       const retryInj = await admin.from("injuries").insert(injRows);
       injErr = retryInj.error;
     }
 
     if (injErr) {
-      return { success: false, error: `Помилка створення травм: ${injErr.message}` };
+      console.warn("Попередження створення травм:", injErr.message);
     }
 
     // 7. Вставка RTP-логів у injury_logs для відкритих травм
@@ -414,6 +425,7 @@ export async function resetDemoClubAction(): Promise<{
 
       rtpLogsToInsert.push({
         injury_id: inj.id,
+        club_id: DEMO_CLUB_ID,
         date: inj.date_of_injury,
         author: "Д-р Андрій Коваленко",
         note: `[RTP_PHASE] ${JSON.stringify(rtpPayload)}`,
@@ -439,16 +451,12 @@ export async function resetDemoClubAction(): Promise<{
           : "Повний допуск до участі у тренуваннях та офіційних матчах сезону 2026/2027.",
       };
 
-      // Перша знайдена травма гравця або null
-      const playerInj = DEMO_INJURIES.find((i) => i.player_id === p.id);
-      if (playerInj) {
-        rtpLogsToInsert.push({
-          injury_id: playerInj.id,
-          date: "2026-07-10",
-          author: "Д-р Андрій Коваленко",
-          note: `[SCREENING] ${JSON.stringify(screeningPayload)}`,
-        });
-      }
+      rtpLogsToInsert.push({
+        club_id: DEMO_CLUB_ID,
+        date: "2026-07-10",
+        author: "Д-р Андрій Коваленко",
+        note: `[SCREENING] ${JSON.stringify(screeningPayload)}`,
+      });
     }
 
     if (rtpLogsToInsert.length > 0) {
@@ -492,8 +500,10 @@ export async function resetDemoClubAction(): Promise<{
       await admin.from("workload_sessions").insert(workloadRows);
     }
 
-    // 9. Вставка велнес-анкет за останні 14 днів
+    // 9. Вставка велнес-анкет за останні 14 днів у обидві таблиці (wellness_entries та wellness_surveys)
     const wellnessRows: any[] = [];
+    const surveysRows: any[] = [];
+
     for (let day = 0; day < 14; day++) {
       const curDate = new Date(now.getTime() - day * 86400000);
       const dateStr = curDate.toISOString().split("T")[0];
@@ -522,11 +532,28 @@ export async function resetDemoClubAction(): Promise<{
           pain_area: painArea,
           comment: hasPain ? "Планова фізіотерапія та лід після вправ" : "Почуваюся добре",
         });
+
+        surveysRows.push({
+          player_id: pl.id,
+          club_id: DEMO_CLUB_ID,
+          date: dateStr,
+          sleep_quality: hasPain ? 2 : 4,
+          fatigue_level: hasPain ? 4 : 2,
+          muscle_soreness: hasPain ? 5 : 2,
+          stress_level: hasPain ? 4 : 2,
+          soreness_location: painArea,
+          total_score: hasPain ? 7 : 14,
+          readiness_status: hasPain ? "red" : "green",
+          notes: hasPain ? "Скарги на біль, робота з реабілітологом" : "Готовий до навантаження",
+        });
       });
     }
 
     if (wellnessRows.length > 0) {
       await admin.from("wellness_entries").insert(wellnessRows);
+    }
+    if (surveysRows.length > 0) {
+      await admin.from("wellness_surveys").insert(surveysRows);
     }
 
     // 10. Вставка аптечного складу
