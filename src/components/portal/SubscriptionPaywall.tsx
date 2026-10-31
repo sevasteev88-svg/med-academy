@@ -185,31 +185,96 @@ export default function SubscriptionPaywall({
         </span>
       </button>
 
-      {/* Цінність для батьків */}
-      <div className="bg-slate-950/60 rounded-2xl p-4 border border-slate-800/80 space-y-2.5">
-        <div className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-          Що дає активний Паспорт здоров&apos;я:
+      {/* Розширений перелік цінності для батьків */}
+      <div className="bg-slate-950/70 rounded-2xl p-4 border border-slate-800/90 space-y-3">
+        <div className="flex items-center justify-between border-b border-slate-800/80 pb-2.5">
+          <span className="text-xs font-black uppercase tracking-wider text-sky-400 flex items-center gap-1.5">
+            <span>🛡️</span> Що входить у підписку:
+          </span>
+          <span className="text-[10px] px-2 py-0.5 bg-sky-950/60 border border-sky-800 text-sky-300 rounded-full font-bold">
+            6 послуг
+          </span>
         </div>
-        <ul className="text-xs text-slate-400 space-y-2">
-          <li className="flex items-start gap-2">
-            <span className="text-emerald-400 text-sm leading-none">✓</span>
-            <span>
-              <strong>Ранковий світлофор тренера:</strong> тренер бачить статус відновлення дитини перед виходом на поле.
-            </span>
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="text-emerald-400 text-sm leading-none">✓</span>
-            <span>
-              <strong>Профілактика травм:</strong> своєчасне виявлення перевантажень та м&apos;язової крепатури.
-            </span>
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="text-emerald-400 text-sm leading-none">✓</span>
-            <span>
-              <strong>Контроль росту (PHV):</strong> оцінка біологічного дозрівання кісток та піку росту.
-            </span>
-          </li>
-        </ul>
+
+        <div className="space-y-2.5">
+          {/* 1. Світлофор тренера */}
+          <div className="flex items-start gap-2.5 p-1 rounded-lg hover:bg-slate-900/40 transition-colors">
+            <div className="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs shrink-0 mt-0.5 font-bold">
+              🟢
+            </div>
+            <div className="space-y-0.5">
+              <div className="text-xs font-bold text-slate-200">Ранковий світлофор тренера</div>
+              <p className="text-[11px] text-slate-400 leading-tight">
+                Тренер щоранку бачить статус відновлення дитини перед виходом на поле та корегує навантаження.
+              </p>
+            </div>
+          </div>
+
+          {/* 2. Супровід лікаря */}
+          <div className="flex items-start gap-2.5 p-1 rounded-lg hover:bg-slate-900/40 transition-colors">
+            <div className="w-6 h-6 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center text-xs shrink-0 mt-0.5 font-bold">
+              🩺
+            </div>
+            <div className="space-y-0.5">
+              <div className="text-xs font-bold text-slate-200">Супровід спортивного лікаря</div>
+              <p className="text-[11px] text-slate-400 leading-tight">
+                Лікар бачить скарги на біль, оглядає карту тіла та надсилає персональні медичні рекомендації.
+              </p>
+            </div>
+          </div>
+
+          {/* 3. Профілактика травм */}
+          <div className="flex items-start gap-2.5 p-1 rounded-lg hover:bg-slate-900/40 transition-colors">
+            <div className="w-6 h-6 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center text-xs shrink-0 mt-0.5 font-bold">
+              ⚡
+            </div>
+            <div className="space-y-0.5">
+              <div className="text-xs font-bold text-slate-200">Профілактика надривів м&apos;язів</div>
+              <p className="text-[11px] text-slate-400 leading-tight">
+                Виявлення втоми, поганого сну та прихованого перенапруження за 24–48 год до появи травми.
+              </p>
+            </div>
+          </div>
+
+          {/* 4. Контроль росту PHV */}
+          <div className="flex items-start gap-2.5 p-1 rounded-lg hover:bg-slate-900/40 transition-colors">
+            <div className="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-xs shrink-0 mt-0.5 font-bold">
+              📏
+            </div>
+            <div className="space-y-0.5">
+              <div className="text-xs font-bold text-slate-200">Контроль стрибка росту (PHV)</div>
+              <p className="text-[11px] text-slate-400 leading-tight">
+                Захист колін та сухожиль (профілактика Осгуда-Шлаттера) під час фази швидкого росту дитини.
+              </p>
+            </div>
+          </div>
+
+          {/* 5. План реабілітації RTP */}
+          <div className="flex items-start gap-2.5 p-1 rounded-lg hover:bg-slate-900/40 transition-colors">
+            <div className="w-6 h-6 rounded-lg bg-rose-500/20 text-rose-400 flex items-center justify-center text-xs shrink-0 mt-0.5 font-bold">
+              📋
+            </div>
+            <div className="space-y-0.5">
+              <div className="text-xs font-bold text-slate-200">Покроковий протокол повернення (RTP)</div>
+              <p className="text-[11px] text-slate-400 leading-tight">
+                При будь-якому пошкодженні — персональний комплекс вправ ЛФК для швидкого та безпечного відновлення.
+              </p>
+            </div>
+          </div>
+
+          {/* 6. Цифрова медкартка */}
+          <div className="flex items-start gap-2.5 p-1 rounded-lg hover:bg-slate-900/40 transition-colors">
+            <div className="w-6 h-6 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center text-xs shrink-0 mt-0.5 font-bold">
+              🗂️
+            </div>
+            <div className="space-y-0.5">
+              <div className="text-xs font-bold text-slate-200">Цифрова медкартка спортсмена</div>
+              <p className="text-[11px] text-slate-400 leading-tight">
+                Безстроковий електронний архів: допуски, скринінги, історія відновлення та динаміка розвитку завжди з вами.
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="text-center text-[10px] text-slate-500">
