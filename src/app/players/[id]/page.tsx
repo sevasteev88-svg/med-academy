@@ -32,6 +32,7 @@ import PrintButton from "@/components/ui/PrintButton";
 import { PlayerEhrTransferButton } from "@/components/players/PlayerEhrTransferButton";
 import PlayerArchiveControl from "@/components/players/PlayerArchiveControl";
 import { getCurrentUser } from "@/lib/auth";
+import { canUserAccessTeam } from "@/lib/team-access";
 import { POSITION_LABELS, POSITION_FULL, DOMINANT_UA, LOCATION_UA, SEVERITY_UA, INJURY_TYPE_UA, STATUS_UA } from "@/lib/constants";
 import PlayerConsentsCard from "@/components/consents/PlayerConsentsCard";
 import PlayerTreatmentsCard from "@/components/players/PlayerTreatmentsCard";
@@ -275,6 +276,40 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
   const periodLabel = from ? `${from}${to ? ` — ${to}` : " — сьогодні"}` : "За весь час";
   const currentUser = await getCurrentUser();
   const isAdminUser = currentUser?.role === "admin";
+  const isCoachUser = currentUser?.role === "coach";
+
+  // Якщо це тренер — перевіряємо, чи має він доступ до команди цього футболіста
+  if (isCoachUser && !canUserAccessTeam(currentUser, player.team_id)) {
+    return (
+      <div className="min-h-[70vh] flex items-center justify-center p-4">
+        <div className="p-8 rounded-2xl bg-slate-900 border border-rose-500/30 text-center space-y-3 max-w-md shadow-2xl">
+          <div className="text-4xl">⛔</div>
+          <h2 className="text-lg font-bold text-white">Доступ обмежено</h2>
+          <p className="text-xs text-slate-300 leading-relaxed">
+            Цей футболіст грає за іншу вікову категорію ({player.teams?.name || "інша команда"}). Ви маєте доступ лише до гравців закріплених за вами команд.
+          </p>
+          <Link
+            href="/players"
+            className="inline-block mt-3 px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold shadow-lg shadow-blue-600/30 hover:bg-blue-500 transition-all"
+          >
+            ← Повернутися до списку моїх гравців
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  // Обчислення зіграних хвилин для тренерського профілю (7 та 28 днів)
+  const d7AgoDateStr = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString().split("T")[0];
+  const d28AgoDateStr = new Date(Date.now() - 28 * 24 * 3600 * 1000).toISOString().split("T")[0];
+
+  const totalMinutes7d = (workloadRes?.data || [])
+    .filter((w: any) => w.date >= d7AgoDateStr)
+    .reduce((sum: number, w: any) => sum + (Number(w.duration_minutes) || 0), 0);
+
+  const totalMinutes28d = (workloadRes?.data || [])
+    .filter((w: any) => w.date >= d28AgoDateStr)
+    .reduce((sum: number, w: any) => sum + (Number(w.duration_minutes) || 0), 0);
 
   // Розрахунок показників для чесного індикатора AI-аналітика ризику (Задача 3.1)
   // 1. Зріст: заміри за останні 12 місяців
@@ -493,6 +528,90 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
             />
           </div>
         </Card>
+
+        {/* ТРЕНЕРСЬКЕ РЕЗЮМЕ ГРАВЦЯ (COACH VIEW) */}
+        {isCoachUser && (
+          <div className="p-5 rounded-2xl bg-gradient-to-r from-blue-950/40 via-slate-900 to-indigo-950/40 border border-sky-500/40 shadow-xl space-y-4">
+            <div className="flex items-center justify-between border-b border-sky-500/20 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">📋</span>
+                <h3 className="text-sm font-black text-white uppercase tracking-wider">
+                  Тренерське резюме: статус та навантаження
+                </h3>
+              </div>
+              <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                Очима тренера
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+              <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800">
+                <span className="text-slate-400 font-semibold block mb-1">Медичний режим:</span>
+                {activeInjuries.length > 0 ? (
+                  <span className="text-rose-400 font-black flex items-center gap-1.5">
+                    <span>⛔</span> Лазарет ({calcDaysMissed(activeInjuries[0])} дн.)
+                  </span>
+                ) : screenings[0] && screenings[0].overall_status === "provisional" ? (
+                  <span className="text-amber-400 font-black flex items-center gap-1.5">
+                    <span>⏱️</span> Щадний (макс 45 хв)
+                  </span>
+                ) : (
+                  <span className="text-emerald-400 font-black flex items-center gap-1.5">
+                    <span>✓</span> Загальна група (90+ хв)
+                  </span>
+                )}
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800">
+                <span className="text-slate-400 font-semibold block mb-1">Хвилини за 7 днів:</span>
+                <span className="text-sky-300 font-mono font-black text-base">
+                  {totalMinutes7d} хв
+                </span>
+                <span className="text-[10px] text-slate-500 block mt-0.5">тренування + матчі</span>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800">
+                <span className="text-slate-400 font-semibold block mb-1">Хвилини за 28 днів:</span>
+                <span className="text-white font-mono font-black text-base">
+                  {totalMinutes28d} хв
+                </span>
+                <span className="text-[10px] text-slate-500 block mt-0.5">місячний обсяг</span>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800">
+                <span className="text-slate-400 font-semibold block mb-1">Індекс втоми (ACWR):</span>
+                <span
+                  className={`font-mono font-black text-base ${
+                    playerAcwr && playerAcwr > 1.4
+                      ? "text-rose-400"
+                      : playerAcwr && playerAcwr < 0.8
+                      ? "text-amber-400"
+                      : "text-emerald-400"
+                  }`}
+                >
+                  {playerAcwr ? playerAcwr.toFixed(2) : "Норма"}
+                </span>
+                <span className="text-[10px] text-slate-500 block mt-0.5">оптимум: 0.8 – 1.3</span>
+              </div>
+            </div>
+
+            {/* Вказівки для тренувального процесу */}
+            <div className="p-3 rounded-xl bg-slate-950/80 border border-blue-900/40 text-xs space-y-1">
+              <strong className="text-sky-300 flex items-center gap-1.5">
+                <span>🎯</span> Рекомендації для тренувального процесу від медичного штабу:
+              </strong>
+              <p className="text-slate-300 leading-relaxed text-[11px]">
+                {activeInjuries.length > 0
+                  ? `Гравець перебуває на стадії реабілітації (${
+                      INJURY_TYPE_UA[activeInjuries[0].injury_type] ?? activeInjuries[0].injury_type
+                    }). Участь у загальних групових тренуваннях та двосторонніх матчах категорично заборонена.`
+                  : screenings[0]?.overall_status === "provisional"
+                  ? "Дозволено участь у тренуваннях з контролем втоми (жовтий жилет). Рекомендується обмеження контактних єдиноборств та скорочення тривалості спринтерських серій."
+                  : "Гравець допущений до тренувань у загальній групі без обмежень. Слідкуйте за розминкою та відновленням."}
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Вкладки медичного профілю гравця (Варіант 1) */}
         <PlayerProfileTabs
@@ -809,12 +928,14 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
                 requiresParentalConsent={!hasSupplementsConsent}
               />
 
-              {/* Фармакотерапія та ліки з аптеки */}
-              <PlayerTreatmentsCard
-                playerId={id}
-                playerName={`${player.last_name} ${player.first_name}`}
-                initialTreatments={playerTreatments}
-              />
+              {/* Фармакотерапія та ліки з аптеки (Тільки для медичного персоналу) */}
+              {!isCoachUser && (
+                <PlayerTreatmentsCard
+                  playerId={id}
+                  playerName={`${player.last_name} ${player.first_name}`}
+                  initialTreatments={playerTreatments}
+                />
+              )}
             </>
           }
           profile={

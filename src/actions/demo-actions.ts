@@ -17,6 +17,40 @@ import {
   DEMO_PHARMACY_ITEMS,
 } from "@/lib/demo-generator";
 
+function toDbPositionEn(pos?: string | null): string {
+  if (!pos) return "CM";
+  const p = pos.trim().toUpperCase();
+  const map: Record<string, string> = {
+    ВР: "GK",
+    ЦЗ: "CB",
+    ЛЗ: "LB",
+    ПЗ: "RB",
+    ОП: "CDM",
+    ЦОП: "CDM",
+    ЦП: "CM",
+    ЦАП: "CAM",
+    АП: "CAM",
+    ЛВ: "LW",
+    ПВ: "RW",
+    НП: "ST",
+    ЦН: "ST",
+    GK: "GK",
+    CB: "CB",
+    LB: "LB",
+    RB: "RB",
+    CDM: "CDM",
+    DM: "CDM",
+    CM: "CM",
+    CAM: "CAM",
+    AM: "CAM",
+    LW: "LW",
+    RW: "RW",
+    ST: "ST",
+    CF: "ST",
+  };
+  return map[p] || "CM";
+}
+
 /**
  * Перевірка, чи поточний користувач працює в Демо-клубі
  */
@@ -204,21 +238,42 @@ export async function resetDemoClubAction(): Promise<{
     }
 
     // 4. Вставка 26 гравців
-    const playersToInsert = DEMO_PLAYERS.map((p) => ({
+    // Пробуємо англійські коди для enum player_position (GK, CB...)
+    let playersToInsert = DEMO_PLAYERS.map((p) => ({
       id: p.id,
       club_id: DEMO_CLUB_ID,
       team_id: p.team_id,
       first_name: p.first_name,
       last_name: p.last_name,
       date_of_birth: p.date_of_birth,
-      position: normalizePosition(p.position),
+      position: toDbPositionEn(p.position),
       dominant_leg: p.dominant_side === "left" ? "left" : "right",
       dominant_arm: p.dominant_side === "left" ? "left" : "right",
       portal_token: `demo-portal-${p.id.replace(/-/g, "").slice(0, 16)}`,
       archived_at: null,
     }));
 
-    const { error: playersErr } = await admin.from("players").insert(playersToInsert);
+    let { error: playersErr } = await admin.from("players").insert(playersToInsert);
+
+    // Якщо в базі застосовано український CHECK constraint або текст:
+    if (playersErr && (playersErr.message.includes("chk_player_canonical_position") || playersErr.message.includes("enum"))) {
+      playersToInsert = DEMO_PLAYERS.map((p) => ({
+        id: p.id,
+        club_id: DEMO_CLUB_ID,
+        team_id: p.team_id,
+        first_name: p.first_name,
+        last_name: p.last_name,
+        date_of_birth: p.date_of_birth,
+        position: normalizePosition(p.position),
+        dominant_leg: p.dominant_side === "left" ? "left" : "right",
+        dominant_arm: p.dominant_side === "left" ? "left" : "right",
+        portal_token: `demo-portal-${p.id.replace(/-/g, "").slice(0, 16)}`,
+        archived_at: null,
+      }));
+      const retryRes = await admin.from("players").insert(playersToInsert);
+      playersErr = retryRes.error;
+    }
+
     if (playersErr) {
       return { success: false, error: `Помилка створення гравців: ${playersErr.message}` };
     }
@@ -296,8 +351,30 @@ export async function resetDemoClubAction(): Promise<{
     await admin.from("anthropometry_logs").insert(anthroLogs);
 
     // 6. Вставка травм
-    const { error: injErr } = await admin.from("injuries").insert(
-      DEMO_INJURIES.map((inj) => ({
+    let injRows: any[] = DEMO_INJURIES.map((inj) => ({
+      id: inj.id,
+      club_id: inj.club_id,
+      player_id: inj.player_id,
+      injury_type: inj.injury_type,
+      location: inj.location,
+      side: inj.side,
+      date_of_injury: inj.date_of_injury,
+      actual_return_date: (inj as any).actual_return_date || null,
+      expected_return_date: (inj as any).expected_return_date || null,
+      status: inj.status,
+      vas_score: inj.vas_score,
+      description: inj.description,
+      severity: inj.severity,
+      mechanism: inj.mechanism,
+      osiics_code: inj.osiics_code,
+      activity_type: "training",
+      onset: "acute",
+      occurrence: "new",
+    }));
+
+    let { error: injErr } = await admin.from("injuries").insert(injRows);
+    if (injErr && (injErr.message.includes("column") || injErr.message.includes("does not exist"))) {
+      injRows = DEMO_INJURIES.map((inj) => ({
         id: inj.id,
         club_id: inj.club_id,
         player_id: inj.player_id,
@@ -312,12 +389,10 @@ export async function resetDemoClubAction(): Promise<{
         description: inj.description,
         severity: inj.severity,
         mechanism: inj.mechanism,
-        osiics_code: inj.osiics_code,
-        activity_type: "training",
-        onset: "acute",
-        occurrence: "new",
-      }))
-    );
+      }));
+      const retryInj = await admin.from("injuries").insert(injRows);
+      injErr = retryInj.error;
+    }
 
     if (injErr) {
       return { success: false, error: `Помилка створення травм: ${injErr.message}` };

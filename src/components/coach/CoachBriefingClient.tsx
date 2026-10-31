@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useTransition } from "react";
 import Link from "next/link";
 import Card from "@/components/ui/Card";
 import { POSITION_LABELS } from "@/lib/constants";
+import { sendTelegramDigestAction } from "@/actions/send-telegram-digest-action";
 
 export interface BriefingPlayer {
   id: string;
@@ -28,11 +29,19 @@ export interface CoachBriefingProps {
 }
 
 export default function CoachBriefingClient({ teams, players }: CoachBriefingProps) {
-  const [selectedTeam, setSelectedTeam] = useState<string>("all");
+  const [selectedTeam, setSelectedTeam] = useState<string>(
+    teams.length === 1 ? teams[0].id : "all"
+  );
   const [tacticalFilter, setTacticalFilter] = useState<"all" | "available" | "restricted" | "unavailable">("all");
   const [aiLoading, setAiLoading] = useState(false);
   const [aiSummary, setAiSummary] = useState<string | null>(null);
   const [copiedAi, setCopiedAi] = useState(false);
+
+  // Telegram modal & sharing
+  const [showTelegramModal, setShowTelegramModal] = useState(false);
+  const [copiedTg, setCopiedTg] = useState(false);
+  const [isSendingTg, startSendingTg] = useTransition();
+  const [tgFeedback, setTgFeedback] = useState<string | null>(null);
 
   const filtered = players.filter((p) => {
     if (selectedTeam !== "all" && p.team_id !== selectedTeam) return false;
@@ -89,6 +98,70 @@ export default function CoachBriefingClient({ teams, players }: CoachBriefingPro
     }
   };
 
+  const currentTeamName =
+    selectedTeam === "all"
+      ? "Всі вікові групи"
+      : teams.find((t) => t.id === selectedTeam)?.name || "Команда";
+
+  const generateTelegramDigestText = () => {
+    const todayStr = new Date().toLocaleDateString("uk-UA");
+    let text = `⚽ МЕДИКО-ТАКТИЧНЕ ЗВЕДЕННЯ ШТАБУ\n`;
+    text += `📋 Команда: ${currentTeamName} | Дата: ${todayStr}\n\n`;
+
+    text += `🟢 ПОВНА БОЙОВА ГОТОВНІСТЬ (${availableList.length} гравців, 90+ хв):\n`;
+    if (availableList.length === 0) {
+      text += `— Немає готових гравців\n`;
+    } else {
+      text += availableList
+        .map((p) => `• ${p.name} (${POSITION_LABELS[p.position] ?? p.position})`)
+        .join("\n");
+    }
+
+    text += `\n\n🟡 ОБМЕЖЕННЯ ЛІКАРЯ (${restrictedList.length} гравців):\n`;
+    if (restrictedList.length === 0) {
+      text += `— Без обмежень\n`;
+    } else {
+      text += restrictedList
+        .map(
+          (p) =>
+            `• ${p.name} (${POSITION_LABELS[p.position] ?? p.position}): макс. ${
+              p.max_minutes || 45
+            } хв [${p.restriction_notes || "щадний режим"}]`
+        )
+        .join("\n");
+    }
+
+    text += `\n\n🔴 ЛАЗАРЕТ / ТРАВМОВАНІ (${unavailableList.length} гравців):\n`;
+    if (unavailableList.length === 0) {
+      text += `— У лазареті порожньо ✓\n`;
+    } else {
+      text += unavailableList
+        .map(
+          (p) =>
+            `• ${p.name} (${POSITION_LABELS[p.position] ?? p.position}): ${
+              p.injury_summary || p.restriction_notes || "у лазареті"
+            }`
+        )
+        .join("\n");
+    }
+
+    return text;
+  };
+
+  const handleSendTelegram = () => {
+    setTgFeedback(null);
+    startSendingTg(async () => {
+      const text = generateTelegramDigestText();
+      const res = await sendTelegramDigestAction({ text });
+      if ((res as any)?.error) {
+        setTgFeedback(`Помилка: ${(res as any).error}`);
+      } else {
+        setTgFeedback("✅ Ранкове зведення успішно надіслано в підключений Telegram-канал!");
+        setTimeout(() => setTgFeedback(null), 4000);
+      }
+    });
+  };
+
   return (
     <div className="min-h-screen bg-transparent text-slate-100 p-4 sm:p-6 md:p-8">
       <div className="max-w-6xl mx-auto space-y-6">
@@ -125,6 +198,13 @@ export default function CoachBriefingClient({ teams, players }: CoachBriefingPro
             >
               <span>🪪</span> QR-картки команди
             </Link>
+            <button
+              type="button"
+              onClick={() => setShowTelegramModal(true)}
+              className="px-3.5 py-2.5 bg-sky-950/40 hover:bg-sky-900/50 text-sky-300 hover:text-white border border-sky-500/30 text-xs font-bold rounded-xl shadow-[0_0_12px_rgba(56,189,248,0.15)] transition-all flex items-center gap-1.5"
+            >
+              <span>📱</span> Telegram-зведення
+            </button>
             <button
               type="button"
               onClick={generateAiBriefing}
@@ -268,6 +348,87 @@ export default function CoachBriefingClient({ teams, players }: CoachBriefingPro
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* TELEGRAM DIGEST MODAL */}
+        {showTelegramModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+            <div className="bg-slate-900 border border-sky-500/40 rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
+              <div className="flex items-start justify-between border-b border-sky-500/20 pb-3">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl p-2 bg-sky-500/20 rounded-xl">📱</span>
+                  <div>
+                    <h3 className="text-base font-black text-white">
+                      Ранковий звіт штабу для Telegram
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Готовий текст зведення для чату тренерів та медичного персоналу
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowTelegramModal(false)}
+                  className="text-slate-400 hover:text-white font-bold p-1"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {tgFeedback && (
+                <div
+                  className={`p-3 rounded-xl text-xs font-semibold ${
+                    tgFeedback.startsWith("Помилка")
+                      ? "bg-rose-500/20 text-rose-300 border border-rose-500/40"
+                      : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                  }`}
+                >
+                  {tgFeedback}
+                </div>
+              )}
+
+              <div className="relative">
+                <textarea
+                  readOnly
+                  rows={11}
+                  value={generateTelegramDigestText()}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-slate-200 font-mono focus:ring-1 focus:ring-sky-500 leading-relaxed"
+                />
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(generateTelegramDigestText());
+                    setCopiedTg(true);
+                    setTimeout(() => setCopiedTg(false), 2500);
+                  }}
+                  className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-sky-300 text-xs font-bold border border-sky-500/30 transition-all flex items-center justify-center gap-2"
+                >
+                  <span>📋</span> {copiedTg ? "✓ Скопійовано в буфер!" : "Скопіювати для чату"}
+                </button>
+
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <button
+                    type="button"
+                    onClick={handleSendTelegram}
+                    disabled={isSendingTg}
+                    className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-black shadow-lg shadow-sky-600/30 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    <span>📤</span> {isSendingTg ? "Відправка..." : "Надіслати в бот клубу"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowTelegramModal(false)}
+                    className="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 text-xs font-semibold"
+                  >
+                    Закрити
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 

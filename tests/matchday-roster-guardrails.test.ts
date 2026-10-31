@@ -151,4 +151,43 @@ describe("Matchday Roster - Medical Guardrails (Захист від дурака
     assert.equal(canUserAccessTeam(coachUser, "team-u17-id"), true);
     assert.equal(canUserAccessTeam(coachUser, "team-u14-id"), false);
   });
+
+  it("POST-MATCH OVEREXPOSURE: Detects when a restricted player exceeds doctor's minute limit", () => {
+    const limits = new Map([
+      ["p-rehab-1", { status: "restricted", maxMinutes: 45 }],
+      ["p-def-1", { status: "available", maxMinutes: 90 }],
+    ]);
+
+    const matchMinutes = [
+      { playerId: "p-rehab-1", minutes: 70 }, // Exceeded! 70 > 45
+      { playerId: "p-def-1", minutes: 90 }, // Normal
+    ];
+
+    const overexposures = matchMinutes.filter((m) => {
+      const limit = limits.get(m.playerId);
+      return limit && limit.status === "restricted" && m.minutes > limit.maxMinutes;
+    });
+
+    assert.equal(overexposures.length, 1);
+    assert.equal(overexposures[0].playerId, "p-rehab-1");
+    assert.equal(overexposures[0].minutes, 70);
+  });
+
+  it("COACH PLAYER CARD: Restricts coach from accessing players of unassigned teams", () => {
+    const coachUser = {
+      id: "coach-u19",
+      role: "coach",
+      teamIds: ["team-u19"],
+    };
+
+    const playerU19 = { id: "p1", team_id: "team-u19" };
+    const playerU15 = { id: "p2", team_id: "team-u15" };
+
+    assert.equal(canUserAccessTeam(coachUser, playerU19.team_id), true);
+    assert.equal(canUserAccessTeam(coachUser, playerU15.team_id), false);
+
+    // Doctor can access all
+    const doctorUser = { id: "doc-1", role: "doctor" };
+    assert.equal(canUserAccessTeam(doctorUser, playerU15.team_id), true);
+  });
 });

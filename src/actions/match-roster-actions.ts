@@ -270,3 +270,203 @@ export async function saveMatchdayRosterAction(
     return { error: `Помилка збереження заявки: ${err?.message || "Невідома помилка"}` };
   }
 }
+
+export type PostMatchPlayerEntry = {
+  playerId: string;
+  playerName: string;
+  minutesPlayed: number;
+  rpeScore?: number;
+  starter: boolean;
+  notes?: string;
+};
+
+export type SavePostMatchReportInput = {
+  teamId?: string;
+  teamName: string;
+  matchDate: string;
+  opponent: string;
+  matchRpe: number;
+  score?: string;
+  players: PostMatchPlayerEntry[];
+  tacticalNotes?: string;
+};
+
+export type PostMatchReportResult = {
+  success?: boolean;
+  savedPlayersCount?: number;
+  overexposureAlerts?: Array<{
+    playerId: string;
+    playerName: string;
+    limitMinutes: number;
+    playedMinutes: number;
+  }>;
+  error?: string;
+};
+
+/**
+ * Пункт 2: Швидкий тренерський звіт після матчу (Post-Match Minute & RPE Logging)
+ * - Фіксує зіграні хвилини кожного футболіста (старт, заміна, лава)
+ * - Записує ігровий RPE матчу в workload_sessions
+ * - Синхронізує матч-експозиції в exposures для UEFA Injury Incidence (1000 год)
+ * - ВИЯВЛЯЄ ПЕРЕНАВАНТАЖЕННЯ (Overexposure Alert): якщо гравець з лімітом лікаря (45 хв)
+ *   переграв свій ліміт -> сповіщає медичний штаб для позачергового огляду!
+ */
+export async function savePostMatchReportAction(
+  input: SavePostMatchReportInput
+): Promise<PostMatchReportResult> {
+  const auth = await assertAuth();
+  if ("error" in auth) {
+    return { error: auth.error };
+  }
+
+  const { user } = auth;
+  const clubId = user.clubId || DEFAULT_CLUB_ID;
+  const admin = createAdminClient();
+
+  // Перевірка прав тренера
+  if (user.role === "coach") {
+    let targetTeamId = input.teamId;
+    if (!targetTeamId) {
+      const { data: teamData } = await admin
+        .from("teams")
+        .select("id")
+        .eq("name", input.teamName)
+        .maybeSingle();
+      targetTeamId = teamData?.id;
+    }
+
+    if (targetTeamId && !canUserAccessTeam(user, targetTeamId)) {
+      return {
+        error: "У вас немає доступу для внесення звіту по цій команді.",
+      };
+    }
+  }
+
+  // Отримуємо команду id
+  let resolvedTeamId = input.teamId;
+  if (!resolvedTeamId) {
+    const { data: t } = await admin
+      .from("teams")
+      .select("id")
+      .eq("name", input.teamName)
+      .maybeSingle();
+    resolvedTeamId = t?.id;
+  }
+
+  // Отримуємо поточні обмеження гравців клубу для виявлення перенавантажень
+  const { getPlayerAvailability } = await import("@/lib/availability");
+  const availabilityReport = await getPlayerAvailability(clubId);
+  const playerLimitMap = new Map<string, { status: string; maxMinutes: number; notes: string }>();
+
+  for (const p of availabilityReport.players) {
+    if (p.status === "restricted" && p.max_minutes) {
+      playerLimitMap.set(p.id, {
+        status: p.status,
+        maxMinutes: p.max_minutes,
+        notes: p.restriction_notes || "",
+      });
+    }
+  }
+
+  const overexposureAlerts: Array<{
+    playerId: string;
+    playerName: string;
+    limitMinutes: number;
+    playedMinutes: number;
+  }> = [];
+
+  const nowIso = new Date().toISOString();
+  let savedCount = 0;
+  let playersWithMinutesCount = 0;
+
+  for (const p of input.players) {
+    const played = Math.max(0, Number(p.minutesPlayed) || 0);
+    const rpe = Math.max(1, Math.min(10, Number(p.rpeScore) || Number(input.matchRpe) || 7));
+    const workloadAu = played * rpe;
+
+    if (played > 0) {
+      playersWithMinutesCount++;
+    }
+
+    // Перевірка на Overexposure (перегравання ліміту лікаря)
+    const limitInfo = playerLimitMap.get(p.playerId);
+    if (limitInfo && played > limitInfo.maxMinutes) {
+      overexposureAlerts.push({
+        playerId: p.playerId,
+        playerName: p.playerName,
+        limitMinutes: limitInfo.maxMinutes,
+        playedMinutes: played,
+      });
+
+      // Логуємо медичну пересторогу в injury_logs
+      try {
+        await admin.from("injury_logs").insert({
+          club_id: clubId,
+          date: input.matchDate,
+          category: "alert",
+          note: `[OVEREXPOSURE_ALERT] Гравець ${p.playerName} зіграв у матчі ${played} хв при лікарському ліміті ${limitInfo.maxMinutes} хв (${limitInfo.notes || "етап реабілітації"}). Матч проти ${input.opponent}. Рекомендовано позачерговий огляд лікаря та оцінку крепатури/болю ВАШ.`,
+        });
+      } catch {}
+    }
+
+    // 1. Запис у workload_sessions
+    try {
+      await admin
+        .from("workload_sessions")
+        .delete()
+        .eq("player_id", p.playerId)
+        .eq("date", input.matchDate);
+
+      await admin.from("workload_sessions").insert({
+        id: `match_workload_${Date.now()}_${p.playerId.slice(0, 4)}_${Math.random().toString(36).substring(2, 6)}`,
+        club_id: clubId,
+        player_id: p.playerId,
+        team_id: resolvedTeamId,
+        date: input.matchDate,
+        session_type: "match",
+        duration_minutes: played,
+        rpe_score: rpe,
+        coach_rpe: rpe,
+        workload_au: workloadAu,
+        attendance_status: played > 0 ? "present" : "absent",
+        notes: `Матч проти ${input.opponent}${input.score ? ` (${input.score})` : ""}: зіграно ${played} хв${p.notes ? `. ${p.notes}` : ""}`,
+      } as any);
+
+      savedCount++;
+    } catch {}
+  }
+
+  // 2. Запис у exposures для розрахунку incidence rate на 1000 матч-годин
+  try {
+    await admin
+      .from("exposures")
+      .delete()
+      .eq("team_id", resolvedTeamId)
+      .eq("date", input.matchDate);
+
+    if (playersWithMinutesCount > 0) {
+      await admin.from("exposures").insert({
+        club_id: clubId,
+        team_id: resolvedTeamId,
+        date: input.matchDate,
+        type: "match",
+        minutes: 90,
+        players_count: playersWithMinutesCount,
+        notes: `Календарний матч: ${input.teamName} — ${input.opponent} (${input.score || "фінальний рахунок"}).`,
+      });
+    }
+  } catch {}
+
+  revalidatePath("/reports/matchday");
+  revalidatePath("/training");
+  revalidatePath("/workload");
+  revalidatePath("/coach-briefing");
+  revalidatePath("/availability");
+  revalidatePath("/exposures");
+
+  return {
+    success: true,
+    savedPlayersCount: savedCount,
+    overexposureAlerts,
+  };
+}

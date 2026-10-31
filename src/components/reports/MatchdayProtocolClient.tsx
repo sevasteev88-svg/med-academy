@@ -13,6 +13,7 @@ import {
 import {
   saveMatchdayRosterAction,
   getMatchdayRosterAction,
+  savePostMatchReportAction,
 } from "@/actions/match-roster-actions";
 
 export type ProtocolPlayer = {
@@ -57,8 +58,21 @@ export default function MatchdayProtocolClient({
   userRole = "doctor",
   coachHasNoTeams = false,
 }: Props) {
-  // Tabs: 'builder' = Конструктор заявки, 'protocol' = Бланк для друку (PDF)
-  const [activeTab, setActiveTab] = useState<"builder" | "protocol">("builder");
+  // Tabs: 'builder' = Конструктор заявки, 'protocol' = Бланк для друку (PDF), 'postmatch' = Післяматчевий звіт
+  const [activeTab, setActiveTab] = useState<"builder" | "protocol" | "postmatch">("builder");
+
+  // Post-match reporting state
+  const [matchScore, setMatchScore] = useState<string>("2:1");
+  const [matchRpe, setMatchRpe] = useState<number>(8);
+  const [playerMinutes, setPlayerMinutes] = useState<Record<string, number>>({});
+  const [isSavingPostMatch, startSavingPostMatch] = useTransition();
+  const [postMatchFeedback, setPostMatchFeedback] = useState<string | null>(null);
+  const [overexposureAlerts, setOverexposureAlerts] = useState<Array<{
+    playerId: string;
+    playerName: string;
+    limitMinutes: number;
+    playedMinutes: number;
+  }>>([]);
 
   const isCoach = userRole === "coach";
   const effectiveTeams = teams.length > 0 ? teams : allClubTeams;
@@ -408,6 +422,78 @@ export default function MatchdayProtocolClient({
     });
   };
 
+  // Post-match handlers
+  const handleFillDefaultStartersMinutes = () => {
+    const newMinutes: Record<string, number> = {};
+    starters.forEach((s) => {
+      newMinutes[s.playerId] = 90;
+    });
+    substitutes.forEach((s) => {
+      newMinutes[s.playerId] = playerMinutes[s.playerId] || 0;
+    });
+    setPlayerMinutes(newMinutes);
+    setPostMatchFeedback("Стартовому складу автоматично виставлено по 90 хвилин.");
+    setTimeout(() => setPostMatchFeedback(null), 3000);
+  };
+
+  const handleClearMinutes = () => {
+    setPlayerMinutes({});
+    setPostMatchFeedback("Хвилини очищено.");
+    setTimeout(() => setPostMatchFeedback(null), 2500);
+  };
+
+  const handleUpdatePlayerMinute = (playerId: string, mins: number) => {
+    setPlayerMinutes((prev) => ({
+      ...prev,
+      [playerId]: Math.max(0, mins),
+    }));
+  };
+
+  const handleSavePostMatchReport = () => {
+    setPostMatchFeedback(null);
+    setOverexposureAlerts([]);
+
+    const entries = [...starters, ...substitutes].map((slot) => {
+      const p = playerMap.get(slot.playerId);
+      const isStarter = starters.some((s) => s.playerId === slot.playerId);
+      const mins = playerMinutes[slot.playerId] !== undefined ? playerMinutes[slot.playerId] : (isStarter ? 90 : 0);
+      return {
+        playerId: slot.playerId,
+        playerName: p ? `${p.last_name} ${p.first_name}` : "Гравець",
+        minutesPlayed: mins,
+        rpeScore: matchRpe,
+        starter: isStarter,
+        notes: slot.notes,
+      };
+    });
+
+    startSavingPostMatch(async () => {
+      const res = await savePostMatchReportAction({
+        teamName: selectedTeam,
+        matchDate,
+        opponent: matchOpponent,
+        matchRpe,
+        score: matchScore,
+        players: entries,
+        tacticalNotes,
+      });
+
+      if (res.error) {
+        setPostMatchFeedback(`Помилка: ${res.error}`);
+      } else {
+        if (res.overexposureAlerts && res.overexposureAlerts.length > 0) {
+          setOverexposureAlerts(res.overexposureAlerts);
+          setPostMatchFeedback(
+            `⚠️ Звіт збережено, але ВИЯВЛЕНО ПЕРЕНАВАНТАЖЕННЯ: ${res.overexposureAlerts.length} гравців перевищили лікарський ліміт! Сигнал внесено в їхні медичні картки.`
+          );
+        } else {
+          setPostMatchFeedback("✅ Післяматчевий звіт, хвилини та RPE успішно записані в базу та реєстр UEFA!");
+          setTimeout(() => setPostMatchFeedback(null), 5000);
+        }
+      }
+    });
+  };
+
   const getBirthYear = (dobString?: string) => {
     if (!dobString) return "—";
     const d = new Date(dobString);
@@ -474,6 +560,19 @@ export default function MatchdayProtocolClient({
               }`}
             >
               <span>🖨️</span> Друкований протокол (A4 PDF)
+            </button>
+            <button
+              onClick={() => setActiveTab("postmatch")}
+              className={`px-4 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-2 ${
+                activeTab === "postmatch"
+                  ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30"
+                  : "text-slate-400 hover:text-white hover:bg-slate-900"
+              }`}
+            >
+              <span>⏱️</span> Післяматчевий звіт (Post-Match)
+              {overexposureAlerts.length > 0 && (
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+              )}
             </button>
           </div>
         </div>
@@ -1127,7 +1226,327 @@ export default function MatchdayProtocolClient({
         </div>
       )}
 
-      {/* VIEW 2: OFFICIAL PRINT-READY PROTOCOL (A4 FORMAT) */}
+      {/* VIEW 3: POST-MATCH REPORT (MINUTE & RPE LOGGING) */}
+      {activeTab === "postmatch" && (
+        <div className="space-y-6">
+          {/* Header Controls for Post-Match */}
+          <div className="bg-slate-900/90 border border-blue-900/40 rounded-2xl p-5 shadow-xl space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-blue-900/30 pb-4">
+              <div>
+                <h2 className="text-base font-black text-white flex items-center gap-2">
+                  <span>⏱️</span> Фіксація зіграних хвилин та навантаження матчу
+                </h2>
+                <p className="text-xs text-slate-400 mt-1">
+                  Календарна гра: <strong className="text-sky-300">{selectedTeam} — {matchOpponent}</strong> ({matchDate})
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleFillDefaultStartersMinutes}
+                  className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-sky-500/30 text-sky-300 text-xs font-bold transition-all flex items-center gap-1.5"
+                >
+                  <span>⚡</span> Всім стартерам 90 хв
+                </button>
+                <button
+                  type="button"
+                  onClick={handleClearMinutes}
+                  className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-all"
+                >
+                  Очистити хвилини
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSavePostMatchReport}
+                  disabled={isSavingPostMatch}
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-black shadow-lg shadow-emerald-600/30 transition-all disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {isSavingPostMatch ? "Збереження..." : "💾 Зафіксувати звіт матчу"}
+                </button>
+              </div>
+            </div>
+
+            {/* Score & Intensity Inputs */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-slate-950/60 p-4 rounded-xl border border-blue-900/30 text-xs">
+              <div>
+                <label className="block text-slate-400 font-bold mb-1">Рахунок матчу</label>
+                <input
+                  type="text"
+                  value={matchScore}
+                  onChange={(e) => setMatchScore(e.target.value)}
+                  placeholder="2:1 або 0:0"
+                  className="w-full bg-slate-900 border border-blue-900/50 rounded-lg p-2.5 text-white font-black text-center text-sm font-mono"
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-slate-400 font-bold">
+                    Загальна важкість матчу (RPE команди за шкалою Borg CR10):
+                  </label>
+                  <span className="text-sky-300 font-black font-mono text-sm">
+                    {matchRpe}/10 · {matchRpe >= 9 ? "Надважке" : matchRpe >= 7 ? "Дуже важке" : matchRpe >= 5 ? "Важке" : "Помірне"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1 pt-1">
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((score) => (
+                    <button
+                      key={score}
+                      type="button"
+                      onClick={() => setMatchRpe(score)}
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-mono font-black transition-all ${
+                        matchRpe === score
+                          ? "bg-sky-600 text-white shadow-md shadow-sky-600/40"
+                          : "bg-slate-900 border border-slate-800 text-slate-400 hover:text-white"
+                      }`}
+                    >
+                      {score}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* FEEDBACK & OVEREXPOSURE ALERTS */}
+            {postMatchFeedback && (
+              <div
+                className={`p-3 rounded-xl text-xs font-semibold flex items-center justify-between ${
+                  postMatchFeedback.startsWith("Помилка")
+                    ? "bg-rose-500/20 text-rose-300 border border-rose-500/40"
+                    : postMatchFeedback.includes("ВИЯВЛЕНО ПЕРЕНАВАНТАЖЕННЯ")
+                    ? "bg-amber-500/20 text-amber-200 border border-amber-500/40"
+                    : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                }`}
+              >
+                <span>{postMatchFeedback}</span>
+                <button
+                  type="button"
+                  onClick={() => setPostMatchFeedback(null)}
+                  className="text-slate-400 hover:text-white font-bold ml-2"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
+            {overexposureAlerts.length > 0 && (
+              <div className="p-4 rounded-xl bg-amber-950/40 border border-amber-500/40 text-xs text-amber-200 space-y-2">
+                <div className="font-bold flex items-center gap-2 text-amber-300">
+                  <span>⚠️</span>
+                  <span>Медичний контроль перенавантаження (Overexposure Detected):</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                  {overexposureAlerts.map((alert) => (
+                    <div
+                      key={alert.playerId}
+                      className="p-2.5 rounded-lg bg-slate-900/80 border border-amber-500/30 flex items-center justify-between"
+                    >
+                      <div>
+                        <strong>{alert.playerName}</strong>
+                        <div className="text-[11px] text-slate-400">
+                          Зіграно: <span className="text-rose-400 font-bold">{alert.playedMinutes} хв</span> (лікарський ліміт: {alert.limitMinutes} хв)
+                        </div>
+                      </div>
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 font-black">
+                        +{alert.playedMinutes - alert.limitMinutes} хв понад норму
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Player Minutes Table */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* STARTERS MINUTES */}
+            <div className="bg-slate-900/90 border border-blue-900/40 rounded-2xl p-4 shadow-xl space-y-3">
+              <div className="flex items-center justify-between border-b border-blue-900/30 pb-2">
+                <h3 className="text-sm font-black text-white flex items-center gap-2">
+                  <span>🟢</span> I. Стартовий склад (XI)
+                </h3>
+                <span className="text-xs text-slate-400">
+                  За замовчуванням 90 хв (або вкажіть заміну)
+                </span>
+              </div>
+
+              {starters.length === 0 ? (
+                <div className="py-8 text-center text-xs text-slate-500 italic">
+                  Стартовий склад не вибрано у вкладці «Конструктор заявки».
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {starters.map((slot, idx) => {
+                    const p = playerMap.get(slot.playerId);
+                    if (!p) return null;
+
+                    const currentMins = playerMinutes[slot.playerId] !== undefined ? playerMinutes[slot.playerId] : 90;
+                    const maxMins = p.max_minutes;
+                    const isOverLimit = maxMins && currentMins > maxMins;
+
+                    return (
+                      <div
+                        key={slot.playerId}
+                        className={`p-3 rounded-xl border flex items-center justify-between gap-3 text-xs ${
+                          isOverLimit
+                            ? "bg-rose-950/40 border-rose-500/60 text-rose-100"
+                            : "bg-slate-950/60 border-slate-800 text-white"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="w-6 h-6 rounded bg-slate-900 border border-slate-700 text-center font-mono font-black text-[11px] text-sky-300 flex items-center justify-center shrink-0">
+                            {slot.number || idx + 1}
+                          </span>
+                          <div className="truncate">
+                            <div className="font-bold truncate">
+                              {p.last_name} {p.first_name}
+                            </div>
+                            <div className="text-[10px] text-slate-400">
+                              {p.position} · {maxMins ? `Ліміт лікаря: ${maxMins} хв` : "Без обмежень"}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          {/* Quick Minute buttons */}
+                          <div className="hidden sm:flex items-center gap-1">
+                            {[90, 75, 60, 45].map((m) => (
+                              <button
+                                key={m}
+                                type="button"
+                                onClick={() => handleUpdatePlayerMinute(slot.playerId, m)}
+                                className={`px-2 py-1 rounded text-[10px] font-mono font-bold ${
+                                  currentMins === m
+                                    ? "bg-blue-600 text-white"
+                                    : "bg-slate-900 border border-slate-800 text-slate-400 hover:text-white"
+                                }`}
+                              >
+                                {m}
+                              </button>
+                            ))}
+                          </div>
+
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="number"
+                              min={0}
+                              max={120}
+                              value={currentMins}
+                              onChange={(e) =>
+                                handleUpdatePlayerMinute(slot.playerId, Number(e.target.value) || 0)
+                              }
+                              className={`w-14 h-8 rounded-lg bg-slate-900 border text-center font-mono font-black text-xs ${
+                                isOverLimit
+                                  ? "border-rose-500 text-rose-300 focus:ring-rose-500"
+                                  : "border-slate-700 text-white focus:ring-blue-500"
+                              }`}
+                            />
+                            <span className="text-[10px] text-slate-400">хв</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* SUBSTITUTES MINUTES */}
+            <div className="bg-slate-900/90 border border-blue-900/40 rounded-2xl p-4 shadow-xl space-y-3">
+              <div className="flex items-center justify-between border-b border-blue-900/30 pb-2">
+                <h3 className="text-sm font-black text-white flex items-center gap-2">
+                  <span>🟡</span> II. Запасні гравці (Вихід на заміну)
+                </h3>
+                <span className="text-xs text-slate-400">
+                  0 хв — залишився на лаві
+                </span>
+              </div>
+
+              {substitutes.length === 0 ? (
+                <div className="py-8 text-center text-xs text-slate-500 italic">
+                  Запасних гравців не вибрано у вкладці «Конструктор заявки».
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {substitutes.map((slot) => {
+                    const p = playerMap.get(slot.playerId);
+                    if (!p) return null;
+
+                    const currentMins = playerMinutes[slot.playerId] !== undefined ? playerMinutes[slot.playerId] : 0;
+                    const maxMins = p.max_minutes;
+                    const isOverLimit = maxMins && currentMins > maxMins;
+
+                    return (
+                      <div
+                        key={slot.playerId}
+                        className={`p-3 rounded-xl border flex items-center justify-between gap-3 text-xs ${
+                          isOverLimit
+                            ? "bg-rose-950/40 border-rose-500/60 text-rose-100"
+                            : currentMins > 0
+                            ? "bg-emerald-950/20 border-emerald-500/30 text-white"
+                            : "bg-slate-950/60 border-slate-800 text-slate-300"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="w-6 h-6 rounded bg-slate-900 border border-slate-700 text-center font-mono font-bold text-[11px] text-slate-400 flex items-center justify-center shrink-0">
+                            {slot.number || "—"}
+                          </span>
+                          <div className="truncate">
+                            <div className="font-bold truncate text-white">
+                              {p.last_name} {p.first_name}
+                            </div>
+                            <div className="text-[10px] text-slate-400">
+                              {p.position} · {maxMins ? `Ліміт лікаря: ${maxMins} хв` : "Без обмежень"}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <div className="hidden sm:flex items-center gap-1">
+                            {[0, 15, 30, 45].map((m) => (
+                              <button
+                                key={m}
+                                type="button"
+                                onClick={() => handleUpdatePlayerMinute(slot.playerId, m)}
+                                className={`px-2 py-1 rounded text-[10px] font-mono font-bold ${
+                                  currentMins === m
+                                    ? "bg-emerald-600 text-white"
+                                    : "bg-slate-900 border border-slate-800 text-slate-400 hover:text-white"
+                                }`}
+                              >
+                                {m}
+                              </button>
+                            ))}
+                          </div>
+
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="number"
+                              min={0}
+                              max={120}
+                              value={currentMins}
+                              onChange={(e) =>
+                                handleUpdatePlayerMinute(slot.playerId, Number(e.target.value) || 0)
+                              }
+                              className={`w-14 h-8 rounded-lg bg-slate-900 border text-center font-mono font-black text-xs ${
+                                isOverLimit
+                                  ? "border-rose-500 text-rose-300 focus:ring-rose-500"
+                                  : "border-slate-700 text-white focus:ring-emerald-500"
+                              }`}
+                            />
+                            <span className="text-[10px] text-slate-400">хв</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       <div className={activeTab === "protocol" ? "block space-y-4" : "hidden print:block space-y-4"}>
         {/* Print controls bar */}
         <div className="bg-slate-900/90 border border-blue-900/40 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 print:hidden shadow-xl">

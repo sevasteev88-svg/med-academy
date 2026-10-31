@@ -47,6 +47,40 @@ const admin = createClient(supabaseUrl, serviceRoleKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
+function toDbPositionEn(pos?: string | null): string {
+  if (!pos) return "CM";
+  const p = pos.trim().toUpperCase();
+  const map: Record<string, string> = {
+    ВР: "GK",
+    ЦЗ: "CB",
+    ЛЗ: "LB",
+    ПЗ: "RB",
+    ОП: "CDM",
+    ЦОП: "CDM",
+    ЦП: "CM",
+    ЦАП: "CAM",
+    АП: "CAM",
+    ЛВ: "LW",
+    ПВ: "RW",
+    НП: "ST",
+    ЦН: "ST",
+    GK: "GK",
+    CB: "CB",
+    LB: "LB",
+    RB: "RB",
+    CDM: "CDM",
+    DM: "CDM",
+    CM: "CM",
+    CAM: "CAM",
+    AM: "CAM",
+    LW: "LW",
+    RW: "RW",
+    ST: "ST",
+    CF: "ST",
+  };
+  return map[p] || "CM";
+}
+
 async function runSeed() {
   console.log(`🚀 Починаємо посів демо-даних для: ${DEMO_CLUB_NAME}...`);
 
@@ -146,8 +180,23 @@ async function runSeed() {
   console.log("✅ Створено 3 команди (U-19, U-17, U-15)");
 
   // 5. Вставка 26 гравців
-  await admin.from("players").insert(
-    DEMO_PLAYERS.map((p) => ({
+  let playersToInsert = DEMO_PLAYERS.map((p) => ({
+    id: p.id,
+    club_id: DEMO_CLUB_ID,
+    team_id: p.team_id,
+    first_name: p.first_name,
+    last_name: p.last_name,
+    date_of_birth: p.date_of_birth,
+    position: toDbPositionEn(p.position),
+    dominant_leg: p.dominant_side === "left" ? "left" : "right",
+    dominant_arm: p.dominant_side === "left" ? "left" : "right",
+    portal_token: `demo-portal-${p.id.replace(/-/g, "").slice(0, 16)}`,
+    archived_at: null,
+  }));
+
+  let { error: pErr } = await admin.from("players").insert(playersToInsert);
+  if (pErr && (pErr.message.includes("chk_player_canonical_position") || pErr.message.includes("enum"))) {
+    playersToInsert = DEMO_PLAYERS.map((p) => ({
       id: p.id,
       club_id: DEMO_CLUB_ID,
       team_id: p.team_id,
@@ -159,9 +208,15 @@ async function runSeed() {
       dominant_arm: p.dominant_side === "left" ? "left" : "right",
       portal_token: `demo-portal-${p.id.replace(/-/g, "").slice(0, 16)}`,
       archived_at: null,
-    }))
-  );
-  console.log("✅ Створено 26 вигаданих гравців");
+    }));
+    const retryRes = await admin.from("players").insert(playersToInsert);
+    pErr = retryRes.error;
+  }
+  if (pErr) {
+    console.error("❌ Помилка вставки гравців:", pErr.message);
+  } else {
+    console.log("✅ Створено 26 вигаданих гравців");
+  }
 
   // 5b. B2B2C Підписки батьків (21 активна, 2 квоти, 3 очікують оплати)
   await admin.from("player_subscriptions").insert(
