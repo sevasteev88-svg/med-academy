@@ -692,60 +692,115 @@ export async function sendMorningWellnessRemindersAction(options?: {
       process.env.NEXT_PUBLIC_APP_URL ||
       "https://med.fc-chornomorets.com";
 
-    // 1. Отримуємо активні прив'язки
-    let query = supabase
-      .from("player_telegram_bindings")
-      .select("id, player_id, telegram_chat_id, players!inner(id, first_name, last_name, team_id)")
-      .eq("status", "active");
+    // 1. Отримуємо клубні налаштування (там зберігаються telegram_bindings та wellness_entries_store)
+    const { data: club } = await supabase
+      .from("clubs")
+      .select("id, settings")
+      .eq("id", DEFAULT_CLUB_ID)
+      .maybeSingle();
+
+    const clubSettings = (club?.settings as any) || {};
+    const clubBindings = clubSettings.telegram_bindings || {};
+    const store = clubSettings.wellness_entries_store || {};
+
+    // 2. Отримуємо активних гравців команди (або всіх)
+    let playersQuery = supabase
+      .from("players")
+      .select("id, first_name, last_name, team_id")
+      .is("archived_at", null);
 
     if (options?.teamId) {
-      query = query.eq("players.team_id", options.teamId);
+      playersQuery = playersQuery.eq("team_id", options.teamId);
     }
 
-    const { data: bindings } = await query;
+    const { data: teamPlayers } = await playersQuery;
+    const playersList = teamPlayers || [];
+    const totalPlayers = playersList.length;
+
+    // 3. Отримуємо записи з таблиці player_telegram_bindings
+    let tableBindingsQuery = supabase
+      .from("player_telegram_bindings")
+      .select("player_id, telegram_chat_id, status")
+      .eq("status", "active");
+
+    const { data: tableBindingsData } = await tableBindingsQuery;
+    const tableBindingsMap = new Map<string, string>();
+    for (const b of tableBindingsData || []) {
+      if (b.player_id && b.telegram_chat_id) {
+        tableBindingsMap.set(b.player_id, b.telegram_chat_id);
+      }
+    }
+
+    // 4. Отримуємо список тих, хто вже заповнив сьогодні анкету (і з таблиці, і з JSON-store)
+    const filledPlayerIds = new Set<string>();
+
+    const { data: todayEntries } = await supabase
+      .from("wellness_entries")
+      .select("player_id")
+      .eq("date", today);
+
+    for (const e of todayEntries || []) {
+      if (e.player_id) filledPlayerIds.add(e.player_id);
+    }
+
+    for (const [k, v] of Object.entries(store)) {
+      if (k.endsWith(`_${today}`)) {
+        const pId = k.slice(0, k.indexOf(`_${today}`));
+        if (pId) filledPlayerIds.add(pId);
+      }
+    }
+
+    // 5. Визначаємо активні прив'язки для кожного гравця команди
     const activeBindings: Array<{
       player_id: string;
       telegram_chat_id: string;
       first_name?: string;
     }> = [];
 
-    if (bindings && bindings.length > 0) {
-      for (const b of bindings as any[]) {
-        activeBindings.push({
-          player_id: b.player_id,
-          telegram_chat_id: b.telegram_chat_id,
-          first_name: b.players?.first_name,
-        });
+    let unboundCount = 0;
+
+    for (const p of playersList) {
+      // Спочатку шукаємо в клубних налаштуваннях
+      const fromClub = clubBindings[p.id];
+      let chatId = fromClub?.status === "active" ? fromClub.chatId : null;
+
+      // Якщо немає в клубі — шукаємо в таблиці player_telegram_bindings
+      if (!chatId) {
+        chatId = tableBindingsMap.get(p.id) || null;
       }
-    } else {
-      // In-memory fallback
-      for (const b of memoryTelegramBindings.values()) {
-        if (b.status === "active") {
-          activeBindings.push({
-            player_id: b.player_id,
-            telegram_chat_id: b.telegram_chat_id,
-          });
+
+      // Якщо немає в таблиці — шукаємо в пам'яті
+      if (!chatId) {
+        const mem = memoryTelegramBindings.get(p.id);
+        if (mem && mem.status === "active") {
+          chatId = mem.telegram_chat_id;
         }
+      }
+
+      if (chatId) {
+        activeBindings.push({
+          player_id: p.id,
+          telegram_chat_id: String(chatId),
+          first_name: p.first_name,
+        });
+      } else {
+        unboundCount++;
       }
     }
 
+    // Якщо жоден гравець не підключив Telegram
     if (activeBindings.length === 0) {
       return {
         success: true,
         sentCount: 0,
         skippedCount: 0,
-        message: "Немає активних підключених гравців для нагадування",
+        unboundCount: totalPlayers,
+        totalPlayers,
+        message: `⚠️ Усі ${totalPlayers} гравців команди ще не підключили Telegram-бота (не перейшли за QR/лінком бота і не натиснули /start). Спочатку гравці мають підключити бот.`,
       };
     }
 
-    // 2. Отримуємо список тих, хто вже заповнив сьогодні анкету
-    const { data: todayEntries } = await supabase
-      .from("wellness_entries")
-      .select("player_id")
-      .eq("date", today);
-
-    const filledPlayerIds = new Set((todayEntries || []).map((e: any) => e.player_id));
-
+    // 6. Відправляємо нагадування тим підключеним, хто ще не заповнив
     let sentCount = 0;
     let skippedCount = 0;
 
@@ -769,16 +824,27 @@ export async function sendMorningWellnessRemindersAction(options?: {
       sentCount++;
     }
 
+    let resultMsg = "";
+    if (sentCount > 0) {
+      resultMsg = `📢 Надіслано нагадування ${sentCount} гравцям! (${skippedCount} вже заповнили анкету${unboundCount > 0 ? `, у ${unboundCount} Telegram ще не прив'язано` : ""}).`;
+    } else if (skippedCount > 0) {
+      resultMsg = `✓ Усі ${skippedCount} підключені гравці вже заповнили анкету сьогодні!${unboundCount > 0 ? ` (у решти ${unboundCount} Telegram ще не прив'язано)` : ""}`;
+    } else {
+      resultMsg = `Немає гравців для відправки (усі ${unboundCount} ще не підключили бот).`;
+    }
+
     return {
       success: true,
       sentCount,
       skippedCount,
-      totalTargets: activeBindings.length,
+      unboundCount,
+      totalPlayers,
+      message: resultMsg,
     };
   } catch (err: any) {
     return {
       success: false,
-      error: err?.message || "Помилка відправки ранкових нагадувань",
+      error: err?.message || "Помилка відправки нагадувань",
     };
   }
 }

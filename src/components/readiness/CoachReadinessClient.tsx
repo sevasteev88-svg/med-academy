@@ -167,6 +167,7 @@ export default function CoachReadinessClient({
   const yellowCount = players.filter((p) => p.status === "yellow").length;
   const redCount = players.filter((p) => p.status === "red").length;
   const grayCount = players.filter((p) => p.status === "gray").length;
+  const notFilledCount = players.filter((p) => p.grayReason === "no_entry_today").length;
 
   const attentionCount = yellowCount + redCount;
 
@@ -324,7 +325,7 @@ export default function CoachReadinessClient({
 
         {/* Кнопка нагадування в Telegram та налаштування */}
         <div className="flex items-center gap-2 flex-wrap">
-          {isToday && grayCount > 0 && (
+          {isToday && (
             <button
               type="button"
               disabled={isSendingReminder}
@@ -336,7 +337,9 @@ export default function CoachReadinessClient({
               <span>
                 {isSendingReminder
                   ? "Відправка..."
-                  : `Нагадати в Telegram (${grayCount} без анкети)`}
+                  : notFilledCount > 0
+                  ? `Нагадати в Telegram (${notFilledCount} не заповнили)`
+                  : "Нагадати в Telegram (всі заповнили)"}
               </span>
             </button>
           )}
