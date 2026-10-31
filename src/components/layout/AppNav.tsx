@@ -47,7 +47,7 @@ const COACH_NAV: NavItem[] = [
   { href: "/training", label: "Тренування", icon: "⏱️" },
   { href: "/exposures", label: "Експозиція", icon: "⏱️" },
   { href: "/team/readiness", label: "Готовність (Світлофор)", icon: "🚦" },
-  { href: "/team/subscriptions", label: "Підписки та Фінанси", icon: "💳" },
+  { href: "/team/subscriptions", label: "Підписки команди", icon: "📋" },
   { href: "/coach-briefing", label: "Брифінг тренера", icon: "🛡️" },
   { href: "/team/qr-cards", label: "QR-картки команди", icon: "🪪" },
   { href: "/availability", label: "Доступність", icon: "🟢" },

@@ -344,7 +344,7 @@ export function DoctorPlayerReadinessModal({
                   <span className="px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center gap-1.5 shadow-sm">
                     <span>✓</span>
                     <span>
-                      Взято до уваги ({ackRole === "doctor" ? "лікар" : "штаб"})
+                      Взято до уваги ({ackRole === "doctor" ? "лікар" : ackRole === "coach" ? "тренер" : "штаб"})
                     </span>
                   </span>
                   <span className="text-[10px] text-emerald-400/90 font-medium flex items-center gap-1">
@@ -355,7 +355,7 @@ export function DoctorPlayerReadinessModal({
               ) : (
                 <button
                   type="button"
-                  disabled={isPendingAck || !details}
+                  disabled={isPendingAck || (!details && activePoint?.status === "gray" && !isSelectedToday)}
                   onClick={() => onAcknowledge(player.playerId, activeDate)}
                   className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-bold transition-all shadow-md shadow-sky-600/25 active:scale-95 disabled:opacity-40 flex items-center gap-1.5 cursor-pointer"
                 >
@@ -413,12 +413,26 @@ export function DoctorPlayerReadinessModal({
                     тільки лікар
                   </span>
                 </div>
-                <span className="text-sm font-bold text-white mt-0.5 block">
-                  {details.stress ?? "—"} / 5
-                </span>
-                <span className="text-[10px] text-slate-400">
-                  {details.stress && details.stress <= 2 ? "Підвищений" : "Спокійний"}
-                </span>
+                {isDoctorOrAdmin && details.stress !== null && details.stress !== undefined ? (
+                  <>
+                    <span className="text-sm font-bold text-white mt-0.5 block">
+                      {details.stress} / 5
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      {details.stress <= 2 ? "Підвищений" : "Спокійний"}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-sm font-bold text-slate-400 mt-0.5 block flex items-center gap-1">
+                      <span>🔒</span>
+                      <span>Приховано</span>
+                    </span>
+                    <span className="text-[10px] text-slate-500">
+                      Конфіденційно для лікаря
+                    </span>
+                  </>
+                )}
               </div>
             </div>
           ) : (

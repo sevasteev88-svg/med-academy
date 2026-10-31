@@ -857,8 +857,8 @@ function PlayerReadinessCard({
             </button>
           )}
 
-          {/* 8.5 КНОПКА «ВЗЯТО ДО УВАГИ» ТА ЗВОРОТНИЙ ЗВ'ЯЗОК */}
-          {player.status !== "gray" && (
+          {/* 8.5 КНОПКА «ВЗЯТО ДО УВАГИ» ТА ЗВОРОТНИЙ ЗВ'ЯЗОК (доступно для будь-якої заповненої анкети) */}
+          {player.grayReason !== "no_entry_today" && player.grayReason !== "no_consent" && (
             <div className="flex items-center">
               {player.isAcknowledged ? (
                 <span className="px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap shadow-sm">

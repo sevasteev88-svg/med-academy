@@ -221,6 +221,10 @@ export async function grantCompedSubscriptionAction(params: {
     return { success: false, error: auth.error };
   }
 
+  if (auth.user.role === "coach") {
+    return { success: false, error: "У тренера немає прав керувати квотами та фінансами" };
+  }
+
   const supabase = createAdminClient();
   const days = params.daysDuration || 90;
   const periodEnd = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
@@ -275,6 +279,10 @@ export async function revokeCompedSubscriptionAction(params: {
     return { success: false, error: auth.error };
   }
 
+  if (auth.user.role === "coach") {
+    return { success: false, error: "У тренера немає прав змінювати статус підписки" };
+  }
+
   const supabase = createAdminClient();
   const pastDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
@@ -310,6 +318,10 @@ export async function recordManualParentPaymentAction(params: {
   const auth = await assertTeamStaff();
   if ("error" in auth) {
     return { success: false, error: auth.error };
+  }
+
+  if (auth.user.role === "coach") {
+    return { success: false, error: "У тренера немає прав фіксувати фінансові оплати" };
   }
 
   const supabase = createAdminClient();
@@ -508,24 +520,42 @@ export async function getTeamSubscriptionsAction(params?: {
     };
   });
 
+  const isCoachUser = auth.user.role === "coach";
+
   const totalPlayers = players.length;
   const collectionRatePercent =
     totalPlayers > 0 ? Math.round(((activePaidCount + compedCount) / totalPlayers) * 100) : 0;
 
-  const monobankJarUrl =
-    process.env.NEXT_PUBLIC_MONOBANK_JAR_URL || "https://send.monobank.ua/jar/jzGthBnmx";
+  const monobankJarUrl = isCoachUser
+    ? ""
+    : process.env.NEXT_PUBLIC_MONOBANK_JAR_URL || "https://send.monobank.ua/jar/jzGthBnmx";
+
+  // Якщо тренер — приховуємо суми тарифів для конфіденційності
+  const sanitizedPlayers = isCoachUser
+    ? players.map((p) => ({
+        ...p,
+        subscription: p.subscription
+          ? {
+              ...p.subscription,
+              amountUah: 0,
+              planCode: "",
+            }
+          : null,
+      }))
+    : players;
 
   return {
     success: true,
-    players,
+    players: sanitizedPlayers,
     teams,
     currentTeamId: params?.teamId || "all",
+    userRole: auth.user.role,
     stats: {
       totalPlayers,
       activePaidCount,
       compedCount,
       unpaidCount,
-      totalMonthlyRevenueUah,
+      totalMonthlyRevenueUah: isCoachUser ? 0 : totalMonthlyRevenueUah,
       collectionRatePercent,
     },
     monobankJarUrl,

@@ -44,6 +44,7 @@ interface Props {
   initialStats: StatsData;
   monobankJarUrl: string;
   currentTeamId?: string;
+  userRole?: string;
 }
 
 const PRESET_QUOTA_REASONS = [
@@ -59,7 +60,9 @@ export default function TeamSubscriptionsClient({
   initialStats,
   monobankJarUrl,
   currentTeamId = "all",
+  userRole,
 }: Props) {
+  const isCoach = userRole === "coach";
   const [players, setPlayers] = useState<PlayerSubItem[]>(initialPlayers);
   const [stats, setStats] = useState<StatsData>(initialStats);
   const [selectedTeam, setSelectedTeam] = useState<string>(currentTeamId);
@@ -90,9 +93,14 @@ export default function TeamSubscriptionsClient({
     const isCmp = p.subscription?.status === "comped" && p.subscription?.isActive;
     const isUnp = !p.subscription || !p.subscription.isActive || p.subscription.status === "unpaid";
 
-    if (statusFilter === "active" && !isAct) return false;
-    if (statusFilter === "comped" && !isCmp) return false;
-    if (statusFilter === "unpaid" && !isUnp) return false;
+    if (isCoach) {
+      if (statusFilter === "active" && !(isAct || isCmp)) return false;
+      if (statusFilter === "unpaid" && !isUnp) return false;
+    } else {
+      if (statusFilter === "active" && !isAct) return false;
+      if (statusFilter === "comped" && !isCmp) return false;
+      if (statusFilter === "unpaid" && !isUnp) return false;
+    }
 
     // 3. Пошуковий запит
     if (searchQuery.trim()) {
@@ -266,28 +274,38 @@ export default function TeamSubscriptionsClient({
         <div>
           <div className="flex items-center gap-2.5">
             <h1 className="text-2xl font-black text-white tracking-tight">
-              Підписки та Фінанси (B2B2C)
+              {isCoach ? "Доступи та готовність команди" : "Підписки та Фінанси (B2B2C)"}
             </h1>
-            <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold">
-              SaaS Live
+            <span
+              className={`px-2.5 py-0.5 rounded-full border text-xs font-bold ${
+                isCoach
+                  ? "bg-sky-500/15 border-sky-500/30 text-sky-300"
+                  : "bg-emerald-500/15 border-emerald-500/30 text-emerald-300"
+              }`}
+            >
+              {isCoach ? "Склад команди" : "SaaS Live"}
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-1">
-            Контроль батьківських підписок, клубних квот та надходжень у Monobank
+            {isCoach
+              ? "Моніторинг статусів готовності та доступів гравців до цифрового паспорта здоров'я"
+              : "Контроль батьківських підписок, клубних квот та надходжень у Monobank"}
           </p>
         </div>
 
         {/* Швидкі дії */}
         <div className="flex items-center gap-3">
-          <a
-            href={monobankJarUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 hover:border-slate-500 text-white font-bold text-xs tracking-wide shadow-md flex items-center gap-2 hover:bg-slate-800 transition-all"
-          >
-            <span>🏦</span>
-            <span>Відкрити Банку в Monobank ↗</span>
-          </a>
+          {!isCoach && monobankJarUrl && (
+            <a
+              href={monobankJarUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 hover:border-slate-500 text-white font-bold text-xs tracking-wide shadow-md flex items-center gap-2 hover:bg-slate-800 transition-all"
+            >
+              <span>🏦</span>
+              <span>Відкрити Банку в Monobank ↗</span>
+            </a>
+          )}
 
           {/* Вибір команди */}
           <select
@@ -324,55 +342,107 @@ export default function TeamSubscriptionsClient({
         </div>
       )}
 
-      {/* Метрики / Фінансова статистика */}
+      {/* Метрики / Статистика */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {/* MRR */}
-        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 space-y-1">
-          <div className="text-[11px] font-semibold text-slate-400">Прогноз доходу (MRR)</div>
-          <div className="text-xl font-black text-emerald-400">
-            {stats.totalMonthlyRevenueUah.toLocaleString()} <span className="text-xs font-bold text-slate-400">грн/міс</span>
-          </div>
-          <div className="text-[10px] text-slate-500">з оплат батьків</div>
-        </div>
+        {isCoach ? (
+          <>
+            {/* Всього у складі */}
+            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 space-y-1">
+              <div className="text-[11px] font-semibold text-slate-400">Всього у складі</div>
+              <div className="text-xl font-black text-white">
+                {stats.totalPlayers} <span className="text-xs font-bold text-slate-400">гравців</span>
+              </div>
+              <div className="text-[10px] text-slate-500">активна заявка команди</div>
+            </div>
 
-        {/* Оплачено батьками */}
-        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 space-y-1">
-          <div className="text-[11px] font-semibold text-slate-400">Оплачено батьками</div>
-          <div className="text-xl font-black text-sky-400">
-            {stats.activePaidCount} <span className="text-xs font-bold text-slate-400">/ {stats.totalPlayers}</span>
-          </div>
-          <div className="text-[10px] text-sky-300/80">активні підписки</div>
-        </div>
+            {/* Активний профіль */}
+            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 space-y-1">
+              <div className="text-[11px] font-semibold text-slate-400">Активний профіль</div>
+              <div className="text-xl font-black text-emerald-400">
+                {stats.activePaidCount + stats.compedCount}{" "}
+                <span className="text-xs font-bold text-slate-400">/ {stats.totalPlayers}</span>
+              </div>
+              <div className="text-[10px] text-emerald-400/80">доступ відкрито</div>
+            </div>
 
-        {/* Квота клубу */}
-        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 space-y-1">
-          <div className="text-[11px] font-semibold text-slate-400">Клубна квота</div>
-          <div className="text-xl font-black text-emerald-300">
-            {stats.compedCount} <span className="text-xs font-bold text-slate-400">гравців</span>
-          </div>
-          <div className="text-[10px] text-emerald-400/80">безкоштовно від клубу</div>
-        </div>
+            {/* Очікують оплати */}
+            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 space-y-1">
+              <div className="text-[11px] font-semibold text-slate-400">Очікують оплати</div>
+              <div className="text-xl font-black text-amber-400">
+                {stats.unpaidCount} <span className="text-xs font-bold text-slate-400">гравців</span>
+              </div>
+              <div className="text-[10px] text-amber-300/80">обмежений доступ (soft-lock)</div>
+            </div>
 
-        {/* Очікують оплати */}
-        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 space-y-1">
-          <div className="text-[11px] font-semibold text-slate-400">Очікують оплати</div>
-          <div className="text-xl font-black text-amber-400">
-            {stats.unpaidCount} <span className="text-xs font-bold text-slate-400">гравців</span>
-          </div>
-          <div className="text-[10px] text-amber-300/80">Soft-lock в кабінеті</div>
-        </div>
+            {/* Охоплення готовності */}
+            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 space-y-1">
+              <div className="text-[11px] font-semibold text-slate-400">Готовність доступу</div>
+              <div className="text-xl font-black text-sky-400">
+                {stats.collectionRatePercent}%
+              </div>
+              <div className="text-[10px] text-sky-300/80">команди на моніторингу</div>
+            </div>
+          </>
+        ) : (
+          <>
+            {/* MRR */}
+            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 space-y-1">
+              <div className="text-[11px] font-semibold text-slate-400">Прогноз доходу (MRR)</div>
+              <div className="text-xl font-black text-emerald-400">
+                {stats.totalMonthlyRevenueUah.toLocaleString()}{" "}
+                <span className="text-xs font-bold text-slate-400">грн/міс</span>
+              </div>
+              <div className="text-[10px] text-slate-500">з оплат батьків</div>
+            </div>
+
+            {/* Оплачено батьками */}
+            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 space-y-1">
+              <div className="text-[11px] font-semibold text-slate-400">Оплачено батьками</div>
+              <div className="text-xl font-black text-sky-400">
+                {stats.activePaidCount}{" "}
+                <span className="text-xs font-bold text-slate-400">/ {stats.totalPlayers}</span>
+              </div>
+              <div className="text-[10px] text-sky-300/80">активні підписки</div>
+            </div>
+
+            {/* Квота клубу */}
+            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 space-y-1">
+              <div className="text-[11px] font-semibold text-slate-400">Клубна квота</div>
+              <div className="text-xl font-black text-emerald-300">
+                {stats.compedCount} <span className="text-xs font-bold text-slate-400">гравців</span>
+              </div>
+              <div className="text-[10px] text-emerald-400/80">безкоштовно від клубу</div>
+            </div>
+
+            {/* Очікують оплати */}
+            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 space-y-1">
+              <div className="text-[11px] font-semibold text-slate-400">Очікують оплати</div>
+              <div className="text-xl font-black text-amber-400">
+                {stats.unpaidCount} <span className="text-xs font-bold text-slate-400">гравців</span>
+              </div>
+              <div className="text-[10px] text-amber-300/80">Soft-lock в кабінеті</div>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Панель пошуку та швидкі фільтри */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-900/60 border border-slate-800 rounded-2xl p-3">
         {/* Таби статусів */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-          {[
-            { id: "all", label: `Всі (${players.length})` },
-            { id: "active", label: `Оплачено (${stats.activePaidCount})` },
-            { id: "comped", label: `Квота (${stats.compedCount})` },
-            { id: "unpaid", label: `Очікують (${stats.unpaidCount})` },
-          ].map((tab) => (
+          {(isCoach
+            ? [
+                { id: "all", label: `Всі (${players.length})` },
+                { id: "active", label: `Активні (${stats.activePaidCount + stats.compedCount})` },
+                { id: "unpaid", label: `Очікують (${stats.unpaidCount})` },
+              ]
+            : [
+                { id: "all", label: `Всі (${players.length})` },
+                { id: "active", label: `Оплачено (${stats.activePaidCount})` },
+                { id: "comped", label: `Квота (${stats.compedCount})` },
+                { id: "unpaid", label: `Очікують (${stats.unpaidCount})` },
+              ]
+          ).map((tab) => (
             <button
               key={tab.id}
               type="button"
@@ -417,17 +487,17 @@ export default function TeamSubscriptionsClient({
               <tr className="border-b border-slate-800 bg-slate-950/70 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                 <th className="py-3 px-4">Гравець</th>
                 <th className="py-3 px-3">Команда</th>
-                <th className="py-3 px-3">Статус підписки</th>
-                <th className="py-3 px-3">Тариф</th>
+                <th className="py-3 px-3">Статус доступу</th>
+                {!isCoach && <th className="py-3 px-3">Тариф</th>}
                 <th className="py-3 px-3">Діє до</th>
                 <th className="py-3 px-3">Примітка</th>
-                <th className="py-3 px-4 text-right">Швидкі дії</th>
+                {!isCoach && <th className="py-3 px-4 text-right">Швидкі дії</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 text-xs text-slate-300">
               {filteredPlayers.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-8 text-center text-slate-500 text-xs">
+                  <td colSpan={isCoach ? 5 : 7} className="py-8 text-center text-slate-500 text-xs">
                     Гравців за вибраними фільтрами не знайдено
                   </td>
                 </tr>
@@ -466,38 +536,56 @@ export default function TeamSubscriptionsClient({
 
                       {/* Статус */}
                       <td className="py-3 px-3">
-                        {isAct && (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-sky-500/15 text-sky-300 border border-sky-500/30">
-                            <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
-                            Оплачено батьками
-                          </span>
-                        )}
-                        {isCmp && (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                            Квота клубу
-                          </span>
-                        )}
-                        {isUnp && (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                            Очікує оплати
-                          </span>
+                        {isCoach ? (
+                          isAct || isCmp ? (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                              Активний профіль
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                              Очікує оплати
+                            </span>
+                          )
+                        ) : (
+                          <>
+                            {isAct && (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-sky-500/15 text-sky-300 border border-sky-500/30">
+                                <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
+                                Оплачено батьками
+                              </span>
+                            )}
+                            {isCmp && (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                Квота клубу
+                              </span>
+                            )}
+                            {isUnp && (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                                Очікує оплати
+                              </span>
+                            )}
+                          </>
                         )}
                       </td>
 
                       {/* Тариф */}
-                      <td className="py-3 px-3">
-                        {isAct ? (
-                          <span className="font-semibold text-slate-200">
-                            {sub?.planCode === "annual_1500_uah" ? "1 500 грн / рік" : "150 грн / міс"}
-                          </span>
-                        ) : isCmp ? (
-                          <span className="text-emerald-400 font-medium">Безкоштовно</span>
-                        ) : (
-                          <span className="text-slate-500">—</span>
-                        )}
-                      </td>
+                      {!isCoach && (
+                        <td className="py-3 px-3">
+                          {isAct ? (
+                            <span className="font-semibold text-slate-200">
+                              {sub?.planCode === "annual_1500_uah" ? "1 500 грн / рік" : "150 грн / міс"}
+                            </span>
+                          ) : isCmp ? (
+                            <span className="text-emerald-400 font-medium">Безкоштовно</span>
+                          ) : (
+                            <span className="text-slate-500">—</span>
+                          )}
+                        </td>
+                      )}
 
                       {/* Діє до */}
                       <td className="py-3 px-3">
@@ -511,57 +599,65 @@ export default function TeamSubscriptionsClient({
                             </div>
                           </div>
                         ) : (
-                          <span className="text-rose-400 text-[11px] font-medium">Заблоковано</span>
+                          <span className="text-amber-400 text-[11px] font-medium">
+                            {isCoach ? "Очікує оплати" : "Заблоковано"}
+                          </span>
                         )}
                       </td>
 
                       {/* Примітка */}
                       <td className="py-3 px-3 max-w-[180px] truncate text-slate-400 text-[11px]">
-                        {sub?.compedReason || (isAct ? "Monobank" : "—")}
+                        {isCoach
+                          ? isAct || isCmp
+                            ? "Доступ відкрито"
+                            : "Soft-lock в кабінеті"
+                          : sub?.compedReason || (isAct ? "Monobank" : "—")}
                       </td>
 
                       {/* Швидкі дії */}
-                      <td className="py-3 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {/* Підтвердити оплату */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setPayTargetPlayer(p);
-                              setPayPlan("monthly_150_uah");
-                            }}
-                            className="px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 font-bold text-[11px] transition-colors"
-                            title="Зарахувати оплату батьків"
-                          >
-                            💳 Оплата
-                          </button>
-
-                          {/* Квота */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setQuotaTargetPlayer(p);
-                              setQuotaDays(90);
-                            }}
-                            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-semibold text-[11px] transition-colors"
-                            title="Надати або продовжити квоту"
-                          >
-                            🎁 Квота
-                          </button>
-
-                          {/* Скасувати (якщо активний) */}
-                          {(isAct || isCmp) && (
+                      {!isCoach && (
+                        <td className="py-3 px-4 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            {/* Підтвердити оплату */}
                             <button
                               type="button"
-                              onClick={() => handleRevoke(p)}
-                              className="px-2 py-1 rounded-lg bg-slate-900 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 border border-slate-800 hover:border-rose-500/30 text-[11px] transition-colors"
-                              title="Перевести в очікування оплати"
+                              onClick={() => {
+                                setPayTargetPlayer(p);
+                                setPayPlan("monthly_150_uah");
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 font-bold text-[11px] transition-colors"
+                              title="Зарахувати оплату батьків"
                             >
-                              🔒
+                              💳 Оплата
                             </button>
-                          )}
-                        </div>
-                      </td>
+
+                            {/* Квота */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setQuotaTargetPlayer(p);
+                                setQuotaDays(90);
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-semibold text-[11px] transition-colors"
+                              title="Надати або продовжити квоту"
+                            >
+                              🎁 Квота
+                            </button>
+
+                            {/* Скасувати (якщо активний) */}
+                            {(isAct || isCmp) && (
+                              <button
+                                type="button"
+                                onClick={() => handleRevoke(p)}
+                                className="px-2 py-1 rounded-lg bg-slate-900 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 border border-slate-800 hover:border-rose-500/30 text-[11px] transition-colors"
+                                title="Перевести в очікування оплати"
+                              >
+                                🔒
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   );
                 })
@@ -572,7 +668,7 @@ export default function TeamSubscriptionsClient({
       </div>
 
       {/* Модалка 1: Зарахування оплати батьків */}
-      {payTargetPlayer && (
+      {!isCoach && payTargetPlayer && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-2xl space-y-5 text-slate-100 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
@@ -670,7 +766,7 @@ export default function TeamSubscriptionsClient({
       )}
 
       {/* Модалка 2: Надання квоти клубу */}
-      {quotaTargetPlayer && (
+      {!isCoach && quotaTargetPlayer && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-2xl space-y-5 text-slate-100 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">

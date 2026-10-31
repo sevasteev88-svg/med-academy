@@ -23,6 +23,7 @@ interface Props {
   playerId: string;
   playerName: string;
   initialSubscription?: SubscriptionData | null;
+  userRole?: string;
 }
 
 const PRESET_REASONS = [
@@ -36,7 +37,9 @@ export default function PlayerSubscriptionQuotaCard({
   playerId,
   playerName,
   initialSubscription,
+  userRole,
 }: Props) {
+  const isCoach = userRole === "coach";
   const [sub, setSub] = useState<SubscriptionData | null>(initialSubscription || null);
   const [isPending, startTransition] = useTransition();
   const [isModalOpen, setIsModalOpen] = useState(false);

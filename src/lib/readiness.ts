@@ -368,8 +368,8 @@ export function evaluatePlayerReadiness(
   const todayComposite = calculatePhysicalComposite(todayEntry);
   baseResult.todayComposite = todayComposite;
 
-  // Заповнюємо деталі лікаря (якщо запитує лікар/адмін)
-  if (isDoctorRole) {
+  // Заповнюємо деталі анкети (сон, втома, крепатура, біль, ГРВІ)
+  if (todayEntry) {
     baseResult.doctorDetails = {
       pain: todayEntry.pain,
       painVas: todayEntry.pain_vas,
@@ -727,17 +727,37 @@ export function detectMonotonousAnswers(
 export function sanitizeReadinessForCoach(
   result: PlayerReadinessResult
 ): PlayerReadinessResult {
+  // Для тренера відкриваємо: сон, втому, крепатуру, біль, локалізацію болю, температуру та соматичний стан
+  // Але ПРИХОВУЄМО: приватний рівень стресу (GDPR / Mental health) та особистий коментар гравця для лікаря
+  const coachDetails = result.doctorDetails
+    ? {
+        ...result.doctorDetails,
+        stress: null, // Приховано від тренера (тільки лікар)
+        comment: null, // Приховано від тренера (особистий коментар лікарю)
+      }
+    : null;
+
   return {
     ...result,
     hasMonotony: false,
     monotonyDays: 0,
     monotonyPrompt: null,
-    doctorDetails: null, // Тренер ніколи не бачить doctorDetails
+    doctorDetails: coachDetails,
     trendLast7Days: result.trendLast7Days.map((pt) => ({
       date: pt.date,
       compositeScore: pt.compositeScore,
       status: pt.status,
       label: pt.label,
+      isAcknowledged: pt.isAcknowledged,
+      reviewedByRole: pt.reviewedByRole,
+      reviewedAt: pt.reviewedAt,
+      details: pt.details
+        ? {
+            ...pt.details,
+            stress: null,
+            comment: null,
+          }
+        : null,
     })),
   };
 }

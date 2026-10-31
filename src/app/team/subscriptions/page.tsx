@@ -39,6 +39,7 @@ export default async function TeamSubscriptionsPage({
           initialStats={res.stats}
           monobankJarUrl={res.monobankJarUrl}
           currentTeamId={res.currentTeamId}
+          userRole={user.role}
         />
       </div>
     </div>
