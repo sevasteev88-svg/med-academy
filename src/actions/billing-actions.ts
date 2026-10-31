@@ -293,3 +293,82 @@ export async function revokeCompedSubscriptionAction(params: {
   revalidatePath("/team/readiness");
   return { success: true, message: "Квоту скасовано. Гравця переведено на оплату батьків." };
 }
+
+/**
+ * Ручне підтвердження оплати від батьків (переказ на картку клубу/Монобанку)
+ */
+export async function recordManualParentPaymentAction(params: {
+  playerId: string;
+  planCode: BillingPlanCode;
+  paymentNote?: string;
+}) {
+  const auth = await assertTeamStaff();
+  if ("error" in auth) {
+    return { success: false, error: auth.error };
+  }
+
+  const supabase = createAdminClient();
+  const plan = getPlanConfig(params.planCode);
+  const now = new Date();
+  const periodEnd = calculateNextPeriodEnd(
+    params.planCode === "annual_1500_uah" ? "year" : "month",
+    now
+  ).toISOString();
+
+  // 1. Отримуємо клуб гравця
+  const { data: player, error: pErr } = await supabase
+    .from("players")
+    .select("id, club_id, first_name, last_name")
+    .eq("id", params.playerId)
+    .single();
+
+  if (pErr || !player) {
+    return { success: false, error: "Гравця не знайдено" };
+  }
+
+  // 2. Встановлюємо статус 'active'
+  const { error: subErr } = await supabase.from("player_subscriptions").upsert(
+    {
+      club_id: player.club_id,
+      player_id: params.playerId,
+      status: "active",
+      plan_code: params.planCode,
+      amount_uah: plan.amountUah,
+      billing_interval: params.planCode === "annual_1500_uah" ? "year" : "month",
+      current_period_start: now.toISOString(),
+      current_period_end: periodEnd,
+      provider: "manual",
+      comped_reason: params.paymentNote || "Оплачено батьками (переказ на картку)",
+      comped_by: auth.user.id,
+      updated_at: now.toISOString(),
+    },
+    { onConflict: "player_id" }
+  );
+
+  if (subErr) {
+    return { success: false, error: subErr.message };
+  }
+
+  // 3. Фіксуємо платіж у журналі транзакцій
+  const orderRef = generateOrderReference(params.playerId, params.planCode);
+  await supabase.from("payment_transactions").insert({
+    club_id: player.club_id,
+    player_id: params.playerId,
+    order_reference: orderRef,
+    provider: "manual",
+    amount_uah: plan.amountUah,
+    currency: "UAH",
+    status: "success",
+    payment_method: "card_transfer",
+    payment_system: "Manual/Card",
+    transaction_date: now.toISOString(),
+  });
+
+  revalidatePath(`/players/${params.playerId}`);
+  revalidatePath("/rehab-portal");
+  revalidatePath("/team/readiness");
+  return {
+    success: true,
+    message: `Оплату підтверджено (${plan.name}). Доступ активний до ${new Date(periodEnd).toLocaleDateString("uk-UA")}`,
+  };
+}

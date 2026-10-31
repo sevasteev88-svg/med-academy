@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import {
   grantCompedSubscriptionAction,
   revokeCompedSubscriptionAction,
+  recordManualParentPaymentAction,
 } from "@/actions/billing-actions";
 import type { SubscriptionStatus, BillingPlanCode } from "@/types/billing";
 
@@ -39,6 +40,9 @@ export default function PlayerSubscriptionQuotaCard({
   const [sub, setSub] = useState<SubscriptionData | null>(initialSubscription || null);
   const [isPending, startTransition] = useTransition();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isPayModalOpen, setIsPayModalOpen] = useState(false);
+  const [payPlan, setPayPlan] = useState<BillingPlanCode>("monthly_150_uah");
+  const [payMethod, setPayMethod] = useState("Переказ на картку Monobank");
   const [days, setDays] = useState(90);
   const [reason, setReason] = useState(PRESET_REASONS[0]);
   const [customReason, setCustomReason] = useState("");
@@ -52,6 +56,37 @@ export default function PlayerSubscriptionQuotaCard({
     if (!dateStr) return 0;
     const diff = new Date(dateStr).getTime() - Date.now();
     return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+  };
+
+  const handleConfirmParentPayment = () => {
+    setMessage(null);
+    startTransition(async () => {
+      const res = await recordManualParentPaymentAction({
+        playerId,
+        planCode: payPlan,
+        paymentNote: payMethod,
+      });
+
+      if (res.success) {
+        const isAnn = payPlan === "annual_1500_uah";
+        const futureDate = new Date();
+        if (isAnn) futureDate.setFullYear(futureDate.getFullYear() + 1);
+        else futureDate.setMonth(futureDate.getMonth() + 1);
+
+        setSub({
+          status: "active",
+          isActive: true,
+          planCode: payPlan,
+          amountUah: isAnn ? 1500 : 150,
+          currentPeriodEnd: futureDate.toISOString(),
+          compedReason: payMethod,
+        });
+        setIsPayModalOpen(false);
+        setMessage({ type: "success", text: res.message || "Оплату батьків успішно підтверджено!" });
+      } else {
+        setMessage({ type: "error", text: res.error || "Не вдалося зафіксувати оплату" });
+      }
+    });
   };
 
   const handleGrantQuota = () => {
@@ -199,28 +234,140 @@ export default function PlayerSubscriptionQuotaCard({
 
       {/* Кнопки дій */}
       <div className="flex flex-wrap items-center gap-2.5 pt-1">
+        {/* Кнопка 1: Підтвердити реальну оплату батьків */}
+        <button
+          type="button"
+          onClick={() => setIsPayModalOpen(true)}
+          disabled={isPending}
+          className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-sky-500 hover:from-emerald-400 hover:to-sky-400 text-slate-950 font-bold text-xs tracking-wide shadow-md transition-all flex items-center gap-1.5 disabled:opacity-50"
+        >
+          <span>💳</span>
+          <span>{isActive ? "Продовжити оплату батьків" : "Підтвердити оплату батьків"}</span>
+        </button>
+
+        {/* Кнопка 2: Надати безкоштовну квоту клубу */}
         <button
           type="button"
           onClick={() => setIsModalOpen(true)}
           disabled={isPending}
-          className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-sky-500 to-emerald-500 hover:from-sky-400 hover:to-emerald-400 text-slate-950 font-bold text-xs tracking-wide shadow-md transition-all flex items-center gap-1.5 disabled:opacity-50"
+          className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs border border-slate-700 transition-all flex items-center gap-1.5 disabled:opacity-50"
         >
           <span>🎁</span>
-          <span>{isComped ? "Продовжити / змінити квоту" : "Надати квоту клубу (безкоштовно)"}</span>
+          <span>{isComped ? "Змінити квоту клубу" : "Надати квоту клубу (безкоштовно)"}</span>
         </button>
 
-        {isComped && (
+        {/* Кнопка 3: Скасування доступу / переведення на Soft-lock */}
+        {(isComped || isActive) && (
           <button
             type="button"
             onClick={handleRevokeQuota}
             disabled={isPending}
-            className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-rose-500/20 hover:text-rose-300 hover:border-rose-500/30 text-slate-300 font-semibold text-xs border border-slate-700 transition-all flex items-center gap-1.5 disabled:opacity-50"
+            className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-rose-500/20 hover:text-rose-300 hover:border-rose-500/30 text-slate-400 font-medium text-xs border border-slate-800 transition-all flex items-center gap-1.5 disabled:opacity-50"
           >
             <span>🔒</span>
-            <span>Скасувати квоту</span>
+            <span>{isComped ? "Скасувати квоту" : "Скасувати доступ"}</span>
           </button>
         )}
       </div>
+
+      {/* Модальне вікно підтвердження оплати батьків */}
+      {isPayModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-2xl space-y-5 text-slate-100 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">💳</span>
+                <h4 className="font-bold text-sm text-white">Підтвердження оплати: {playerName}</h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPayModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Вибір суми та плану */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-300">Оберіть сплачений тариф:</label>
+              <div className="grid grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setPayPlan("monthly_150_uah")}
+                  className={`p-3 rounded-2xl border text-left transition-all ${
+                    payPlan === "monthly_150_uah"
+                      ? "bg-sky-500/20 border-sky-500 text-white"
+                      : "bg-slate-950 border-slate-800 text-slate-400"
+                  }`}
+                >
+                  <div className="text-[11px] font-medium text-slate-400">1 місяць</div>
+                  <div className="text-base font-black text-white">150 грн</div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPayPlan("annual_1500_uah")}
+                  className={`p-3 rounded-2xl border text-left transition-all ${
+                    payPlan === "annual_1500_uah"
+                      ? "bg-emerald-500/20 border-emerald-500 text-white"
+                      : "bg-slate-950 border-slate-800 text-slate-400"
+                  }`}
+                >
+                  <div className="text-[11px] font-medium text-slate-400">1 рік (12 міс)</div>
+                  <div className="text-base font-black text-emerald-300">1 500 грн</div>
+                </button>
+              </div>
+            </div>
+
+            {/* Спосіб надходження коштів */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-300">Спосіб переказу / примітка:</label>
+              <div className="space-y-1.5">
+                {[
+                  "Переказ на картку Monobank",
+                  "Переказ на картку ПриватБанк",
+                  "Оплата на розрахунковий рахунок (IBAN)",
+                  "Готівка тренеру",
+                ].map((m) => (
+                  <label
+                    key={m}
+                    className="flex items-center gap-2 p-2 rounded-xl bg-slate-950/60 border border-slate-800/80 cursor-pointer text-xs text-slate-300 hover:border-slate-700"
+                  >
+                    <input
+                      type="radio"
+                      name="pay-method"
+                      checked={payMethod === m}
+                      onChange={() => setPayMethod(m)}
+                      className="text-emerald-500 focus:ring-0"
+                    />
+                    <span>{m}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Дії */}
+            <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setIsPayModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-white"
+              >
+                Скасувати
+              </button>
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={handleConfirmParentPayment}
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-sky-500 hover:from-emerald-400 hover:to-sky-400 text-slate-950 font-bold text-xs tracking-wide shadow-lg disabled:opacity-50"
+              >
+                {isPending ? "Зарахування..." : "Зарахувати платіж і відкрити доступ"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Модальне вікно призначення квоти */}
       {isModalOpen && (
