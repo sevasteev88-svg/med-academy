@@ -693,6 +693,8 @@ export function DoctorPlayerReadinessModal({
                   </div>
 
                   {(() => {
+                    const cleanDocTitle = (d?: string) => (!d || d.includes("@") ? "Лікар клубу" : d);
+
                     const docItems = (
                       Array.isArray(savedRecommendation?.sentHistory) && savedRecommendation.sentHistory.length > 0
                         ? savedRecommendation.sentHistory
@@ -702,7 +704,7 @@ export function DoctorPlayerReadinessModal({
                               text: savedRecommendation.text,
                               sentAt: savedRecommendation.sentAt || new Date().toISOString(),
                               sentToTelegram: Boolean(savedRecommendation.sentToTelegram),
-                              doctor: savedRecommendation.doctor || "Медичний штаб",
+                              doctor: cleanDocTitle(savedRecommendation.doctor),
                             },
                           ]
                         : []
@@ -712,7 +714,7 @@ export function DoctorPlayerReadinessModal({
                       text: m.text,
                       time: m.sentAt,
                       sentToTelegram: m.sentToTelegram,
-                      sender: m.doctor || "Медичний штаб",
+                      sender: cleanDocTitle(m.doctor),
                     }));
 
                     const plyItems = (
