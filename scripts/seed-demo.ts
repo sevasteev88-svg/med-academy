@@ -242,6 +242,9 @@ async function runSeed() {
       severity: inj.severity,
       mechanism: inj.mechanism,
       osiics_code: inj.osiics_code,
+      activity_type: "training",
+      onset: "acute",
+      occurrence: "new",
     }))
   );
 

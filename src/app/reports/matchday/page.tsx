@@ -26,6 +26,7 @@ export default async function MatchdayProtocolPage() {
   const { data: teamsData } = await supabase
     .from("teams")
     .select("id, name, sort_order")
+    .eq("club_id", user?.clubId || "00000000-0000-0000-0000-000000000001")
     .order("sort_order", { ascending: true });
 
   const rawTeams = teamsData || [];

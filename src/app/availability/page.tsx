@@ -1,5 +1,5 @@
 import { createClient } from "@/utils/supabase/server";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, DEFAULT_CLUB_ID } from "@/lib/auth";
 import { getPlayerAvailability } from "@/lib/availability";
 import AvailabilityClient from "@/components/availability/AvailabilityClient";
 

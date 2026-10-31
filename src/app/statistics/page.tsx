@@ -1,4 +1,5 @@
 import { createClient } from "@/utils/supabase/server";
+import { getCurrentUser, DEFAULT_CLUB_ID } from "@/lib/auth";
 import Card from "@/components/ui/Card";
 import { INJURY_TYPE_UA, LOCATION_UA, SEVERITY_UA, MECHANISM_UA, POSITION_LABELS, TEAM_CATEGORY_UA } from "@/lib/constants";
 import BodyHeatmap, { InjuryPoint } from "@/components/statistics/BodyHeatmap";
@@ -8,8 +9,9 @@ function calcDaysMissed(i:any):number{if(i.actual_return_date)return Math.max(0,
 
 export default async function StatisticsPage() {
   const supabase = await createClient();
+  const user = await getCurrentUser();
   const { data: allInjuries } = await supabase.from("injuries").select("*, players!inner ( first_name, last_name, position, teams!inner ( id, name, category ) )").order("date_of_injury", { ascending: false });
-  const { data: teams } = await supabase.from("teams").select("id, name, category, sort_order, players ( id )").order("sort_order", { ascending: true });
+  const { data: teams } = await supabase.from("teams").select("id, name, category, sort_order, players ( id )").eq("club_id", user?.clubId || DEFAULT_CLUB_ID).order("sort_order", { ascending: true });
   const injuries = allInjuries ?? [];
   const totalInjuries = injuries.length;
   const totalDaysMissed = injuries.reduce((s,i) => s + calcDaysMissed(i), 0);

@@ -1,5 +1,5 @@
 import { createClient } from "@/utils/supabase/server";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, DEFAULT_CLUB_ID } from "@/lib/auth";
 import Link from "next/link";
 import Image from "next/image";
 import Card from "@/components/ui/Card";

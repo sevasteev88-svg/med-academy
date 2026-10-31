@@ -1,4 +1,5 @@
 import { createClient } from "@/utils/supabase/server";
+import { getCurrentUser, DEFAULT_CLUB_ID } from "@/lib/auth";
 import Link from "next/link";
 import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
@@ -11,11 +12,12 @@ function vasVariant(v: number): "ok"|"warn"|"danger" { if(v>=7)return"danger";if
 
 export default async function WeeklyReportPage() {
   const supabase = await createClient();
+  const user = await getCurrentUser();
   const now = new Date(); const weekAgo = new Date(now); weekAgo.setDate(weekAgo.getDate() - 7);
   const weekAgoStr = weekAgo.toISOString().split("T")[0];
 
   const [teamsRes, newInjuriesRes, closedInjuriesRes, activeInjuriesRes, weekExamsRes, weekLogsRes, maturationRes, availability] = await Promise.all([
-    supabase.from("teams").select("id, name, category, sort_order").order("sort_order", { ascending: true }),
+    supabase.from("teams").select("id, name, category, sort_order").eq("club_id", user?.clubId || DEFAULT_CLUB_ID).order("sort_order", { ascending: true }),
     supabase.from("injuries").select("*, players!inner ( first_name, last_name, teams!inner ( name ) )").gte("date_of_injury", weekAgoStr).order("date_of_injury", { ascending: false }),
     supabase.from("injuries").select("*, players!inner ( first_name, last_name, teams!inner ( name ) )").eq("status", "closed").gte("actual_return_date", weekAgoStr).order("actual_return_date", { ascending: false }),
     supabase.from("injuries").select("*, players!inner ( id, first_name, last_name, teams!inner ( name ) )").in("status", ["active", "rehabilitation"]).order("vas_score", { ascending: false }),
