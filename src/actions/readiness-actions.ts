@@ -40,11 +40,13 @@ import { logAudit } from "@/lib/audit";
  */
 export async function getClubReadinessConfigAction(): Promise<ClubReadinessConfig> {
   const supabase = createAdminClient();
+  const authRes = await assertAuth();
+  const clubId = (!("error" in authRes) && authRes.user.clubId) ? authRes.user.clubId : DEFAULT_CLUB_ID;
   try {
     const { data: club } = await supabase
       .from("clubs")
       .select("settings")
-      .eq("id", DEFAULT_CLUB_ID)
+      .eq("id", clubId)
       .maybeSingle();
 
     const stored = (club as any)?.settings?.readiness_config;
@@ -346,10 +348,13 @@ export async function getTeamReadinessAction(params?: {
   const effectiveRole = user.role as "coach" | "doctor" | "admin";
   const supabase = createAdminClient();
 
-  // 1. Отримуємо команди клубу
+  const clubId = user.clubId || DEFAULT_CLUB_ID;
+
+  // 1. Отримуємо команди клубу (суворо ізольовано за club_id)
   const { data: rawTeams } = await supabase
     .from("teams")
     .select("id, name, sort_order")
+    .eq("club_id", clubId)
     .order("sort_order", { ascending: true });
 
   const coachTeams = user.teamIds && user.teamIds.length > 0

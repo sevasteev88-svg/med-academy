@@ -67,6 +67,7 @@ export default async function PlayersPage({
           maturation_assessments ( risk_zone, growth_phase, created_at )
         )
       `)
+      .eq("club_id", user?.clubId || DEFAULT_CLUB_ID)
       .order("sort_order", { ascending: true }),
     supabase
       .from("injury_logs")

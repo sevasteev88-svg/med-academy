@@ -67,10 +67,13 @@ export async function getTeamTrainingDataAction(params?: {
   const supabase = createAdminClient();
   const targetDate = params?.date || new Date().toISOString().split("T")[0];
 
-  // 1. Отримуємо команди клубу
+  const clubId = user.clubId || DEFAULT_CLUB_ID;
+
+  // 1. Отримуємо команди клубу (суворо ізольовано за club_id)
   const { data: rawTeams } = await supabase
     .from("teams")
     .select("id, name, sort_order")
+    .eq("club_id", clubId)
     .order("sort_order", { ascending: true });
 
   const allTeams = (rawTeams ?? []).map((t) => ({ id: t.id, name: t.name }));

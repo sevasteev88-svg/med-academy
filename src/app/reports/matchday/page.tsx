@@ -1,23 +1,26 @@
 import { createClient } from "@/utils/supabase/server";
 import { assertAuth } from "@/lib/auth";
+import { canUserAccessTeam } from "@/lib/team-access";
 import MatchdayProtocolClient from "@/components/reports/MatchdayProtocolClient";
 import {
   getMatchdayProtocolSettingsAction,
 } from "@/actions/club-settings-actions";
+import { getMatchdayRosterAction } from "@/actions/match-roster-actions";
 import { type MatchdayProtocolClubSettings } from "@/types/protocol";
-import {
-  type PreSeasonScreening,
-} from "@/types/screening";
+import { type PreSeasonScreening } from "@/types/screening";
 import { getPlayerAvailability } from "@/lib/availability";
 
 export const metadata = {
   title: "Медичний протокол матчу (Matchday Protocol)",
-  description: "Протокол допуску гравців до матчу (PDF-друк)",
+  description: "Протокол допуску гравців до матчу та конструктор заявки (PDF-друк)",
 };
 
 export default async function MatchdayProtocolPage() {
   const auth = await assertAuth();
   const supabase = await createClient();
+
+  const user = "user" in auth ? auth.user : null;
+  const isCoachUser = user?.role === "coach";
 
   // 1. Отримуємо команди клубу
   const { data: teamsData } = await supabase
@@ -25,7 +28,16 @@ export default async function MatchdayProtocolPage() {
     .select("id, name, sort_order")
     .order("sort_order", { ascending: true });
 
-  const teams = (teamsData || []).map((t) => t.name);
+  const rawTeams = teamsData || [];
+
+  // Якщо користувач — тренер, фільтруємо виключно закріплені за ним команди
+  let visibleTeams = rawTeams;
+  if (isCoachUser && user) {
+    visibleTeams = rawTeams.filter((t) => canUserAccessTeam(user, t.id));
+  }
+
+  const teamNames = visibleTeams.map((t) => t.name);
+  const initialTeamName = teamNames[0] || (rawTeams[0]?.name ?? "U19");
 
   // 2. Отримуємо всі скринінги клубу для деталізації ЕКГ
   const { data: screeningLogs } = await supabase
@@ -47,7 +59,7 @@ export default async function MatchdayProtocolPage() {
   });
 
   // 3. Отримуємо налаштування клубу для протоколу
-  const clubId = "user" in auth ? auth.user.clubId : undefined;
+  const clubId = user?.clubId || undefined;
   const protocolSettings: MatchdayProtocolClubSettings =
     await getMatchdayProtocolSettingsAction(clubId);
 
@@ -112,11 +124,18 @@ export default async function MatchdayProtocolPage() {
     };
   });
 
+  // 5. Отримуємо збережену заявку для команди за замовчуванням
+  const initialRosterRes = await getMatchdayRosterAction(initialTeamName);
+
   return (
     <MatchdayProtocolClient
       players={flattenedPlayers}
-      teams={teams}
+      teams={teamNames}
+      allClubTeams={rawTeams.map((t) => t.name)}
       initialSettings={protocolSettings}
+      initialRoster={initialRosterRes.roster}
+      userRole={user?.role || "doctor"}
+      coachHasNoTeams={isCoachUser && teamNames.length === 0}
     />
   );
 }

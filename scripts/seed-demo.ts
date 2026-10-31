@@ -155,7 +155,9 @@ async function runSeed() {
       last_name: p.last_name,
       date_of_birth: p.date_of_birth,
       position: p.position,
-      dominant_side: p.dominant_side,
+      dominant_leg: p.dominant_side === "left" ? "left" : "right",
+      dominant_arm: p.dominant_side === "left" ? "left" : "right",
+      portal_token: `demo-portal-${p.id.replace(/-/g, "").slice(0, 16)}`,
       archived_at: null,
     }))
   );

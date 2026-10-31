@@ -32,6 +32,7 @@ export default async function CoachBriefingPage() {
   const { data: teamsData } = await supabase
     .from("teams")
     .select("id, name, category, sort_order")
+    .eq("club_id", user?.clubId || DEFAULT_CLUB_ID)
     .order("sort_order", { ascending: true });
 
   let teams = (teamsData ?? []).map((t) => ({ id: t.id, name: t.name }));

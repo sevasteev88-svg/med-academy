@@ -4,6 +4,7 @@ import { createAdminClient } from "@/utils/supabase/admin";
 import { createClient } from "@/utils/supabase/server";
 import { getCurrentUser } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
+import { normalizePosition } from "@/lib/dictionaries";
 import {
   DEMO_CLUB_ID,
   DEMO_CLUB_NAME,
@@ -33,8 +34,22 @@ export async function enterDemoClubAction(): Promise<{ success: boolean; error?:
     const supabase = await createClient();
     const demoEmail = DEMO_DOCTOR_EMAIL;
     const demoPassword = process.env.DEMO_USER_PASSWORD || "DemoDoctor2026!";
+    const admin = createAdminClient();
 
-    // Спроба входу як демо-лікар
+    // 1. Спочатку перевіряємо, чи в базі є 26 демо-гравців. Якщо ні — автоматично сідуємо
+    const { count: playerCount } = await admin
+      .from("players")
+      .select("id", { count: "exact", head: true })
+      .eq("club_id", DEMO_CLUB_ID);
+
+    if (!playerCount || playerCount < 26) {
+      const resetRes = await resetDemoClubAction();
+      if (!resetRes.success) {
+        console.warn("Попередження авто-посіву демо:", resetRes.error);
+      }
+    }
+
+    // 2. Спроба входу як демо-лікар
     let { error } = await supabase.auth.signInWithPassword({
       email: demoEmail,
       password: demoPassword,
@@ -42,11 +57,6 @@ export async function enterDemoClubAction(): Promise<{ success: boolean; error?:
 
     // Якщо користувача ще не створено або пароль не збігся — ініціалізуємо
     if (error) {
-      const admin = createAdminClient();
-
-      // Спочатку переконуємося, що сам клуб та демо-дані існують
-      await resetDemoClubAction();
-
       // Створюємо або оновлюємо демо-користувача
       const { data: userRes, error: createErr } = await admin.auth.admin.createUser({
         email: demoEmail,
@@ -59,16 +69,34 @@ export async function enterDemoClubAction(): Promise<{ success: boolean; error?:
         },
       });
 
-      const userId = userRes?.user?.id;
-      if (userId) {
+      if (createErr && createErr.message.includes("already registered")) {
+        // Якщо користувач вже існував, синхронізуємо пароль та метадані
+        const { data: userList } = await admin.auth.admin.listUsers();
+        const existingDemoUser = userList?.users?.find((u) => u.email === demoEmail);
+        if (existingDemoUser) {
+          await admin.auth.admin.updateUserById(existingDemoUser.id, {
+            password: demoPassword,
+            user_metadata: {
+              full_name: "Д-р Андрій Коваленко (Демо)",
+              club_id: DEMO_CLUB_ID,
+              role: "doctor",
+            },
+          });
+          await admin.from("club_members").upsert({
+            user_id: existingDemoUser.id,
+            club_id: DEMO_CLUB_ID,
+            role: "doctor",
+          });
+        }
+      } else if (userRes?.user?.id) {
         await admin.from("club_members").upsert({
-          user_id: userId,
+          user_id: userRes.user.id,
           club_id: DEMO_CLUB_ID,
           role: "doctor",
         });
       }
 
-      // Повторна спроба входу після створення
+      // Повторна спроба входу після створення/оновлення
       const retry = await supabase.auth.signInWithPassword({
         email: demoEmail,
         password: demoPassword,
@@ -77,6 +105,16 @@ export async function enterDemoClubAction(): Promise<{ success: boolean; error?:
       if (retry.error) {
         return { success: false, error: retry.error.message };
       }
+    }
+
+    // Гарантуємо запис у club_members для активного сесійного користувача
+    const { data: authData } = await supabase.auth.getUser();
+    if (authData?.user?.id) {
+      await admin.from("club_members").upsert({
+        user_id: authData.user.id,
+        club_id: DEMO_CLUB_ID,
+        role: "doctor",
+      });
     }
 
     revalidatePath("/", "layout");
@@ -173,8 +211,10 @@ export async function resetDemoClubAction(): Promise<{
       first_name: p.first_name,
       last_name: p.last_name,
       date_of_birth: p.date_of_birth,
-      position: p.position,
-      dominant_side: p.dominant_side,
+      position: normalizePosition(p.position),
+      dominant_leg: p.dominant_side === "left" ? "left" : "right",
+      dominant_arm: p.dominant_side === "left" ? "left" : "right",
+      portal_token: `demo-portal-${p.id.replace(/-/g, "").slice(0, 16)}`,
       archived_at: null,
     }));
 
@@ -273,6 +313,9 @@ export async function resetDemoClubAction(): Promise<{
         severity: inj.severity,
         mechanism: inj.mechanism,
         osiics_code: inj.osiics_code,
+        activity_type: "training",
+        onset: "acute",
+        occurrence: "new",
       }))
     );
 
