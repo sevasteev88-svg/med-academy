@@ -75,10 +75,29 @@ export async function getTeamTrainingDataAction(params?: {
 
   const allTeams = (rawTeams ?? []).map((t) => ({ id: t.id, name: t.name }));
 
-  // Якщо тренер — примусово закріплена його команда
+  const coachTeams = user.teamIds && user.teamIds.length > 0
+    ? user.teamIds
+    : (user.teamId ? [user.teamId] : []);
+
+  // Якщо тренер — примусово закріплені тільки його команди
   let selectedTeamId = params?.teamId || "";
   if (isCoachUser) {
-    selectedTeamId = user.teamId || allTeams[0]?.id || "";
+    if (coachTeams.length === 0) {
+      return {
+        success: false,
+        team: null,
+        teams: [],
+        date: targetDate,
+        isCoach: isCoachUser,
+        userRole: effectiveRole,
+        players: [],
+        existingSession: null,
+        error: "Ваш обліковий запис очікує призначення вікової групи (команди) адміністратором або лікарем клубу.",
+      };
+    }
+    if (!selectedTeamId || !coachTeams.includes(selectedTeamId)) {
+      selectedTeamId = coachTeams[0];
+    }
   } else if (!selectedTeamId && allTeams.length > 0) {
     selectedTeamId = allTeams[0].id;
   }
@@ -89,7 +108,7 @@ export async function getTeamTrainingDataAction(params?: {
     return {
       success: false,
       team: null,
-      teams: isCoachUser ? allTeams.filter((t) => t.id === user.teamId) : allTeams,
+      teams: isCoachUser ? allTeams.filter((t) => coachTeams.includes(t.id)) : allTeams,
       date: targetDate,
       isCoach: isCoachUser,
       userRole: effectiveRole,
@@ -101,7 +120,7 @@ export async function getTeamTrainingDataAction(params?: {
 
   const currentTeam = allTeams.find((t) => t.id === selectedTeamId) || null;
   const availableTeams = isCoachUser
-    ? allTeams.filter((t) => t.id === selectedTeamId)
+    ? allTeams.filter((t) => coachTeams.includes(t.id))
     : allTeams;
 
   // 2. Отримуємо активних гравців команди (1.6 виключаємо архівних)

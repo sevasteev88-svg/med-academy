@@ -13,6 +13,7 @@ export type AppUser = {
   clubId: string;
   role: UserRole;
   teamId?: string | null;
+  teamIds?: string[];
 };
 
 async function fetchCurrentUser(): Promise<AppUser | null> {
@@ -93,6 +94,26 @@ async function fetchCurrentUser(): Promise<AppUser | null> {
     fullName = user.user_metadata.full_name;
   }
 
+  // 4. Отримуємо всі закріплені команди тренера з coach_team_assignments
+  let teamIds: string[] = [];
+  try {
+    const { data: assignments } = await supabase
+      .from("coach_team_assignments")
+      .select("team_id")
+      .eq("coach_user_id", user.id);
+
+    if (assignments && assignments.length > 0) {
+      teamIds = assignments.map((a: any) => a.team_id).filter(Boolean);
+    }
+  } catch {}
+
+  if (teamId && !teamIds.includes(teamId)) {
+    teamIds.push(teamId);
+  }
+  if (!teamId && teamIds.length > 0) {
+    teamId = teamIds[0];
+  }
+
   return {
     id: user.id,
     email: user.email ?? "",
@@ -100,6 +121,7 @@ async function fetchCurrentUser(): Promise<AppUser | null> {
     clubId,
     role: role || "doctor",
     teamId,
+    teamIds,
   };
 }
 
@@ -158,8 +180,8 @@ export async function assertAuth(): Promise<{ user: AppUser } | { error: string 
 }
 
 /**
- * Перевіряє, чи користувач має право керувати командою (doctor, admin, або coach для своєї команди).
- * Тренер бачить тільки свою команду, doctor і admin весь клуб.
+ * Перевіряє, чи користувач має право керувати командою (doctor, admin, або coach для своїх команд).
+ * Тренер бачить тільки призначені йому команди, doctor і admin весь клуб.
  */
 export async function assertTeamStaff(teamId?: string): Promise<{ user: AppUser } | { error: string }> {
   const user = await getCurrentUser();
@@ -172,13 +194,28 @@ export async function assertTeamStaff(teamId?: string): Promise<{ user: AppUser 
     return { user };
   }
 
-  // Тренер має доступ тільки до своєї команди
+  // Тренер має доступ тільки до своїх призначених команд
   if (isCoach(user.role)) {
-    if (teamId && user.teamId && user.teamId !== teamId) {
-      return { error: "Недостатньо прав. Тренер має доступ лише до своєї команди." };
+    const coachTeams = user.teamIds && user.teamIds.length > 0
+      ? user.teamIds
+      : (user.teamId ? [user.teamId] : []);
+
+    if (coachTeams.length === 0) {
+      return { error: "Ваш обліковий запис очікує призначення вікової групи (команди) адміністратором або лікарем клубу." };
+    }
+
+    if (teamId && !coachTeams.includes(teamId)) {
+      return { error: "Недостатньо прав. Тренер має доступ лише до своїх призначених команд." };
     }
     return { user };
   }
 
   return { error: "Недостатньо прав. Доступ лише для лікаря, адміністратора або тренера команди." };
 }
+
+import { canUserAccessTeam } from "./team-access";
+
+/**
+ * Перевіряє, чи має користувач доступ до конкретної команди
+ */
+export const canAccessTeam = canUserAccessTeam;

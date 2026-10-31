@@ -305,6 +305,19 @@ export default async function Home() {
           </div>
         </div>
 
+        {/* Сповіщення для тренера без призначених команд */}
+        {isCoach && (!user?.teamIds || user.teamIds.length === 0) && (
+          <div className="p-4 rounded-2xl bg-amber-950/30 border border-amber-500/40 text-amber-200 flex items-start gap-3">
+            <span className="text-2xl flex-shrink-0">⚠️</span>
+            <div className="space-y-0.5">
+              <h3 className="text-sm font-bold text-white">Очікування призначення вікової групи</h3>
+              <p className="text-xs text-amber-300/90 leading-relaxed">
+                Ваш акаунт успішно створено з роллю «Тренер». Доступ до реєстру гравців, тренувань та світлофора готовності буде активовано після того, як адміністратор або головний лікар клубу закріпить за вами відповідну команду в системі.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* 4 Top KPI Cards */}
         <section>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">

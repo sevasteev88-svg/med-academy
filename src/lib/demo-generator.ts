@@ -12,6 +12,8 @@
  * - Експозиція (матчі та тренування)
  * - 100% консистентність цифр доступності:
  *   21 Готовий (Available) + 2 Обмежені (Restricted) + 3 Лазарет (Unavailable) = 26 гравців
+ * - B2B2C підписки батьків на цифровий медичний паспорт:
+ *   21 Оплачено батьками (Active) + 2 Клубні квоти (Comped) + 3 Очікують оплати (Unpaid / Soft-lock) = 26 гравців
  */
 
 export const DEMO_CLUB_ID = "00000000-0000-0000-0000-000000000002";
@@ -713,3 +715,536 @@ export const DEMO_PHARMACY_ITEMS = [
     storage_conditions: "Вогненебезпечно!",
   },
 ];
+
+// B2B2C Підписки на цифрові медичні паспорти (26 гравців)
+export interface DemoSubscription {
+  id: string;
+  club_id: string;
+  player_id: string;
+  status: "active" | "comped" | "unpaid" | "trialing" | "past_due" | "canceled";
+  plan_code: "monthly_150_uah" | "annual_1500_uah";
+  amount_uah: number;
+  currency: string;
+  billing_interval: "month" | "year";
+  current_period_start: string;
+  current_period_end: string;
+  trial_ends_at?: string | null;
+  canceled_at?: string | null;
+  grace_period_ends_at?: string | null;
+  payer_name?: string | null;
+  payer_phone?: string | null;
+  payer_email?: string | null;
+  provider: "wayforpay" | "monobank" | "manual";
+  provider_subscription_id?: string | null;
+  provider_customer_id?: string | null;
+  card_last4?: string | null;
+  card_type?: string | null;
+  comped_reason?: string | null;
+  comped_by?: string | null;
+  metadata?: Record<string, any>;
+}
+
+export const DEMO_SUBSCRIPTIONS: DemoSubscription[] = [
+  // --- U-19 (10 гравців: 8 активних, 1 квота, 1 очікує оплати) ---
+  {
+    id: "00000000-0000-0000-0004-000000000001",
+    club_id: DEMO_CLUB_ID,
+    player_id: DEMO_PLAYERS[0].id, // Мельник Олександр
+    status: "active",
+    plan_code: "annual_1500_uah",
+    amount_uah: 1500,
+    currency: "UAH",
+    billing_interval: "year",
+    current_period_start: "2026-08-01T00:00:00Z",
+    current_period_end: "2027-08-01T23:59:59Z",
+    payer_name: "Мельник Андрій Васильович",
+    payer_phone: "+380501234501",
+    payer_email: "melnyk.family@gmail.com",
+    provider: "monobank",
+    card_last4: "4412",
+    card_type: "Mastercard",
+  },
+  {
+    id: "00000000-0000-0000-0004-000000000002",
+    club_id: DEMO_CLUB_ID,
+    player_id: DEMO_PLAYERS[1].id, // Коваленко Максим
+    status: "active",
+    plan_code: "monthly_150_uah",
+    amount_uah: 150,
+    currency: "UAH",
+    billing_interval: "month",
+    current_period_start: "2026-10-15T00:00:00Z",
+    current_period_end: "2026-11-15T23:59:59Z",
+    payer_name: "Коваленко Сергій Володимирович",
+    payer_phone: "+380671234502",
+    payer_email: "kovalenko.serg@ukr.net",
+    provider: "wayforpay",
+    card_last4: "5123",
+    card_type: "Visa",
+  },
+  {
+    id: "00000000-0000-0000-0004-000000000003",
+    club_id: DEMO_CLUB_ID,
+    player_id: DEMO_PLAYERS[2].id, // Бондаренко Артем
+    status: "active",
+    plan_code: "monthly_150_uah",
+    amount_uah: 150,
+    currency: "UAH",
+    billing_interval: "month",
+    current_period_start: "2026-10-10T00:00:00Z",
+    current_period_end: "2026-11-10T23:59:59Z",
+    payer_name: "Бондаренко Юрій Михайлович",
+    payer_phone: "+380931234503",
+    payer_email: "bondarenko.artem.parent@gmail.com",
+    provider: "monobank",
+    card_last4: "9910",
+    card_type: "Mastercard",
+  },
+  {
+    id: "00000000-0000-0000-0004-000000000004",
+    club_id: DEMO_CLUB_ID,
+    player_id: DEMO_PLAYERS[3].id, // Ткаченко Дмитро
+    status: "active",
+    plan_code: "monthly_150_uah",
+    amount_uah: 150,
+    currency: "UAH",
+    billing_interval: "month",
+    current_period_start: "2026-10-12T00:00:00Z",
+    current_period_end: "2026-11-12T23:59:59Z",
+    payer_name: "Ткаченко Віктор Миколайович",
+    payer_phone: "+380501234504",
+    payer_email: "tkachenko.v@gmail.com",
+    provider: "wayforpay",
+    card_last4: "3311",
+    card_type: "Visa",
+  },
+  {
+    id: "00000000-0000-0000-0004-000000000005",
+    club_id: DEMO_CLUB_ID,
+    player_id: DEMO_PLAYERS[4].id, // Кравченко Владислав
+    status: "active",
+    plan_code: "monthly_150_uah",
+    amount_uah: 150,
+    currency: "UAH",
+    billing_interval: "month",
+    current_period_start: "2026-10-18T00:00:00Z",
+    current_period_end: "2026-11-18T23:59:59Z",
+    payer_name: "Кравченко Ігор Олександрович",
+    payer_phone: "+380671234505",
+    payer_email: "kravchenko.igor@ukr.net",
+    provider: "monobank",
+    card_last4: "1822",
+    card_type: "Mastercard",
+  },
+  {
+    id: "00000000-0000-0000-0004-000000000006",
+    club_id: DEMO_CLUB_ID,
+    player_id: DEMO_PLAYERS[5].id, // Олійник Богдан
+    status: "active",
+    plan_code: "monthly_150_uah",
+    amount_uah: 150,
+    currency: "UAH",
+    billing_interval: "month",
+    current_period_start: "2026-10-05T00:00:00Z",
+    current_period_end: "2026-11-05T23:59:59Z",
+    payer_name: "Олійник Тарас Петрович",
+    payer_phone: "+380931234506",
+    payer_email: "oliynyk.taras@gmail.com",
+    provider: "wayforpay",
+    card_last4: "7721",
+    card_type: "Visa",
+  },
+  {
+    id: "00000000-0000-0000-0004-000000000007",
+    club_id: DEMO_CLUB_ID,
+    player_id: DEMO_PLAYERS[6].id, // Шевчук Данило (КВОТА КЛУБУ)
+    status: "comped",
+    plan_code: "annual_1500_uah",
+    amount_uah: 1500,
+    currency: "UAH",
+    billing_interval: "year",
+    current_period_start: "2026-07-01T00:00:00Z",
+    current_period_end: "2027-06-30T23:59:59Z",
+    payer_name: "Шевчук Наталія Володимирівна",
+    payer_phone: "+380501234507",
+    payer_email: "shevchuk.natalia@gmail.com",
+    provider: "manual",
+    comped_reason: "Стипендіат клубу (капітан команди, талановита молодь)",
+    metadata: { approved_by: "Дирекція ФК «Демо Академія»" },
+  },
+  {
+    id: "00000000-0000-0000-0004-000000000008",
+    club_id: DEMO_CLUB_ID,
+    player_id: DEMO_PLAYERS[7].id, // Поліщук Ілля
+    status: "active",
+    plan_code: "monthly_150_uah",
+    amount_uah: 150,
+    currency: "UAH",
+    billing_interval: "month",
+    current_period_start: "2026-10-14T00:00:00Z",
+    current_period_end: "2026-11-14T23:59:59Z",
+    payer_name: "Поліщук Володимир Іванович",
+    payer_phone: "+380671234508",
+    payer_email: "polishchuk.v@gmail.com",
+    provider: "monobank",
+    card_last4: "6640",
+    card_type: "Mastercard",
+  },
+  {
+    id: "00000000-0000-0000-0004-000000000009",
+    club_id: DEMO_CLUB_ID,
+    player_id: DEMO_PLAYERS[8].id, // Лисенко Назар (ОЧІКУЄ ОПЛАТИ / SOFT-LOCK)
+    status: "unpaid",
+    plan_code: "monthly_150_uah",
+    amount_uah: 150,
+    currency: "UAH",
+    billing_interval: "month",
+    current_period_start: "2026-09-15T00:00:00Z",
+    current_period_end: "2026-10-15T23:59:59Z", // Термін сплив 16 днів тому
+    payer_name: "Лисенко Петро Миколайович",
+    payer_phone: "+380501112233",
+    payer_email: "lysenko.parent@gmail.com",
+    provider: "monobank",
+    card_last4: "4114",
+    card_type: "Mastercard",
+    metadata: { note: "Очікує оплати батьками за листопад 2026 (soft-lock)" },
+  },
+  {
+    id: "00000000-0000-0000-0004-000000000010",
+    club_id: DEMO_CLUB_ID,
+    player_id: DEMO_PLAYERS[9].id, // Руденко Ярослав
+    status: "active",
+    plan_code: "monthly_150_uah",
+    amount_uah: 150,
+    currency: "UAH",
+    billing_interval: "month",
+    current_period_start: "2026-10-20T00:00:00Z",
+    current_period_end: "2026-11-20T23:59:59Z",
+    payer_name: "Руденко Роман Анатолійович",
+    payer_phone: "+380931234510",
+    payer_email: "rudenko.roman@ukr.net",
+    provider: "wayforpay",
+    card_last4: "8833",
+    card_type: "Visa",
+  },
+
+  // --- U-17 (9 гравців: 8 активних, 1 очікує оплати) ---
+  {
+    id: "00000000-0000-0000-0004-000000000011",
+    club_id: DEMO_CLUB_ID,
+    player_id: DEMO_PLAYERS[10].id, // Мороз Матвій
+    status: "active",
+    plan_code: "annual_1500_uah",
+    amount_uah: 1500,
+    currency: "UAH",
+    billing_interval: "year",
+    current_period_start: "2026-08-15T00:00:00Z",
+    current_period_end: "2027-08-15T23:59:59Z",
+    payer_name: "Мороз Олег Вікторович",
+    payer_phone: "+380501234511",
+    payer_email: "moroz.oleg@gmail.com",
+    provider: "monobank",
+    card_last4: "3015",
+    card_type: "Mastercard",
+  },
+  {
+    id: "00000000-0000-0000-0004-000000000012",
+    club_id: DEMO_CLUB_ID,
+    player_id: DEMO_PLAYERS[11].id, // Петренко Тимофій
+    status: "active",
+    plan_code: "monthly_150_uah",
+    amount_uah: 150,
+    currency: "UAH",
+    billing_interval: "month",
+    current_period_start: "2026-10-08T00:00:00Z",
+    current_period_end: "2026-11-08T23:59:59Z",
+    payer_name: "Петренко Сергій Григорович",
+    payer_phone: "+380671234512",
+    payer_email: "petrenko.serg@ukr.net",
+    provider: "wayforpay",
+    card_last4: "9144",
+    card_type: "Visa",
+  },
+  {
+    id: "00000000-0000-0000-0004-000000000013",
+    club_id: DEMO_CLUB_ID,
+    player_id: DEMO_PLAYERS[12].id, // Марченко Денис
+    status: "active",
+    plan_code: "monthly_150_uah",
+    amount_uah: 150,
+    currency: "UAH",
+    billing_interval: "month",
+    current_period_start: "2026-10-16T00:00:00Z",
+    current_period_end: "2026-11-16T23:59:59Z",
+    payer_name: "Марченко Олена Олександрівна",
+    payer_phone: "+380931234513",
+    payer_email: "marchenko.elena@gmail.com",
+    provider: "monobank",
+    card_last4: "7211",
+    card_type: "Mastercard",
+  },
+  {
+    id: "00000000-0000-0000-0004-000000000014",
+    club_id: DEMO_CLUB_ID,
+    player_id: DEMO_PLAYERS[13].id, // Савченко Микита
+    status: "active",
+    plan_code: "monthly_150_uah",
+    amount_uah: 150,
+    currency: "UAH",
+    billing_interval: "month",
+    current_period_start: "2026-10-03T00:00:00Z",
+    current_period_end: "2026-11-03T23:59:59Z",
+    payer_name: "Савченко Богдан Юрійович",
+    payer_phone: "+380501234514",
+    payer_email: "savchenko.b@gmail.com",
+    provider: "wayforpay",
+    card_last4: "6620",
+    card_type: "Visa",
+  },
+  {
+    id: "00000000-0000-0000-0004-000000000015",
+    club_id: DEMO_CLUB_ID,
+    player_id: DEMO_PLAYERS[14].id, // Клименко Роман
+    status: "active",
+    plan_code: "monthly_150_uah",
+    amount_uah: 150,
+    currency: "UAH",
+    billing_interval: "month",
+    current_period_start: "2026-10-22T00:00:00Z",
+    current_period_end: "2026-11-22T23:59:59Z",
+    payer_name: "Клименко Віталій Степанович",
+    payer_phone: "+380671234515",
+    payer_email: "klymenko.vitaliy@ukr.net",
+    provider: "monobank",
+    card_last4: "4490",
+    card_type: "Mastercard",
+  },
+  {
+    id: "00000000-0000-0000-0004-000000000016",
+    club_id: DEMO_CLUB_ID,
+    player_id: DEMO_PLAYERS[15].id, // Павленко Кирило (ОЧІКУЄ ОПЛАТИ / SOFT-LOCK)
+    status: "unpaid",
+    plan_code: "monthly_150_uah",
+    amount_uah: 150,
+    currency: "UAH",
+    billing_interval: "month",
+    current_period_start: "2026-09-20T00:00:00Z",
+    current_period_end: "2026-10-20T23:59:59Z", // Термін сплив 11 днів тому
+    payer_name: "Павленко Світлана Василівна",
+    payer_phone: "+380672223344",
+    payer_email: "pavlenko.mom@ukr.net",
+    provider: "wayforpay",
+    card_last4: "5168",
+    card_type: "Visa",
+    metadata: { note: "Очікує оплати підписки, картка не пройшла регулярне списання" },
+  },
+  {
+    id: "00000000-0000-0000-0004-000000000017",
+    club_id: DEMO_CLUB_ID,
+    player_id: DEMO_PLAYERS[16].id, // Ковальчук Євген
+    status: "active",
+    plan_code: "monthly_150_uah",
+    amount_uah: 150,
+    currency: "UAH",
+    billing_interval: "month",
+    current_period_start: "2026-10-11T00:00:00Z",
+    current_period_end: "2026-11-11T23:59:59Z",
+    payer_name: "Ковальчук Дмитро Павлович",
+    payer_phone: "+380931234517",
+    payer_email: "kovalchuk.d@gmail.com",
+    provider: "monobank",
+    card_last4: "3189",
+    card_type: "Mastercard",
+  },
+  {
+    id: "00000000-0000-0000-0004-000000000018",
+    club_id: DEMO_CLUB_ID,
+    player_id: DEMO_PLAYERS[17].id, // Гриценко Остап
+    status: "active",
+    plan_code: "monthly_150_uah",
+    amount_uah: 150,
+    currency: "UAH",
+    billing_interval: "month",
+    current_period_start: "2026-10-17T00:00:00Z",
+    current_period_end: "2026-11-17T23:59:59Z",
+    payer_name: "Гриценко Андрій Миколайович",
+    payer_phone: "+380501234518",
+    payer_email: "grytsenko.a@gmail.com",
+    provider: "wayforpay",
+    card_last4: "2044",
+    card_type: "Visa",
+  },
+  {
+    id: "00000000-0000-0000-0004-000000000019",
+    club_id: DEMO_CLUB_ID,
+    player_id: DEMO_PLAYERS[18].id, // Сидоренко Захар
+    status: "active",
+    plan_code: "monthly_150_uah",
+    amount_uah: 150,
+    currency: "UAH",
+    billing_interval: "month",
+    current_period_start: "2026-10-25T00:00:00Z",
+    current_period_end: "2026-11-25T23:59:59Z",
+    payer_name: "Сидоренко Михайло Васильович",
+    payer_phone: "+380671234519",
+    payer_email: "sydorenko.m@ukr.net",
+    provider: "monobank",
+    card_last4: "9832",
+    card_type: "Mastercard",
+  },
+
+  // --- U-15 (7 гравців: 5 активних, 1 квота, 1 очікує оплати) ---
+  {
+    id: "00000000-0000-0000-0004-000000000020",
+    club_id: DEMO_CLUB_ID,
+    player_id: DEMO_PLAYERS[19].id, // Василенко Марко
+    status: "active",
+    plan_code: "annual_1500_uah",
+    amount_uah: 1500,
+    currency: "UAH",
+    billing_interval: "year",
+    current_period_start: "2026-09-01T00:00:00Z",
+    current_period_end: "2027-09-01T23:59:59Z",
+    payer_name: "Василенко Олександр Вікторович",
+    payer_phone: "+380931234520",
+    payer_email: "vasylenko.family@gmail.com",
+    provider: "monobank",
+    card_last4: "1190",
+    card_type: "Mastercard",
+  },
+  {
+    id: "00000000-0000-0000-0004-000000000021",
+    club_id: DEMO_CLUB_ID,
+    player_id: DEMO_PLAYERS[20].id, // Пономаренко Святослав
+    status: "active",
+    plan_code: "monthly_150_uah",
+    amount_uah: 150,
+    currency: "UAH",
+    billing_interval: "month",
+    current_period_start: "2026-10-09T00:00:00Z",
+    current_period_end: "2026-11-09T23:59:59Z",
+    payer_name: "Пономаренко Тарас Ігорович",
+    payer_phone: "+380501234521",
+    payer_email: "ponomarenko.t@gmail.com",
+    provider: "wayforpay",
+    card_last4: "7631",
+    card_type: "Visa",
+  },
+  {
+    id: "00000000-0000-0000-0004-000000000022",
+    club_id: DEMO_CLUB_ID,
+    player_id: DEMO_PLAYERS[21].id, // Ткачук Юрій (КВОТА КЛУБУ)
+    status: "comped",
+    plan_code: "annual_1500_uah",
+    amount_uah: 1500,
+    currency: "UAH",
+    billing_interval: "year",
+    current_period_start: "2026-07-01T00:00:00Z",
+    current_period_end: "2027-06-30T23:59:59Z",
+    payer_name: "Ткачук Олексій Романович",
+    payer_phone: "+380671234522",
+    payer_email: "tkachuk.alex@ukr.net",
+    provider: "manual",
+    comped_reason: "Соціальна клубна квота (багатодітна родина військовослужбовця)",
+    metadata: { approved_by: "Дирекція ФК «Демо Академія»" },
+  },
+  {
+    id: "00000000-0000-0000-0004-000000000023",
+    club_id: DEMO_CLUB_ID,
+    player_id: DEMO_PLAYERS[22].id, // Романенко Тарас
+    status: "active",
+    plan_code: "monthly_150_uah",
+    amount_uah: 150,
+    currency: "UAH",
+    billing_interval: "month",
+    current_period_start: "2026-10-19T00:00:00Z",
+    current_period_end: "2026-11-19T23:59:59Z",
+    payer_name: "Романенко Вадим Сергійович",
+    payer_phone: "+380931234523",
+    payer_email: "romanenko.v@gmail.com",
+    provider: "monobank",
+    card_last4: "4820",
+    card_type: "Mastercard",
+  },
+  {
+    id: "00000000-0000-0000-0004-000000000024",
+    club_id: DEMO_CLUB_ID,
+    player_id: DEMO_PLAYERS[23].id, // Дяченко Павло (ОЧІКУЄ ОПЛАТИ / SOFT-LOCK)
+    status: "unpaid",
+    plan_code: "monthly_150_uah",
+    amount_uah: 150,
+    currency: "UAH",
+    billing_interval: "month",
+    current_period_start: "2026-09-25T00:00:00Z",
+    current_period_end: "2026-10-25T23:59:59Z", // Термін сплив 6 днів тому
+    payer_name: "Дяченко Олександр Ігорович",
+    payer_phone: "+380933334455",
+    payer_email: "dyachenko.family@gmail.com",
+    provider: "monobank",
+    card_last4: "9012",
+    card_type: "Mastercard",
+    metadata: { note: "Новий гравець, тестовий період завершився, очікується перша оплата" },
+  },
+  {
+    id: "00000000-0000-0000-0004-000000000025",
+    club_id: DEMO_CLUB_ID,
+    player_id: DEMO_PLAYERS[24].id, // Литвиненко Андрій
+    status: "active",
+    plan_code: "monthly_150_uah",
+    amount_uah: 150,
+    currency: "UAH",
+    billing_interval: "month",
+    current_period_start: "2026-10-24T00:00:00Z",
+    current_period_end: "2026-11-24T23:59:59Z",
+    payer_name: "Литвиненко Сергій Володимирович",
+    payer_phone: "+380501234525",
+    payer_email: "lytvynenko.s@gmail.com",
+    provider: "wayforpay",
+    card_last4: "5519",
+    card_type: "Visa",
+  },
+  {
+    id: "00000000-0000-0000-0004-000000000026",
+    club_id: DEMO_CLUB_ID,
+    player_id: DEMO_PLAYERS[25].id, // Захарченко Вадим
+    status: "active",
+    plan_code: "monthly_150_uah",
+    amount_uah: 150,
+    currency: "UAH",
+    billing_interval: "month",
+    current_period_start: "2026-10-27T00:00:00Z",
+    current_period_end: "2026-11-27T23:59:59Z",
+    payer_name: "Захарченко Іван Петрович",
+    payer_phone: "+380671234526",
+    payer_email: "zakharchenko.ivan@ukr.net",
+    provider: "monobank",
+    card_last4: "8824",
+    card_type: "Mastercard",
+  },
+];
+
+// Законні представники (батьки) для 26 гравців Демо-Клубу
+export interface DemoGuardian {
+  id: string;
+  club_id: string;
+  player_id: string;
+  full_name: string;
+  relation: "father" | "mother" | "guardian";
+  phone: string;
+  email: string | null;
+  telegram_chat_id: string | null;
+  is_primary: boolean;
+}
+
+export const DEMO_GUARDIANS: DemoGuardian[] = DEMO_SUBSCRIPTIONS.map((s, idx) => ({
+  id: `00000000-0000-0000-0005-${String(idx + 1).padStart(12, "0")}`,
+  club_id: DEMO_CLUB_ID,
+  player_id: s.player_id,
+  full_name: s.payer_name || `Батьки гравця #${idx + 1}`,
+  relation: (idx === 6 || idx === 12 || idx === 15 ? "mother" : "father") as "father" | "mother",
+  phone: s.payer_phone || "+380500000000",
+  email: s.payer_email || null,
+  telegram_chat_id: `504123${String(idx + 1).padStart(3, "0")}`,
+  is_primary: true,
+}));
+

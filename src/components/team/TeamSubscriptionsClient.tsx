@@ -7,6 +7,15 @@ import {
   grantCompedSubscriptionAction,
   revokeCompedSubscriptionAction,
 } from "@/actions/billing-actions";
+import {
+  sendParentPassportReminderAction,
+  sendBulkParentPassportRemindersAction,
+} from "@/actions/passport-reminder-actions";
+import {
+  calculateDaysLeft,
+  classifyPassportExpirationStatus,
+  buildPassportReminderTelegramMessage,
+} from "@/lib/passport-reminder";
 import type { SubscriptionStatus, BillingPlanCode } from "@/types/billing";
 import { POSITION_LABELS } from "@/lib/constants";
 
@@ -80,6 +89,13 @@ export default function TeamSubscriptionsClient({
   const [quotaDays, setQuotaDays] = useState(90);
   const [quotaReason, setQuotaReason] = useState(PRESET_QUOTA_REASONS[0]);
   const [customQuotaReason, setCustomQuotaReason] = useState("");
+
+  // Стан для Telegram-нагадувань батькам
+  const [reminderTargetPlayer, setReminderTargetPlayer] = useState<PlayerSubItem | null>(null);
+  const [isBulkReminderOpen, setIsBulkReminderOpen] = useState(false);
+  const [simulateReminder, setSimulateReminder] = useState(true);
+  const [reminderResult, setReminderResult] = useState<any | null>(null);
+  const [copiedText, setCopiedText] = useState(false);
 
   const [notification, setNotification] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
@@ -267,6 +283,61 @@ export default function TeamSubscriptionsClient({
     });
   };
 
+  // Відправка / симуляція одиночного нагадування
+  const handleSendSingleReminder = () => {
+    if (!reminderTargetPlayer) return;
+    startTransition(async () => {
+      const res = await sendParentPassportReminderAction({
+        playerId: reminderTargetPlayer.id,
+        simulate: simulateReminder,
+      });
+
+      if (res.success && res.record) {
+        setReminderResult(res.record);
+        setNotification({
+          type: "success",
+          text: res.isSimulated
+            ? `Тестове нагадування для батьків ${reminderTargetPlayer.lastName} ${reminderTargetPlayer.firstName} успішно симульовано!`
+            : `Telegram-нагадування успішно надіслано батькам ${reminderTargetPlayer.lastName} ${reminderTargetPlayer.firstName}!`,
+        });
+      } else {
+        setNotification({
+          type: "error",
+          text: res.error || "Не вдалося надіслати нагадування",
+        });
+      }
+    });
+  };
+
+  // Масова відправка / симуляція нагадувань
+  const handleSendBulkReminder = () => {
+    startTransition(async () => {
+      const res = await sendBulkParentPassportRemindersAction({
+        teamId: selectedTeam,
+        simulate: simulateReminder,
+      });
+
+      if (res.success) {
+        setReminderResult({
+          isBulk: true,
+          totalTargeted: res.totalTargeted,
+          sentCount: res.sentCount,
+          simulatedCount: res.simulatedCount,
+          results: res.results,
+        });
+        setNotification({
+          type: "success",
+          text: `Опрацьовано ${res.totalTargeted} нагадувань батькам (${res.simulatedCount} симульовано, ${res.sentCount} надіслано).`,
+        });
+      } else {
+        setNotification({
+          type: "error",
+          text: res.error || "Помилка масової відправки нагадувань",
+        });
+      }
+    });
+  };
+
   return (
     <div className="space-y-6">
       {/* Верхня панель заголовка */}
@@ -294,7 +365,23 @@ export default function TeamSubscriptionsClient({
         </div>
 
         {/* Швидкі дії */}
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
+          {stats.unpaidCount > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                setIsBulkReminderOpen(true);
+                setReminderResult(null);
+                setCopiedText(false);
+              }}
+              className="px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-bold text-xs tracking-wide shadow-md shadow-sky-950/40 flex items-center gap-1.5 transition-all"
+              title="Надіслати Telegram-нагадування всім батькам, чиї підписки очікують оплати"
+            >
+              <span>🔔</span>
+              <span>Нагадати боржникам ({stats.unpaidCount})</span>
+            </button>
+          )}
+
           {!isCoach && monobankJarUrl && (
             <a
               href={monobankJarUrl}
@@ -615,49 +702,68 @@ export default function TeamSubscriptionsClient({
                       </td>
 
                       {/* Швидкі дії */}
-                      {!isCoach && (
-                        <td className="py-3 px-4 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            {/* Підтвердити оплату */}
+                      <td className="py-3 px-4 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {/* Telegram-нагадування батькам (якщо очікує або спливає) */}
+                          {(!isAct || !isCmp) && (
                             <button
                               type="button"
                               onClick={() => {
-                                setPayTargetPlayer(p);
-                                setPayPlan("monthly_150_uah");
+                                setReminderTargetPlayer(p);
+                                setReminderResult(null);
+                                setCopiedText(false);
                               }}
-                              className="px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 font-bold text-[11px] transition-colors"
-                              title="Зарахувати оплату батьків"
+                              className="px-2.5 py-1 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-300 font-bold text-[11px] transition-colors inline-flex items-center gap-1"
+                              title="Надіслати Telegram-нагадування батькам"
                             >
-                              💳 Оплата
+                              <span>🔔</span>
+                              <span className="hidden sm:inline">Нагадати</span>
                             </button>
+                          )}
 
-                            {/* Квота */}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setQuotaTargetPlayer(p);
-                                setQuotaDays(90);
-                              }}
-                              className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-semibold text-[11px] transition-colors"
-                              title="Надати або продовжити квоту"
-                            >
-                              🎁 Квота
-                            </button>
-
-                            {/* Скасувати (якщо активний) */}
-                            {(isAct || isCmp) && (
+                          {!isCoach && (
+                            <>
+                              {/* Підтвердити оплату */}
                               <button
                                 type="button"
-                                onClick={() => handleRevoke(p)}
-                                className="px-2 py-1 rounded-lg bg-slate-900 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 border border-slate-800 hover:border-rose-500/30 text-[11px] transition-colors"
-                                title="Перевести в очікування оплати"
+                                onClick={() => {
+                                  setPayTargetPlayer(p);
+                                  setPayPlan("monthly_150_uah");
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 font-bold text-[11px] transition-colors"
+                                title="Зарахувати оплату батьків"
                               >
-                                🔒
+                                💳 Оплата
                               </button>
-                            )}
-                          </div>
-                        </td>
-                      )}
+
+                              {/* Квота */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setQuotaTargetPlayer(p);
+                                  setQuotaDays(90);
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-semibold text-[11px] transition-colors"
+                                title="Надати або продовжити квоту"
+                              >
+                                🎁 Квота
+                              </button>
+
+                              {/* Скасувати (якщо активний) */}
+                              {(isAct || isCmp) && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRevoke(p)}
+                                  className="px-2 py-1 rounded-lg bg-slate-900 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 border border-slate-800 hover:border-rose-500/30 text-[11px] transition-colors"
+                                  title="Перевести в очікування оплати"
+                                >
+                                  🔒
+                                </button>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </td>
                     </tr>
                   );
                 })
@@ -857,6 +963,261 @@ export default function TeamSubscriptionsClient({
                 className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-emerald-500 hover:from-sky-400 hover:to-emerald-400 text-slate-950 font-bold text-xs tracking-wide shadow-lg disabled:opacity-50"
               >
                 {isPending ? "Збереження..." : "Підтвердити надання"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Модалка 3: Індивідуальне Telegram-нагадування батькам */}
+      {reminderTargetPlayer && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-2xl space-y-5 text-slate-100 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="w-8 h-8 rounded-xl bg-sky-500/20 text-sky-300 flex items-center justify-center text-base">
+                  ✈️
+                </span>
+                <div>
+                  <h4 className="font-bold text-sm text-white">
+                    Telegram-нагадування батькам
+                  </h4>
+                  <div className="text-[11px] text-slate-400">
+                    Гравець: {reminderTargetPlayer.lastName} {reminderTargetPlayer.firstName} ({reminderTargetPlayer.teamName})
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setReminderTargetPlayer(null);
+                  setReminderResult(null);
+                }}
+                className="text-slate-400 hover:text-white p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Статус підписки */}
+            <div className="bg-amber-500/10 border border-amber-500/25 rounded-2xl p-3 flex items-start gap-3">
+              <span className="text-lg">⚠️</span>
+              <div className="text-xs">
+                <div className="font-bold text-amber-300">
+                  {reminderTargetPlayer.subscription?.status === "unpaid" || !reminderTargetPlayer.subscription?.isActive
+                    ? "Підписка очікує оплати (Soft-lock)"
+                    : `Діє до ${new Date(reminderTargetPlayer.subscription.currentPeriodEnd).toLocaleDateString("uk-UA")}`}
+                </div>
+                <div className="text-amber-200/80 text-[11px] mt-0.5">
+                  Батьки отримають ввічливе нагадування про важливість цифрового медичного паспорта та пряме посилання на оплату.
+                </div>
+              </div>
+            </div>
+
+            {/* Перемикач режиму симуляції */}
+            <div className="bg-slate-950/70 border border-slate-800/80 rounded-2xl p-3 flex items-center justify-between gap-3">
+              <div className="space-y-0.5">
+                <div className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                  <span>🧪</span>
+                  <span>Режим симуляції (тестування без реального бота)</span>
+                </div>
+                <div className="text-[10px] text-slate-400">
+                  Повідомлення буде сформовано та записано в аудит-журнал клубу без потреби реального телефону батьків.
+                </div>
+              </div>
+              <input
+                type="checkbox"
+                checked={simulateReminder}
+                onChange={(e) => setSimulateReminder(e.target.checked)}
+                className="w-4 h-4 rounded text-sky-500 bg-slate-900 border-slate-700 focus:ring-0 cursor-pointer"
+              />
+            </div>
+
+            {/* Прев'ю повідомлення */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-xs text-slate-400 font-semibold">
+                <span>Прев'ю повідомлення в Telegram:</span>
+                <span className="text-[10px] font-mono text-sky-400">MedAcademy Bot</span>
+              </div>
+              <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800/90 text-[11px] text-slate-200 font-sans leading-relaxed whitespace-pre-wrap select-text max-h-56 overflow-y-auto">
+                {buildPassportReminderTelegramMessage({
+                  parentName: `Шановні батьки ${reminderTargetPlayer.lastName} ${reminderTargetPlayer.firstName}`,
+                  playerName: `${reminderTargetPlayer.lastName} ${reminderTargetPlayer.firstName}`,
+                  clubName: "ФК «Демо Академія»",
+                  daysLeft: reminderTargetPlayer.subscription?.currentPeriodEnd
+                    ? calculateDaysLeft(reminderTargetPlayer.subscription.currentPeriodEnd)
+                    : -1,
+                  expiryDateStr: reminderTargetPlayer.subscription?.currentPeriodEnd?.split("T")[0],
+                  paymentUrl: monobankJarUrl || "https://send.monobank.ua/jar/jzGthBnmx",
+                  planAmountUah: reminderTargetPlayer.subscription?.amountUah || 150,
+                }).replace(/<[^>]+>/g, "")}
+              </div>
+            </div>
+
+            {/* Результат відправки */}
+            {reminderResult && !reminderResult.isBulk && (
+              <div className="p-3 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-xs text-emerald-200 space-y-1 animate-in fade-in">
+                <div className="font-bold flex items-center gap-1.5 text-emerald-300">
+                  <span>✅</span>
+                  <span>
+                    {reminderResult.status === "simulated"
+                      ? "Успішно симульовано для тестування!"
+                      : "Успішно надіслано в Telegram!"}
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-300 font-mono">
+                  Одержувач: {reminderResult.parentName} ({reminderResult.telegramChatId})
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between gap-3 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => {
+                  const txt = buildPassportReminderTelegramMessage({
+                    parentName: `Шановні батьки ${reminderTargetPlayer.lastName} ${reminderTargetPlayer.firstName}`,
+                    playerName: `${reminderTargetPlayer.lastName} ${reminderTargetPlayer.firstName}`,
+                    clubName: "ФК «Демо Академія»",
+                    daysLeft: reminderTargetPlayer.subscription?.currentPeriodEnd
+                      ? calculateDaysLeft(reminderTargetPlayer.subscription.currentPeriodEnd)
+                      : -1,
+                    expiryDateStr: reminderTargetPlayer.subscription?.currentPeriodEnd?.split("T")[0],
+                    paymentUrl: monobankJarUrl || "https://send.monobank.ua/jar/jzGthBnmx",
+                    planAmountUah: reminderTargetPlayer.subscription?.amountUah || 150,
+                  }).replace(/<[^>]+>/g, "");
+                  navigator.clipboard.writeText(txt);
+                  setCopiedText(true);
+                  setTimeout(() => setCopiedText(false), 2000);
+                }}
+                className="px-3 py-2 rounded-xl text-xs font-semibold text-slate-300 bg-slate-800 hover:bg-slate-700 transition-colors flex items-center gap-1.5"
+              >
+                <span>{copiedText ? "✓" : "📋"}</span>
+                <span>{copiedText ? "Скопійовано!" : "Скопіювати"}</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReminderTargetPlayer(null);
+                    setReminderResult(null);
+                  }}
+                  className="px-3.5 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-white"
+                >
+                  Закрити
+                </button>
+                <button
+                  type="button"
+                  disabled={isPending}
+                  onClick={handleSendSingleReminder}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-bold text-xs tracking-wide shadow-lg disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  <span>{isPending ? "⏳" : simulateReminder ? "🧪" : "🚀"}</span>
+                  <span>{isPending ? "Відправка..." : simulateReminder ? "Симулювати нагадування" : "Надіслати в Telegram"}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Модалка 4: Масова розсилка нагадувань боржникам */}
+      {isBulkReminderOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-2xl space-y-5 text-slate-100 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="w-8 h-8 rounded-xl bg-indigo-500/20 text-indigo-300 flex items-center justify-center text-base">
+                  📢
+                </span>
+                <div>
+                  <h4 className="font-bold text-sm text-white">
+                    Масове нагадування батькам боржників
+                  </h4>
+                  <div className="text-[11px] text-slate-400">
+                    Очікують оплати: {stats.unpaidCount} гравців
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsBulkReminderOpen(false);
+                  setReminderResult(null);
+                }}
+                className="text-slate-400 hover:text-white p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Система автоматично сформує персональні повідомлення батькам усіх гравців, чиї підписки мають статус «Очікує оплати» або термін дії спливає протягом найближчих 7 днів.
+            </p>
+
+            {/* Перемикач симуляції */}
+            <div className="bg-slate-950/70 border border-slate-800/80 rounded-2xl p-3 flex items-center justify-between gap-3">
+              <div className="space-y-0.5">
+                <div className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                  <span>🧪</span>
+                  <span>Режим симуляції (тестування без реального бота)</span>
+                </div>
+                <div className="text-[10px] text-slate-400">
+                  Дозволяє миттєво перевірити обробку без витрат та без підключення реальних номерів батьків.
+                </div>
+              </div>
+              <input
+                type="checkbox"
+                checked={simulateReminder}
+                onChange={(e) => setSimulateReminder(e.target.checked)}
+                className="w-4 h-4 rounded text-sky-500 bg-slate-900 border-slate-700 focus:ring-0 cursor-pointer"
+              />
+            </div>
+
+            {/* Результат масової розсилки */}
+            {reminderResult?.isBulk && (
+              <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 space-y-2 text-xs">
+                <div className="font-bold text-emerald-400 flex items-center gap-1.5">
+                  <span>✅</span>
+                  <span>Успішно опрацьовано {reminderResult.totalTargeted} адресатів!</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2 pt-1 text-center font-mono">
+                  <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-2">
+                    <div className="text-[10px] text-slate-400">Всього</div>
+                    <div className="text-sm font-bold text-white">{reminderResult.totalTargeted}</div>
+                  </div>
+                  <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-2">
+                    <div className="text-[10px] text-slate-400">Симульовано</div>
+                    <div className="text-sm font-bold text-sky-400">{reminderResult.simulatedCount}</div>
+                  </div>
+                  <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-2">
+                    <div className="text-[10px] text-slate-400">Помилок</div>
+                    <div className="text-sm font-bold text-slate-400">{reminderResult.failedCount}</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsBulkReminderOpen(false);
+                  setReminderResult(null);
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-white"
+              >
+                Закрити
+              </button>
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={handleSendBulkReminder}
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-bold text-xs tracking-wide shadow-lg disabled:opacity-50 flex items-center gap-1.5"
+              >
+                <span>{isPending ? "⏳" : simulateReminder ? "🧪" : "🚀"}</span>
+                <span>{isPending ? "Обробка..." : simulateReminder ? "Запустити тестову симуляцію" : "Запустити Telegram-розсилку"}</span>
               </button>
             </div>
           </div>

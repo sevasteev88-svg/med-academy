@@ -1,4 +1,5 @@
 import { createClient } from "@/utils/supabase/server";
+import { getCurrentUser } from "@/lib/auth";
 import Link from "next/link";
 import Image from "next/image";
 import Card from "@/components/ui/Card";
@@ -32,7 +33,28 @@ export default async function PlayersPage({
 }) {
   const { q, team: selectedTeam, status: selectedStatus, view } = await searchParams;
   const isArchiveView = view === "archived";
+  const user = await getCurrentUser();
   const supabase = await createClient();
+
+  // Якщо це тренер, перевіряємо закріплені за ним команди
+  const isCoach = user?.role === "coach";
+  const coachTeams = isCoach
+    ? (user.teamIds && user.teamIds.length > 0 ? user.teamIds : (user.teamId ? [user.teamId] : []))
+    : [];
+
+  if (isCoach && coachTeams.length === 0) {
+    return (
+      <div className="min-h-[80vh] flex items-center justify-center p-4">
+        <div className="p-8 rounded-2xl bg-amber-950/30 border border-amber-500/30 text-center space-y-3 max-w-md">
+          <div className="text-4xl mb-2">⏳</div>
+          <h2 className="text-lg font-bold text-white">Очікування призначення команди</h2>
+          <p className="text-xs text-slate-300 leading-relaxed">
+            Ваш профіль зареєстровано як тренер клубу. Для доступу до реєстру гравців адміністратор або головний лікар клубу має закріпити за вами вікову групу (команду).
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   const [teamsRes, photosRes] = await Promise.all([
     supabase
@@ -53,7 +75,10 @@ export default async function PlayersPage({
       .order("date", { ascending: false }),
   ]);
 
-  const rawTeams = teamsRes.data || [];
+  let rawTeams = teamsRes.data || [];
+  if (isCoach) {
+    rawTeams = rawTeams.filter((t) => coachTeams.includes(t.id));
+  }
 
   // Карта фото гравців
   const photoMap: Record<string, string> = {};

@@ -171,7 +171,18 @@ export type ClubMember = {
   user_id: string;
   club_id: string;
   role: UserRole;
+  team_id?: string | null;
   created_at: string;
+};
+
+// ─── coach_team_assignments ───────────────────────────────────────────
+export type CoachTeamAssignment = {
+  id: string;
+  club_id: string;
+  coach_user_id: string;
+  team_id: string;
+  assigned_at: string;
+  assigned_by?: string | null;
 };
 
 // ─── teams ────────────────────────────────────────────────────────────

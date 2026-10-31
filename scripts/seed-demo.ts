@@ -23,6 +23,8 @@ import {
   DEMO_DOCTOR_EMAIL,
   DEMO_TEAMS,
   DEMO_PLAYERS,
+  DEMO_SUBSCRIPTIONS,
+  DEMO_GUARDIANS,
   DEMO_INJURIES,
   DEMO_PHARMACY_ITEMS,
 } from "../src/lib/demo-generator";
@@ -129,6 +131,8 @@ async function runSeed() {
     await admin.from("wellness_entries").delete().in("player_id", existingPlayerIds);
     await admin.from("anthropometry_logs").delete().in("player_id", existingPlayerIds);
     await admin.from("workload_sessions").delete().in("player_id", existingPlayerIds);
+    await admin.from("player_subscriptions").delete().eq("club_id", DEMO_CLUB_ID);
+    await admin.from("guardians").delete().eq("club_id", DEMO_CLUB_ID);
     await admin.from("injuries").delete().eq("club_id", DEMO_CLUB_ID);
     await admin.from("players").delete().eq("club_id", DEMO_CLUB_ID);
   }
@@ -156,6 +160,41 @@ async function runSeed() {
     }))
   );
   console.log("✅ Створено 26 вигаданих гравців");
+
+  // 5b. B2B2C Підписки батьків (21 активна, 2 квоти, 3 очікують оплати)
+  await admin.from("player_subscriptions").insert(
+    DEMO_SUBSCRIPTIONS.map((s) => ({
+      id: s.id,
+      club_id: DEMO_CLUB_ID,
+      player_id: s.player_id,
+      status: s.status,
+      plan_code: s.plan_code,
+      amount_uah: s.amount_uah,
+      currency: s.currency,
+      billing_interval: s.billing_interval,
+      current_period_start: s.current_period_start,
+      current_period_end: s.current_period_end,
+      trial_ends_at: s.trial_ends_at || null,
+      canceled_at: s.canceled_at || null,
+      grace_period_ends_at: s.grace_period_ends_at || null,
+      payer_name: s.payer_name || null,
+      payer_phone: s.payer_phone || null,
+      payer_email: s.payer_email || null,
+      provider: s.provider,
+      provider_subscription_id: s.provider_subscription_id || null,
+      provider_customer_id: s.provider_customer_id || null,
+      card_last4: s.card_last4 || null,
+      card_type: s.card_type || null,
+      comped_reason: s.comped_reason || null,
+      comped_by: s.comped_by || null,
+      metadata: s.metadata || {},
+    }))
+  );
+  console.log("✅ Створено 26 B2B2C підписок (21 активна, 2 квоти, 3 очікують оплати)");
+
+  // 5c. Законні представники (батьки)
+  await admin.from("guardians").insert(DEMO_GUARDIANS);
+  console.log("✅ Створено 26 законних представників гравців (guardians)");
 
   // 6. Антропометрія (5 замірів на гравця за 12 міс)
   const now = new Date();
@@ -330,6 +369,10 @@ async function runSeed() {
   console.log("   🟡 Обмежені (Restricted): 2");
   console.log("   🔴 Лазарет (Unavailable): 3");
   console.log("   👥 Всього в обоймі: 26");
+  console.log("💳 B2B2C Підписки на цифрові медичні паспорти:");
+  console.log("   💳 Оплачено батьками: 21");
+  console.log("   🎁 Клубна квота (стипендіати): 2");
+  console.log("   ⏳ Очікують оплати (soft-lock): 3");
 }
 
 runSeed().catch((err) => {

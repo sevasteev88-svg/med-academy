@@ -6,10 +6,12 @@ import {
   DEMO_DOCTOR_EMAIL,
   DEMO_TEAMS,
   DEMO_PLAYERS,
+  DEMO_SUBSCRIPTIONS,
   DEMO_INJURIES,
   DEMO_PHARMACY_ITEMS,
 } from "../src/lib/demo-generator.ts";
 import { calculatePlayerAvailability } from "../src/lib/availability-rules.ts";
+import { isSubscriptionAccessGranted } from "../src/lib/billing.ts";
 
 test("Етап 6.2 — Демо-режим та посів клубу «Демо Академія»", async (t) => {
   await t.test("1. Конфігурація клубу та відсутність реальних прізвищ футболістів", () => {
@@ -142,5 +144,67 @@ test("Етап 6.2 — Демо-режим та посів клубу «Демо
       (i) => i.expiry_date && i.expiry_date > "2026-10-01" && i.expiry_date < "2026-12-01"
     );
     assert.ok(expiringSoon, "Має бути позиція з терміном придатності < 30-60 діб");
+  });
+
+  await t.test("6. B2B2C підписки на цифрові паспорти: 21 активна, 2 квоти, 3 очікують оплати (soft-lock)", () => {
+    assert.equal(DEMO_SUBSCRIPTIONS.length, 26, "Повинно бути рівно 26 підписок для всіх гравців клубу");
+
+    // Перевірка унікальності та прив'язки до всіх 26 гравців
+    const playerIds = new Set(DEMO_PLAYERS.map((p) => p.id));
+    const subIds = new Set(DEMO_SUBSCRIPTIONS.map((s) => s.id));
+    assert.equal(subIds.size, 26, "Усі ID підписок мають бути унікальними");
+
+    for (const sub of DEMO_SUBSCRIPTIONS) {
+      assert.ok(playerIds.has(sub.player_id), `Підписка повинна належати дійсному гравцю ${sub.player_id}`);
+      assert.equal(sub.club_id, DEMO_CLUB_ID, "Підписка повинна належати Демо-Клубу");
+      assert.equal(sub.currency, "UAH");
+    }
+
+    const unpaidSubs = DEMO_SUBSCRIPTIONS.filter((s) => s.status === "unpaid");
+    const compedSubs = DEMO_SUBSCRIPTIONS.filter((s) => s.status === "comped");
+    const activeSubs = DEMO_SUBSCRIPTIONS.filter((s) => s.status === "active");
+
+    // 2-3 гравці мають статус «Очікує оплати»
+    assert.ok(
+      unpaidSubs.length >= 2 && unpaidSubs.length <= 3,
+      "2–3 гравці повинні мати статус «Очікує оплати» для наочної презентації директорам"
+    );
+    assert.equal(unpaidSubs.length, 3, "Рівно 3 гравці мають статус 'unpaid' (по одному в U-19, U-17, U-15)");
+
+    // Перевірка блокування доступу для неоплачених
+    for (const sub of unpaidSubs) {
+      const isGranted = isSubscriptionAccessGranted({
+        status: sub.status,
+        currentPeriodEnd: sub.current_period_end,
+      });
+      assert.equal(isGranted, false, `Гравець ${sub.player_id} повинен мати заблокований доступ (soft-lock)`);
+      assert.ok(sub.current_period_end < "2026-10-31", "Термін дії підписки повинен бути у минулому");
+      assert.ok(sub.payer_name, "Має бути вказано платника");
+    }
+
+    // Перевірка квот клубу
+    assert.equal(compedSubs.length, 2, "Рівно 2 гравці мають клубну квоту (comped)");
+    for (const sub of compedSubs) {
+      assert.ok(sub.comped_reason && sub.comped_reason.length > 5, "Вказано причину квоти клубу");
+      const isGranted = isSubscriptionAccessGranted({
+        status: sub.status,
+        currentPeriodEnd: sub.current_period_end,
+      });
+      assert.equal(isGranted, true, "Стипендіат повинен мати активний доступ");
+    }
+
+    // Перевірка активних підписок
+    assert.equal(activeSubs.length, 21, "21 гравець має активну сплачену підписку");
+    for (const sub of activeSubs) {
+      const isGranted = isSubscriptionAccessGranted({
+        status: sub.status,
+        currentPeriodEnd: sub.current_period_end,
+      });
+      assert.equal(isGranted, true, "Оплачена підписка повинна надавати доступ");
+      assert.ok(sub.payer_name && sub.payer_phone, "Вказано контактні дані батьків");
+    }
+
+    // Загальна сума
+    assert.equal(activeSubs.length + compedSubs.length + unpaidSubs.length, 26);
   });
 });

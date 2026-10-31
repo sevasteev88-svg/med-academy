@@ -30,12 +30,12 @@ export default async function TeamQrCardsPage() {
 
   let teams = (teamsData ?? []).map((t) => ({ id: t.id, name: t.name }));
 
-  // Якщо тренер має призначену команду, показуємо тільки її
-  if (isCoach(user.role) && user.teamId) {
-    const assignedTeam = teams.find((t) => t.id === user.teamId);
-    if (assignedTeam) {
-      teams = [assignedTeam];
-    }
+  // Якщо тренер, показуємо тільки призначені йому команди
+  if (isCoach(user.role)) {
+    const coachTeams = user.teamIds && user.teamIds.length > 0
+      ? user.teamIds
+      : (user.teamId ? [user.teamId] : []);
+    teams = teams.filter((t) => coachTeams.includes(t.id));
   }
 
   const initialTeamId = teams[0]?.id || "";

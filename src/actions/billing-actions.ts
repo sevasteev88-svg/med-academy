@@ -425,7 +425,15 @@ export async function getTeamSubscriptionsAction(params?: {
     .eq("club_id", clubId)
     .order("name");
 
-  const teams = teamsData || [];
+  let teams = teamsData || [];
+  const isCoachUser = auth.user.role === "coach";
+  const coachTeams = isCoachUser
+    ? (auth.user.teamIds && auth.user.teamIds.length > 0 ? auth.user.teamIds : (auth.user.teamId ? [auth.user.teamId] : []))
+    : [];
+
+  if (isCoachUser) {
+    teams = teams.filter((t) => coachTeams.includes(t.id));
+  }
 
   // 2. Отримуємо активних гравців
   let playerQuery = supabase
@@ -434,6 +442,10 @@ export async function getTeamSubscriptionsAction(params?: {
     .eq("club_id", clubId)
     .is("archived_at", null)
     .order("last_name");
+
+  if (isCoachUser) {
+    playerQuery = playerQuery.in("team_id", coachTeams.length > 0 ? coachTeams : ["00000000-0000-0000-0000-000000000000"]);
+  }
 
   if (params?.teamId && params.teamId !== "all") {
     playerQuery = playerQuery.eq("team_id", params.teamId);
@@ -519,8 +531,6 @@ export async function getTeamSubscriptionsAction(params?: {
         : null,
     };
   });
-
-  const isCoachUser = auth.user.role === "coach";
 
   const totalPlayers = players.length;
   const collectionRatePercent =

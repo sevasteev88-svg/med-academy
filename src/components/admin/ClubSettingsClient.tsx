@@ -11,8 +11,9 @@ import {
   importPlayersFromCsvAction,
   type CsvImportResult,
 } from "@/actions/club-settings-actions";
+import CoachManagementSection from "./CoachManagementSection";
 
-type Tab = "general" | "protocol" | "telegram" | "teams" | "onboarding";
+type Tab = "general" | "protocol" | "telegram" | "teams" | "coaches" | "onboarding";
 
 export default function ClubSettingsClient({
   initialSettings,
@@ -269,6 +270,16 @@ export default function ClubSettingsClient({
           }`}
         >
           👥 Команди ({teams.length})
+        </button>
+        <button
+          onClick={() => setActiveTab("coaches")}
+          className={`px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all min-h-[44px] ${
+            activeTab === "coaches"
+              ? "bg-sky-500/20 text-sky-400 border border-sky-500/30"
+              : "text-slate-400 hover:bg-slate-800/60 hover:text-white"
+          }`}
+        >
+          👔 Тренерський штаб
         </button>
         <button
           onClick={() => setActiveTab("onboarding")}
@@ -771,6 +782,9 @@ export default function ClubSettingsClient({
           </Card>
         </div>
       )}
+
+      {/* Tab 5: Coaching Staff Management */}
+      {activeTab === "coaches" && <CoachManagementSection />}
 
       {/* Floating Toast Notification */}
       {toast && (

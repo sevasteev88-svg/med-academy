@@ -8,6 +8,8 @@ import {
   DEMO_CLUB_NAME,
   DEMO_TEAMS,
   DEMO_PLAYERS,
+  DEMO_SUBSCRIPTIONS,
+  DEMO_GUARDIANS,
   DEMO_INJURIES,
   DEMO_PHARMACY_ITEMS,
 } from "@/lib/demo-generator";
@@ -84,6 +86,8 @@ export async function resetDemoClubAction(): Promise<{
       await admin.from("wellness_entries").delete().in("player_id", existingPlayerIds);
       await admin.from("anthropometry_logs").delete().in("player_id", existingPlayerIds);
       await admin.from("workload_sessions").delete().in("player_id", existingPlayerIds);
+      await admin.from("player_subscriptions").delete().eq("club_id", DEMO_CLUB_ID);
+      await admin.from("guardians").delete().eq("club_id", DEMO_CLUB_ID);
       await admin.from("injuries").delete().eq("club_id", DEMO_CLUB_ID);
       await admin.from("players").delete().eq("club_id", DEMO_CLUB_ID);
     }
@@ -114,6 +118,45 @@ export async function resetDemoClubAction(): Promise<{
     const { error: playersErr } = await admin.from("players").insert(playersToInsert);
     if (playersErr) {
       return { success: false, error: `Помилка створення гравців: ${playersErr.message}` };
+    }
+
+    // 4b. Вставка B2B2C підписок (21 активна, 2 квоти, 3 очікують оплати)
+    const subsToInsert = DEMO_SUBSCRIPTIONS.map((s) => ({
+      id: s.id,
+      club_id: DEMO_CLUB_ID,
+      player_id: s.player_id,
+      status: s.status,
+      plan_code: s.plan_code,
+      amount_uah: s.amount_uah,
+      currency: s.currency,
+      billing_interval: s.billing_interval,
+      current_period_start: s.current_period_start,
+      current_period_end: s.current_period_end,
+      trial_ends_at: s.trial_ends_at || null,
+      canceled_at: s.canceled_at || null,
+      grace_period_ends_at: s.grace_period_ends_at || null,
+      payer_name: s.payer_name || null,
+      payer_phone: s.payer_phone || null,
+      payer_email: s.payer_email || null,
+      provider: s.provider,
+      provider_subscription_id: s.provider_subscription_id || null,
+      provider_customer_id: s.provider_customer_id || null,
+      card_last4: s.card_last4 || null,
+      card_type: s.card_type || null,
+      comped_reason: s.comped_reason || null,
+      comped_by: s.comped_by || null,
+      metadata: s.metadata || {},
+    }));
+
+    const { error: subsErr } = await admin.from("player_subscriptions").insert(subsToInsert);
+    if (subsErr) {
+      console.warn("Попередження створення підписок:", subsErr.message);
+    }
+
+    // 4c. Вставка законних представників (guardians)
+    const { error: guardErr } = await admin.from("guardians").insert(DEMO_GUARDIANS);
+    if (guardErr) {
+      console.warn("Попередження створення законних представників:", guardErr.message);
     }
 
     // 5. Вставка антропометрії (3–6 замірів зросту за останні 12 місяців для кожного гравця)
@@ -349,10 +392,11 @@ export async function resetDemoClubAction(): Promise<{
     revalidatePath("/pharmacy");
     revalidatePath("/growth");
     revalidatePath("/team/readiness");
+    revalidatePath("/team/subscriptions");
 
     return {
       success: true,
-      message: "Демо-клуб «Демо Академія» успішно ініціалізовано: 26 гравців, травми, велнес, аптека та експозиція.",
+      message: "Демо-клуб «Демо Академія» успішно ініціалізовано: 26 гравців, підписки (21 активна, 2 квоти, 3 очікують оплати), травми, велнес, аптека та експозиція.",
     };
   } catch (err: any) {
     return { success: false, error: err.message || "Помилка скидання демо-режиму." };

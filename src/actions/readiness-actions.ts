@@ -352,14 +352,35 @@ export async function getTeamReadinessAction(params?: {
     .select("id, name, sort_order")
     .order("sort_order", { ascending: true });
 
-  const teams = (rawTeams ?? []).map((t) => ({ id: t.id, name: t.name }));
+  const coachTeams = user.teamIds && user.teamIds.length > 0
+    ? user.teamIds
+    : (user.teamId ? [user.teamId] : []);
 
-  // Якщо тренер, він має доступ тільки до своєї команди
+  const visibleTeams = isCoachUser
+    ? (rawTeams ?? []).filter((t) => coachTeams.includes(t.id)).map((t) => ({ id: t.id, name: t.name }))
+    : (rawTeams ?? []).map((t) => ({ id: t.id, name: t.name }));
+
+  // Якщо тренер, він має доступ тільки до своїх призначених команд
   let selectedTeamId = params?.teamId || "";
   if (isCoachUser) {
-    selectedTeamId = user.teamId || teams[0]?.id || "";
-  } else if (!selectedTeamId && teams.length > 0) {
-    selectedTeamId = teams[0].id;
+    if (coachTeams.length === 0) {
+      return {
+        success: false,
+        players: [],
+        teams: [],
+        currentTeamId: "",
+        currentDate: "",
+        userRole: effectiveRole,
+        config: DEFAULT_CLUB_READINESS_CONFIG,
+        teamCompliance: { rate7Days: 0, rate28Days: 0, activePlayersCount: 0 },
+        error: "Ваш обліковий запис очікує призначення команди адміністратором або лікарем клубу.",
+      };
+    }
+    if (!selectedTeamId || !coachTeams.includes(selectedTeamId)) {
+      selectedTeamId = coachTeams[0];
+    }
+  } else if (!selectedTeamId && visibleTeams.length > 0) {
+    selectedTeamId = visibleTeams[0].id;
   }
 
   // Перевіряємо права доступу до команди
@@ -368,7 +389,7 @@ export async function getTeamReadinessAction(params?: {
     return {
       success: false,
       players: [],
-      teams,
+      teams: visibleTeams,
       currentTeamId: selectedTeamId,
       currentDate: "",
       userRole: effectiveRole,
@@ -419,7 +440,7 @@ export async function getTeamReadinessAction(params?: {
     return {
       success: false,
       players: [],
-      teams,
+      teams: visibleTeams,
       currentTeamId: selectedTeamId,
       currentDate: today,
       userRole: effectiveRole,
@@ -434,7 +455,7 @@ export async function getTeamReadinessAction(params?: {
     return {
       success: true,
       players: [],
-      teams,
+      teams: visibleTeams,
       currentTeamId: selectedTeamId,
       currentDate: today,
       userRole: effectiveRole,
@@ -691,7 +712,7 @@ export async function getTeamReadinessAction(params?: {
   return {
     success: true,
     players: results,
-    teams,
+    teams: visibleTeams,
     currentTeamId: selectedTeamId,
     currentDate: today,
     userRole: effectiveRole,
