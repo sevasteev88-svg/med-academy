@@ -1,11 +1,13 @@
 "use server";
 
 import { createAdminClient } from "@/utils/supabase/admin";
+import { createClient } from "@/utils/supabase/server";
 import { getCurrentUser } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import {
   DEMO_CLUB_ID,
   DEMO_CLUB_NAME,
+  DEMO_DOCTOR_EMAIL,
   DEMO_TEAMS,
   DEMO_PLAYERS,
   DEMO_SUBSCRIPTIONS,
@@ -21,6 +23,67 @@ export async function isCurrentUserInDemoClub(): Promise<boolean> {
   const user = await getCurrentUser();
   if (!user) return false;
   return user.clubId === DEMO_CLUB_ID;
+}
+
+/**
+ * Швидкий вхід до ФК «Демо Академія» в один клік (без ручного вводу пароля)
+ */
+export async function enterDemoClubAction(): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createClient();
+    const demoEmail = DEMO_DOCTOR_EMAIL;
+    const demoPassword = process.env.DEMO_USER_PASSWORD || "DemoDoctor2026!";
+
+    // Спроба входу як демо-лікар
+    let { error } = await supabase.auth.signInWithPassword({
+      email: demoEmail,
+      password: demoPassword,
+    });
+
+    // Якщо користувача ще не створено або пароль не збігся — ініціалізуємо
+    if (error) {
+      const admin = createAdminClient();
+
+      // Спочатку переконуємося, що сам клуб та демо-дані існують
+      await resetDemoClubAction();
+
+      // Створюємо або оновлюємо демо-користувача
+      const { data: userRes, error: createErr } = await admin.auth.admin.createUser({
+        email: demoEmail,
+        password: demoPassword,
+        email_confirm: true,
+        user_metadata: {
+          full_name: "Д-р Андрій Коваленко (Демо)",
+          club_id: DEMO_CLUB_ID,
+          role: "doctor",
+        },
+      });
+
+      const userId = userRes?.user?.id;
+      if (userId) {
+        await admin.from("club_members").upsert({
+          user_id: userId,
+          club_id: DEMO_CLUB_ID,
+          role: "doctor",
+        });
+      }
+
+      // Повторна спроба входу після створення
+      const retry = await supabase.auth.signInWithPassword({
+        email: demoEmail,
+        password: demoPassword,
+      });
+
+      if (retry.error) {
+        return { success: false, error: retry.error.message };
+      }
+    }
+
+    revalidatePath("/", "layout");
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message || "Помилка входу в Демо-Академію" };
+  }
 }
 
 /**

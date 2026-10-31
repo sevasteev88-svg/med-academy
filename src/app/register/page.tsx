@@ -1,60 +1,54 @@
-"use client";
-
-import { useActionState } from "react";
-import { registerAction, type AuthState } from "@/actions/auth-actions";
 import Link from "next/link";
 import Image from "next/image";
-
-const inputClass = "w-full bg-surface border border-blue-900/20 rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-brand-blue/50 focus:ring-1 focus:ring-brand-blue/30 transition-colors";
+import Card from "@/components/ui/Card";
 
 export default function RegisterPage() {
-  const [state, formAction, isPending] = useActionState<AuthState, FormData>(registerAction, {});
-
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-5">
-      <div className="w-full max-w-sm space-y-6">
+      <div className="w-full max-w-md space-y-6">
         <div className="text-center">
-          <Image src="/logo-chr.png" alt="MedAcademy" width={64} height={64} className="mx-auto rounded-full ring-2 ring-brand-blue/30 mb-4" />
-          <h1 className="text-xl font-bold text-white">Реєстрація</h1>
-          <p className="text-xs text-slate-500 mt-1">Створіть акаунт для доступу до системи</p>
+          <Image
+            src="/logo-chr.png"
+            alt="MedAcademy"
+            width={64}
+            height={64}
+            className="mx-auto rounded-full ring-2 ring-brand-blue/30 mb-4"
+          />
+          <h1 className="text-xl font-bold text-white">Реєстрація обмежена</h1>
+          <p className="text-xs text-slate-400 mt-1">Клубна система спортивної медицини та тренерського штабу</p>
         </div>
 
-        <div className="bg-surface rounded-xl border border-blue-900/15 p-6">
-          <form action={formAction} className="space-y-4">
-            <div>
-              <label className="block text-xs text-slate-500 mb-1.5">Повне ім'я</label>
-              <input name="fullName" required placeholder="Іванов Олександр" className={inputClass} />
-            </div>
-            <div>
-              <label className="block text-xs text-slate-500 mb-1.5">Email</label>
-              <input name="email" type="email" required placeholder="doctor@medacademy.app" className={inputClass} />
-            </div>
-            <div>
-              <label className="block text-xs text-slate-500 mb-1.5">Пароль (мін. 6 символів)</label>
-              <input name="password" type="password" required minLength={6} placeholder="••••••" className={inputClass} />
-            </div>
-            <div>
-              <label className="block text-xs text-slate-500 mb-1.5">Роль</label>
-              <select name="role" className={inputClass} defaultValue="doctor">
-                <option value="doctor">🩺 Лікар (повний доступ)</option>
-                <option value="coach">⚽ Тренер (доступність гравців)</option>
-              </select>
-            </div>
+        <Card className="p-6 space-y-4 border-amber-500/30 bg-slate-900/80 text-center">
+          <div className="text-4xl">🔒</div>
+          <h2 className="text-sm font-bold text-white uppercase tracking-wider">
+            Відкрита реєстрація закрита
+          </h2>
+          <p className="text-xs text-slate-300 leading-relaxed">
+            Облікові записи для тренерів та медичного персоналу створюються та закріплюються за віковими категоріями виключно адміністратором клубу в панелі керування.
+          </p>
 
-            {state.error && (
-              <div className="text-sm text-status-danger bg-status-danger/10 border border-status-danger/20 rounded-lg px-3 py-2">{state.error}</div>
-            )}
+          <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-300 text-left leading-relaxed">
+            💡 <strong>Футболістам клубу:</strong> вхід до особистого кабінету здійснюється без реєстрації через <strong>Портал гравця</strong> за індивідуальним PIN-кодом або QR-карткою команди.
+          </div>
 
-            <button type="submit" disabled={isPending}
-              className="w-full bg-brand-blue hover:bg-brand-blue-light disabled:opacity-50 text-white font-bold py-2.5 rounded-lg text-sm transition-colors shadow-glow-sm">
-              {isPending ? "Реєструємо..." : "Зареєструватися"}
-            </button>
-          </form>
-        </div>
+          <div className="space-y-2 pt-2">
+            <Link
+              href="/rehab-portal"
+              className="w-full py-2.5 px-4 rounded-xl border border-sky-500/30 bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 font-bold text-xs flex items-center justify-center gap-2 transition-all block text-center"
+            >
+              <span>📱</span>
+              <span>Перейти до Порталу гравця (PIN / QR)</span>
+            </Link>
 
-        <p className="text-center text-xs text-slate-500">
-          Вже є акаунт? <Link href="/login" className="text-brand-blue hover:text-brand-blue-light transition-colors">Увійти</Link>
-        </p>
+            <Link
+              href="/login"
+              className="w-full py-2.5 px-4 rounded-xl bg-brand-blue hover:bg-brand-blue-light text-white font-bold text-xs flex items-center justify-center gap-2 transition-all block text-center shadow-glow-sm"
+            >
+              <span>🔑</span>
+              <span>Повернутися до входу для штабу</span>
+            </Link>
+          </div>
+        </Card>
       </div>
     </div>
   );

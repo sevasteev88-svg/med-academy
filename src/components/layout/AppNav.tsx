@@ -162,6 +162,17 @@ export default function AppNav({
 
         {/* Футер сайдбара (Профіль / Вихід) */}
         <div className="flex flex-col items-center gap-2 pt-2 border-t border-sky-500/10 shrink-0 w-full">
+          <Link
+            href="/demo"
+            className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-sky-300 hover:bg-sky-500/20 border border-sky-500/20 transition-all group relative"
+            title="Демо-клуб ФК «Демо Академія»"
+          >
+            <span className="text-sm">⚽</span>
+            <span className="absolute left-full ml-3 px-2.5 py-1.5 bg-slate-900/95 backdrop-blur-md text-white text-xs font-semibold rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-all shadow-xl border border-sky-500/20 z-50">
+              ФК «Демо Академія» (Стенд)
+            </span>
+          </Link>
+
           <div className="group relative">
             <div
               className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold border ${
@@ -518,8 +529,17 @@ export default function AppNav({
                 </div>
               </div>
 
-              {/* Вихід */}
-              <div className="pt-2 border-t border-slate-800">
+              {/* Перехід в Демо та Вихід */}
+              <div className="pt-2 border-t border-slate-800 space-y-2">
+                <Link
+                  href="/demo"
+                  onClick={() => setMobileDrawerOpen(false)}
+                  className="w-full flex items-center justify-center gap-2 p-3 rounded-xl bg-sky-500/15 border border-sky-500/30 text-sky-300 font-bold text-xs hover:bg-sky-500/25 active:scale-98 transition-all min-h-[44px]"
+                >
+                  <span>⚽</span>
+                  <span>Відкрити ФК «Демо Академія»</span>
+                </Link>
+
                 <button
                   type="button"
                   onClick={handleLogout}

@@ -283,3 +283,193 @@ export async function updateCoachTeamAssignmentsAction(input: {
     };
   }
 }
+
+/**
+ * Видаляє тренера зі штабу клубу (або скасовує випадкову реєстрацію футболіста як тренера).
+ * Видаляє записи в coach_team_assignments та членство в club_members.
+ */
+export async function removeCoachFromStaffAction(input: {
+  coachUserId: string;
+}): Promise<{ success: boolean; message?: string; error?: string }> {
+  const auth = await assertDoctor();
+  if ("error" in auth) {
+    return { success: false, error: auth.error };
+  }
+
+  const { coachUserId } = input;
+  if (!coachUserId) {
+    return { success: false, error: "Не вказано користувача для видалення." };
+  }
+
+  const targetClubId = auth.user.clubId || DEFAULT_CLUB_ID;
+  const admin = createAdminClient();
+
+  try {
+    // 1. Видаляємо всі призначення команд
+    await admin
+      .from("coach_team_assignments")
+      .delete()
+      .eq("club_id", targetClubId)
+      .eq("coach_user_id", coachUserId);
+
+    // 2. Видаляємо членство в штабі клубу
+    await admin
+      .from("club_members")
+      .delete()
+      .eq("club_id", targetClubId)
+      .eq("user_id", coachUserId);
+
+    // 3. Скидаємо роль у profiles (якщо це гравець або помилковий акаунт)
+    try {
+      await admin
+        .from("profiles")
+        .update({ role: "player", team_id: null })
+        .eq("id", coachUserId);
+    } catch {}
+
+    // 4. Логуємо аудит
+    await logAudit({
+      action: "remove_coach_from_staff",
+      entity: "auth",
+      entityId: coachUserId,
+      meta: {
+        removedBy: auth.user.id,
+      },
+    });
+
+    // 5. Інвалідуємо сторінки
+    revalidatePath("/admin/club-settings");
+    revalidatePath("/players");
+    revalidatePath("/coach-briefing");
+    revalidatePath("/team/readiness");
+    revalidatePath("/training");
+
+    return {
+      success: true,
+      message: "Користувача успішно видалено зі штабу тренерів клубу.",
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err.message || "Помилка при видаленні користувача зі штабу.",
+    };
+  }
+}
+
+/**
+ * Офіційне додавання/запрошення нового тренера адміністратором або лікарем клубу
+ */
+export async function createOrInviteCoachAction(input: {
+  fullName: string;
+  email: string;
+  teamIds: string[];
+}): Promise<{ success: boolean; message?: string; error?: string }> {
+  const auth = await assertDoctor();
+  if ("error" in auth) {
+    return { success: false, error: auth.error };
+  }
+
+  const email = input.email.trim().toLowerCase();
+  const fullName = input.fullName.trim();
+  const teamIds = input.teamIds || [];
+
+  if (!email || !email.includes("@")) {
+    return { success: false, error: "Введіть коректний email тренера." };
+  }
+  if (!fullName) {
+    return { success: false, error: "Введіть повне ім'я тренера." };
+  }
+
+  const targetClubId = auth.user.clubId || DEFAULT_CLUB_ID;
+  const admin = createAdminClient();
+
+  try {
+    // Шукаємо або створюємо користувача в Auth
+    let userId: string | null = null;
+    const { data: userRes, error: userErr } = await admin.auth.admin.createUser({
+      email,
+      email_confirm: true,
+      user_metadata: {
+        full_name: fullName,
+        club_id: targetClubId,
+        role: "coach",
+      },
+    });
+
+    if (userRes?.user?.id) {
+      userId = userRes.user.id;
+    } else if (userErr && userErr.message.includes("already registered")) {
+      const { data: existingProf } = await admin
+        .from("profiles")
+        .select("id")
+        .eq("email", email)
+        .maybeSingle();
+      if (existingProf?.id) {
+        userId = existingProf.id;
+      }
+    }
+
+    if (!userId) {
+      return { success: false, error: userErr?.message || "Не вдалося зареєструвати тренера." };
+    }
+
+    // Оновлюємо профіль і призначаємо роль coach
+    await admin.from("profiles").upsert({
+      id: userId,
+      email,
+      full_name: fullName,
+      role: "coach",
+      team_id: teamIds[0] || null,
+    });
+
+    await admin.from("club_members").upsert(
+      {
+        user_id: userId,
+        club_id: targetClubId,
+        role: "coach",
+        team_id: teamIds[0] || null,
+      },
+      { onConflict: "user_id, club_id" }
+    );
+
+    // Призначаємо команди в coach_team_assignments
+    if (teamIds.length > 0) {
+      await admin
+        .from("coach_team_assignments")
+        .delete()
+        .eq("club_id", targetClubId)
+        .eq("coach_user_id", userId);
+
+      const rows = teamIds.map((tid) => ({
+        club_id: targetClubId,
+        coach_user_id: userId,
+        team_id: tid,
+        assigned_by: auth.user.id,
+      }));
+
+      await admin.from("coach_team_assignments").insert(rows);
+    }
+
+    await logAudit({
+      action: "invite_coach",
+      entity: "auth",
+      entityId: userId,
+      meta: {
+        email,
+        assignedTeamsCount: teamIds.length,
+        invitedBy: auth.user.id,
+      },
+    });
+
+    revalidatePath("/admin/club-settings");
+    return {
+      success: true,
+      message: `Тренера ${fullName} успішно додано до штабу клубу.`,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err.message || "Помилка при додаванні тренера.",
+    };
+  }
+}

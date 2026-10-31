@@ -6,6 +6,8 @@ import Badge from "@/components/ui/Badge";
 import {
   getClubCoachesAction,
   updateCoachTeamAssignmentsAction,
+  removeCoachFromStaffAction,
+  createOrInviteCoachAction,
   type ClubCoachItem,
   type CoachTeamInfo,
 } from "@/actions/coach-assignment-actions";
@@ -20,6 +22,16 @@ export default function CoachManagementSection() {
   // Режим редагування призначень
   const [editingCoach, setEditingCoach] = useState<ClubCoachItem | null>(null);
   const [selectedTeamIds, setSelectedTeamIds] = useState<string[]>([]);
+
+  // Режим видалення
+  const [deletingCoach, setDeletingCoach] = useState<ClubCoachItem | null>(null);
+
+  // Режим додавання нового тренера
+  const [isAddingCoach, setIsAddingCoach] = useState(false);
+  const [newCoachName, setNewCoachName] = useState("");
+  const [newCoachEmail, setNewCoachEmail] = useState("");
+  const [newCoachTeamIds, setNewCoachTeamIds] = useState<string[]>([]);
+
   const [isPending, startTransition] = useTransition();
   const [toastMessage, setToastMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
@@ -61,14 +73,6 @@ export default function CoachManagementSection() {
     );
   }
 
-  function handleSelectAllTeams() {
-    setSelectedTeamIds(allTeams.map((t) => t.id));
-  }
-
-  function handleClearTeams() {
-    setSelectedTeamIds([]);
-  }
-
   function handleSaveAssignments() {
     if (!editingCoach) return;
 
@@ -86,6 +90,60 @@ export default function CoachManagementSection() {
         await loadCoaches();
       }
     });
+  }
+
+  function handleConfirmDelete() {
+    if (!deletingCoach) return;
+
+    startTransition(async () => {
+      const res = await removeCoachFromStaffAction({
+        coachUserId: deletingCoach.userId,
+      });
+
+      if (!res.success) {
+        showToast(res.error || "Помилка видалення користувача", "error");
+      } else {
+        showToast(res.message || "Користувача видалено зі штабу тренерів", "success");
+        setDeletingCoach(null);
+        if (editingCoach?.userId === deletingCoach.userId) {
+          setEditingCoach(null);
+        }
+        await loadCoaches();
+      }
+    });
+  }
+
+  function handleCreateCoach(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newCoachName.trim() || !newCoachEmail.trim()) {
+      showToast("Заповніть ім'я та email тренера", "error");
+      return;
+    }
+
+    startTransition(async () => {
+      const res = await createOrInviteCoachAction({
+        fullName: newCoachName,
+        email: newCoachEmail,
+        teamIds: newCoachTeamIds,
+      });
+
+      if (!res.success) {
+        showToast(res.error || "Помилка створення тренера", "error");
+      } else {
+        showToast(res.message || "Тренера успішно додано", "success");
+        setIsAddingCoach(false);
+        setNewCoachName("");
+        setNewCoachEmail("");
+        setNewCoachTeamIds([]);
+        await loadCoaches();
+      }
+    });
+  }
+
+  function handleToggleNewCoachTeam(teamId: string) {
+    setNewCoachTeamIds((prev) =>
+      prev.includes(teamId) ? prev.filter((id) => id !== teamId) : [...prev, teamId]
+    );
   }
 
   const filteredCoaches = coaches.filter(
@@ -124,16 +182,23 @@ export default function CoachManagementSection() {
             <span>👔</span> Тренерський штаб та розподіл вікових груп
           </h3>
           <p className="text-xs text-slate-400 mt-1">
-            Керування доступом тренерів: кожен тренер бачить виключно своїх гравців та призначені вікові категорії.
+            Керування доступом: кожен тренер бачить виключно закріплені за ним команди. Доступ надається лікарем або адміністратором.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {awaitingCount > 0 && (
-            <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1.5 animate-pulse">
+            <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1.5">
               <span>⚠️</span> {awaitingCount} очікують призначення
             </span>
           )}
+          <button
+            type="button"
+            onClick={() => setIsAddingCoach(!isAddingCoach)}
+            className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-sky-500 hover:bg-sky-400 text-slate-950 transition-all flex items-center gap-1.5 shadow-sm shadow-sky-500/20"
+          >
+            <span>{isAddingCoach ? "✕ Скасувати" : "➕ Запросити тренера"}</span>
+          </button>
           <button
             type="button"
             onClick={loadCoaches}
@@ -144,6 +209,98 @@ export default function CoachManagementSection() {
           </button>
         </div>
       </div>
+
+      {/* Форма додавання нового тренера */}
+      {isAddingCoach && (
+        <form
+          onSubmit={handleCreateCoach}
+          className="p-5 rounded-2xl bg-sky-950/20 border border-sky-500/40 space-y-4 animate-in fade-in"
+        >
+          <div className="border-b border-sky-500/20 pb-2">
+            <h4 className="text-xs font-bold text-sky-300 uppercase tracking-wider flex items-center gap-2">
+              <span>➕</span> Додати тренера до штабу клубу
+            </h4>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              Створіть офіційний акаунт для тренера та одразу закріпіть за ним вікові категорії.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                ПІБ Тренера
+              </label>
+              <input
+                type="text"
+                required
+                value={newCoachName}
+                onChange={(e) => setNewCoachName(e.target.value)}
+                placeholder="наприклад: Згура Сергій"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-sky-500"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                Email тренера (для входу)
+              </label>
+              <input
+                type="email"
+                required
+                value={newCoachEmail}
+                onChange={(e) => setNewCoachEmail(e.target.value)}
+                placeholder="coach@club.com"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-sky-500"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-300 mb-1.5">
+              Закріпити вікові групи (команди):
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
+              {allTeams.map((team) => {
+                const isChecked = newCoachTeamIds.includes(team.id);
+                return (
+                  <label
+                    key={team.id}
+                    className={`p-2 rounded-lg border text-xs font-medium cursor-pointer select-none flex items-center gap-2 transition-all ${
+                      isChecked
+                        ? "bg-sky-500/20 border-sky-500 text-white"
+                        : "bg-slate-950/60 border-slate-800 text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => handleToggleNewCoachTeam(team.id)}
+                      className="w-3.5 h-3.5 rounded text-sky-500"
+                    />
+                    <span className="truncate">{team.name}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-sky-500/20">
+            <button
+              type="button"
+              onClick={() => setIsAddingCoach(false)}
+              className="px-3.5 py-1.5 rounded-xl text-xs bg-slate-800 text-slate-300 hover:text-white"
+            >
+              Скасувати
+            </button>
+            <button
+              type="submit"
+              disabled={isPending}
+              className="px-4 py-1.5 rounded-xl text-xs font-bold bg-sky-500 hover:bg-sky-400 text-slate-950 shadow-sm disabled:opacity-50"
+            >
+              {isPending ? "Створення..." : "Зберегти та запросити"}
+            </button>
+          </div>
+        </form>
+      )}
 
       {/* Пошук тренерів */}
       <div className="flex items-center gap-3">
@@ -186,9 +343,6 @@ export default function CoachManagementSection() {
           <span className="text-2xl mb-2 block">⚽</span>
           <p className="text-xs font-medium text-slate-300">
             {search ? "Тренерів за вашим запитом не знайдено." : "У клубі ще немає зареєстрованих тренерів."}
-          </p>
-          <p className="text-[11px] text-slate-500 mt-1">
-            Коли тренер реєструється з роллю «Тренер», він з'явиться тут для призначення команд.
           </p>
         </div>
       )}
@@ -249,7 +403,7 @@ export default function CoachManagementSection() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 self-start sm:self-center">
+                <div className="flex items-center gap-2 self-start sm:self-center flex-wrap">
                   <button
                     type="button"
                     onClick={() => handleStartEdit(coach)}
@@ -262,10 +416,20 @@ export default function CoachManagementSection() {
                     <span>⚙️</span>
                     <span>{coach.assignedTeams.length === 0 ? "Призначити команду" : "Змінити доступ"}</span>
                   </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setDeletingCoach(coach)}
+                    className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 hover:text-rose-200 border border-rose-500/25 transition-all flex items-center gap-1.5 min-h-[38px]"
+                    title="Видалити зі штабу"
+                  >
+                    <span>🗑️</span>
+                    <span className="hidden sm:inline">Видалити</span>
+                  </button>
                 </div>
               </div>
 
-              {/* Інлайн-модаль/панель налаштування команд для цього тренера */}
+              {/* Інлайн-модаль налаштування команд */}
               {isSelected && (
                 <div className="mt-4 pt-4 border-t border-sky-500/20 bg-slate-900/90 rounded-xl p-4 space-y-4">
                   <div className="flex items-center justify-between">
@@ -274,14 +438,14 @@ export default function CoachManagementSection() {
                         <span>🎯</span> Вибір вікових груп для тренера: {coach.fullName}
                       </h4>
                       <p className="text-[11px] text-slate-400 mt-0.5">
-                        Ви можете обрати одну або кілька команд. Тренер бачитиме лише футболістів із цих вікових категорій.
+                        Оберіть одну або кілька команд. Тренер бачитиме лише футболістів із цих вікових категорій.
                       </p>
                     </div>
 
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={handleSelectAllTeams}
+                        onClick={() => setSelectedTeamIds(allTeams.map((t) => t.id))}
                         className="text-[11px] font-semibold text-sky-400 hover:text-sky-300 underline"
                       >
                         Обрати всі
@@ -289,7 +453,7 @@ export default function CoachManagementSection() {
                       <span className="text-slate-600">|</span>
                       <button
                         type="button"
-                        onClick={handleClearTeams}
+                        onClick={() => setSelectedTeamIds([])}
                         className="text-[11px] font-semibold text-rose-400 hover:text-rose-300 underline"
                       >
                         Очистити
@@ -328,12 +492,6 @@ export default function CoachManagementSection() {
                     })}
                   </div>
 
-                  {allTeams.length === 0 && (
-                    <p className="text-xs text-amber-300 italic">
-                      У клубі ще немає створених команд. Спочатку додайте команди на вкладці «👥 Команди».
-                    </p>
-                  )}
-
                   {/* Дії збереження / скасування */}
                   <div className="flex items-center justify-end gap-2.5 pt-2">
                     <button
@@ -350,17 +508,7 @@ export default function CoachManagementSection() {
                       disabled={isPending}
                       className="px-4 py-2 rounded-xl text-xs font-bold bg-sky-500 hover:bg-sky-400 text-slate-950 transition-all flex items-center gap-1.5 shadow-sm shadow-sky-500/30 disabled:opacity-50"
                     >
-                      {isPending ? (
-                        <>
-                          <span className="inline-block animate-spin">⏳</span>
-                          <span>Збереження...</span>
-                        </>
-                      ) : (
-                        <>
-                          <span>💾</span>
-                          <span>Зберегти призначення ({selectedTeamIds.length})</span>
-                        </>
-                      )}
+                      {isPending ? "Збереження..." : `Зберегти призначення (${selectedTeamIds.length})`}
                     </button>
                   </div>
                 </div>
@@ -369,6 +517,42 @@ export default function CoachManagementSection() {
           );
         })}
       </div>
+
+      {/* Діалог підтвердження видалення */}
+      {deletingCoach && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-rose-500/30 rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl animate-in zoom-in-95">
+            <div className="flex items-center gap-3 text-rose-400">
+              <span className="text-2xl">⚠️</span>
+              <h4 className="text-base font-bold text-white">Видалити зі штабу тренерів?</h4>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Ви збираєтесь видалити <strong className="text-white">{deletingCoach.fullName}</strong> ({deletingCoach.email}) зі списку тренерів клубу.
+              Всі права доступу до команд та списків гравців будуть миттєво відкликані.
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeletingCoach(null)}
+                disabled={isPending}
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-800 text-slate-300 hover:text-white"
+              >
+                Скасувати
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={isPending}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-600/30 disabled:opacity-50"
+              >
+                {isPending ? "Видалення..." : "Так, видалити"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </Card>
   );
 }
