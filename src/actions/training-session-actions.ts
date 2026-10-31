@@ -360,22 +360,34 @@ export async function saveTeamTrainingAction(input: SaveTeamTrainingInput) {
       } catch {}
     }
 
-    // 2. Пункт 4: запис у таблицю exposures (задача 4.2: реєстр хвилин навантаження)
-    try {
+    savedCount++;
+  }
+
+  // 2. Автоматична синхронізація у таблицю exposures (Реєстр людино-годин UEFA/IOC)
+  // Дані підтягуються сюди автоматично з форми введення тренування тренером, повторно вводити не потрібно!
+  try {
+    const exposureType = input.sessionType === "match" ? "match" : "training";
+    const exposureMinutes = Number(input.defaultMinutes) || 75;
+
+    await supabase
+      .from("exposures")
+      .delete()
+      .eq("team_id", input.teamId)
+      .eq("date", input.date);
+
+    if (presentCount > 0) {
       await supabase.from("exposures").insert({
         club_id: clubId,
-        player_id: item.playerId,
+        team_id: input.teamId,
         date: input.date,
-        exposure_type: input.sessionType === "match" ? "match" : "training",
-        minutes: duration,
-        workload_session_id: sessionPayload.id,
-        notes: isPresent
-          ? `RPE: ${rpe} (${workloadAu} AU)`
-          : `Відсутній (${sessionPayload.absence_reason})`,
-      } as any);
-    } catch {}
-
-    savedCount++;
+        type: exposureType,
+        minutes: exposureMinutes,
+        players_count: presentCount,
+        notes: input.sessionNotes?.trim() || null,
+      });
+    }
+  } catch (expErr) {
+    console.error("Auto exposure sync error:", expErr);
   }
 
   // 3. Журнал аудиту дій
@@ -403,6 +415,7 @@ export async function saveTeamTrainingAction(input: SaveTeamTrainingInput) {
   revalidatePath("/team/readiness");
   revalidatePath("/coach-briefing");
   revalidatePath("/availability");
+  revalidatePath("/exposures");
   revalidatePath("/");
 
   return {
