@@ -534,7 +534,7 @@ export async function processTelegramWebhookUpdateAction(
     let boundPlayerId: string | null = null;
     let boundPlayerName = "";
 
-    // 4a. Пошук у clubs.settings.telegram_bindings
+    // 4a. Пошук у clubs.settings.telegram_bindings (порівняння рядків з приведенням до string)
     const { data: club } = await supabase
       .from("clubs")
       .select("id, settings")
@@ -544,8 +544,12 @@ export async function processTelegramWebhookUpdateAction(
     const clubSettings = (club?.settings as any) || {};
     const tBindings = clubSettings.telegram_bindings || {};
     for (const [pId, b] of Object.entries(tBindings)) {
-      if ((b as any)?.chatId === chatId && (b as any)?.status === "active") {
+      if (
+        String((b as any)?.chatId || "").trim() === String(chatId).trim() &&
+        (b as any)?.status === "active"
+      ) {
         boundPlayerId = pId;
+        boundPlayerName = (b as any)?.playerName || "";
         break;
       }
     }
@@ -556,7 +560,7 @@ export async function processTelegramWebhookUpdateAction(
         const { data: bRow } = await supabase
           .from("player_telegram_bindings")
           .select("player_id, players ( first_name, last_name )")
-          .eq("telegram_chat_id", chatId)
+          .eq("telegram_chat_id", String(chatId).trim())
           .eq("status", "active")
           .maybeSingle();
         if (bRow?.player_id) {
@@ -569,7 +573,7 @@ export async function processTelegramWebhookUpdateAction(
     // 4c. Пошук в in-memory
     if (!boundPlayerId) {
       for (const b of memoryTelegramBindings.values()) {
-        if (b.telegram_chat_id === chatId && b.status === "active") {
+        if (String(b.telegram_chat_id).trim() === String(chatId).trim() && b.status === "active") {
           boundPlayerId = b.player_id;
           break;
         }
@@ -585,10 +589,11 @@ export async function processTelegramWebhookUpdateAction(
     }
 
     // Зберігаємо відповідь гравця в медичну картку (wellness_entries_store)
+    const kyivDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Kyiv" }).format(new Date());
     const store = clubSettings.wellness_entries_store || {};
-    const entryKey = `${boundPlayerId}_${today}`;
-    const currEntry = store[entryKey] || {};
-    const rec = currEntry.doctor_recommendation || {};
+    const todayKey = `${boundPlayerId}_${kyivDate}`;
+    const todayEntry = store[todayKey] || {};
+    const todayRec = todayEntry.doctor_recommendation || {};
 
     const replyItem = {
       text,
@@ -597,15 +602,44 @@ export async function processTelegramWebhookUpdateAction(
       username: username ? `@${username}` : null,
     };
 
-    const existingReplies = Array.isArray(rec.replies) ? rec.replies : [];
+    const existingReplies = Array.isArray(todayRec.replies) ? [...todayRec.replies] : [];
     existingReplies.push(replyItem);
 
-    currEntry.doctor_recommendation = {
-      ...rec,
+    todayEntry.doctor_recommendation = {
+      ...todayRec,
       playerReply: replyItem,
       replies: existingReplies,
     };
-    store[entryKey] = currEntry;
+    store[todayKey] = todayEntry;
+
+    // Якщо лікар надсилав рекомендацію в інший день (наприклад, активне листування за попередній день),
+    // дублюємо відповідь також у найсвіжішу рекомендацію лікаря цього гравця
+    const otherKeys = Object.keys(store)
+      .filter((k) => k.startsWith(`${boundPlayerId}_`) && k !== todayKey)
+      .sort()
+      .reverse();
+
+    for (const ok of otherKeys) {
+      const otherEntry = store[ok];
+      if (
+        otherEntry?.doctor_recommendation?.text ||
+        (Array.isArray(otherEntry?.doctor_recommendation?.sentHistory) &&
+          otherEntry.doctor_recommendation.sentHistory.length > 0)
+      ) {
+        const oRec = otherEntry.doctor_recommendation;
+        const oReplies = Array.isArray(oRec.replies) ? [...oRec.replies] : [];
+        oReplies.push(replyItem);
+        store[ok] = {
+          ...otherEntry,
+          doctor_recommendation: {
+            ...oRec,
+            playerReply: replyItem,
+            replies: oReplies,
+          },
+        };
+        break;
+      }
+    }
 
     await supabase
       .from("clubs")
@@ -635,8 +669,9 @@ export async function processTelegramWebhookUpdateAction(
       `✅ *Вашу відповідь отримано та збережено в медичній картці!*\n\n` +
       `💬 _«${text}»_\n\n` +
       `👨‍⚕️ Лікар бачить ваше повідомлення в системі.\n` +
-      `📞 *Прямий контакт лікаря:* \`${DEFAULT_DOCTOR_PHONE}\`\n\n` +
-      `Якщо потрібна термінова консультація або посилився біль, напишіть лікарю особисто за кнопкою нижче:`;
+      `📞 *Телефон лікаря:* \`0935623945\`\n` +
+      `💬 *Telegram лікаря:* [Натисніть для зв'язку](https://t.me/+380935623945)\n\n` +
+      `Якщо потрібна термінова консультація або посилився біль, зателефонуйте або напишіть лікарю в особисті повідомлення за кнопкою нижче:`;
 
     if (botToken) {
       try {
@@ -1064,7 +1099,8 @@ export async function sendDoctorRecommendationAction(params: {
 
     const supabase = createAdminClient();
     const nowIso = new Date().toISOString();
-    const docName = doctorName || (user as any)?.name || user.email || "Медичний штаб";
+    const rawDoctor = doctorName || (user as any)?.name || (user as any)?.fullName;
+    const docDisplayName = rawDoctor && !rawDoctor.includes("@") ? rawDoctor.trim() : "Медичний штаб";
 
     // 1. Шукаємо Telegram Chat ID
     let chatId: string | null = null;
@@ -1098,7 +1134,7 @@ export async function sendDoctorRecommendationAction(params: {
       } catch {}
     }
 
-    // 2. Якщо є Telegram - відправляємо повідомлення
+    // 2. Якщо є Telegram - відправляємо повідомлення (без email, з прямим телефоном та посиланням на Telegram)
     let sentToTelegram = false;
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
     if (chatId && botToken) {
@@ -1106,9 +1142,11 @@ export async function sendDoctorRecommendationAction(params: {
         const messageText =
           `👨‍⚕️ *Рекомендація медичного штабу на ${date}:*\n\n` +
           `${recommendation.trim()}\n\n` +
-          `_Лікар: ${docName}_\n` +
-          `📞 *Контакт лікаря:* \`${DEFAULT_DOCTOR_PHONE}\`\n\n` +
-          `💬 _Натисніть кнопку нижче, щоб одразу написати лікарю особисто, або просто відповідайте на це повідомлення._`;
+          `👨‍⚕️ *Лікар:* ${docDisplayName}\n` +
+          `📞 *Телефон лікаря:* \`0935623945\`\n` +
+          `💬 *Telegram лікаря:* [Натисніть для зв'язку](https://t.me/+380935623945)\n\n` +
+          `Будь на зв’язку та дотримуйся рекомендацій!\n` +
+          `_(Ви також можете відповісти текстом прямо сюди в чат-бот — лікар побачить вашу відповідь у медичній картці)_`;
 
         const tgRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: "POST",
@@ -1148,7 +1186,7 @@ export async function sendDoctorRecommendationAction(params: {
             text: existingRec.text,
             sentAt: existingRec.sentAt || nowIso,
             sentToTelegram: Boolean(existingRec.sentToTelegram),
-            doctor: existingRec.doctor || docName,
+            doctor: existingRec.doctor || docDisplayName,
           },
         ]
       : [];
@@ -1157,13 +1195,13 @@ export async function sendDoctorRecommendationAction(params: {
       text: recommendation.trim(),
       sentAt: nowIso,
       sentToTelegram,
-      doctor: docName,
+      doctor: docDisplayName,
     });
 
     currEntry.doctor_recommendation = {
       text: recommendation.trim(),
       template: templateTitle || null,
-      doctor: docName,
+      doctor: docDisplayName,
       doctorPhone: DEFAULT_DOCTOR_PHONE,
       sentAt: nowIso,
       sentToTelegram,
@@ -1178,7 +1216,7 @@ export async function sendDoctorRecommendationAction(params: {
     acks[key] = {
       acknowledged: true,
       reviewed_by_role: "doctor",
-      reviewed_by_name: docName,
+      reviewed_by_name: docDisplayName,
       reviewed_at: nowIso,
     };
 
@@ -1230,7 +1268,35 @@ export async function getPlayerDoctorRecommendationAction(params: {
 
     const store = (club?.settings as any)?.wellness_entries_store || {};
     const key = `${params.playerId}_${params.date}`;
-    const rec = store[key]?.doctor_recommendation || null;
+    let rec = store[key]?.doctor_recommendation ? { ...store[key].doctor_recommendation } : null;
+
+    // Синхронізація відповідей гравця: якщо за вибрану дату окремого запису немає,
+    // або якщо гравець надіслав повідомлення сьогодні
+    const kyivDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Kyiv" }).format(new Date());
+    const todayKey = `${params.playerId}_${kyivDate}`;
+    const todayRec = store[todayKey]?.doctor_recommendation;
+
+    if (!rec && todayRec) {
+      rec = { ...todayRec };
+    } else if (rec && todayRec && todayKey !== key) {
+      const allReplies = [
+        ...(Array.isArray(rec.replies) ? rec.replies : rec.playerReply ? [rec.playerReply] : []),
+        ...(Array.isArray(todayRec.replies) ? todayRec.replies : todayRec.playerReply ? [todayRec.playerReply] : []),
+      ];
+      const seen = new Set<string>();
+      const dedupedReplies: any[] = [];
+      for (const r of allReplies) {
+        const idKey = `${r.receivedAt}_${r.text}`;
+        if (!seen.has(idKey)) {
+          seen.add(idKey);
+          dedupedReplies.push(r);
+        }
+      }
+      rec.replies = dedupedReplies;
+      if (todayRec.playerReply) {
+        rec.playerReply = todayRec.playerReply;
+      }
+    }
 
     return {
       success: true,

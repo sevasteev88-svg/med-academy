@@ -15,6 +15,7 @@ import PlayerSportsIntelligenceCard from "@/components/players/PlayerSportsIntel
 import PlayerRehabCheckinHistory from "@/components/players/PlayerRehabCheckinHistory";
 import PlayerDevicesCard from "@/components/players/PlayerDevicesCard";
 import TelegramBindingCard from "@/components/telegram/TelegramBindingCard";
+import PlayerSubscriptionQuotaCard from "@/components/players/PlayerSubscriptionQuotaCard";
 import { getPlayerActiveDevicesAction } from "@/actions/player-device-actions";
 import { getPlayerTelegramStatusAction } from "@/actions/telegram-actions";
 import { getOrGeneratePlayerPortalToken } from "@/actions/rehab-portal-action";
@@ -349,12 +350,16 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
     activeDocuments,
     devicesRes,
     telegramRes,
+    subRes,
   ] = await Promise.all([
     getPlayerConsentSummary(id, player.date_of_birth, player.club_id),
     getActiveConsentDocuments(player.club_id),
     getPlayerActiveDevicesAction(id),
     getPlayerTelegramStatusAction(id),
+    supabase.from("player_subscriptions").select("*").eq("player_id", id).maybeSingle(),
   ]);
+
+  const playerSub = subRes?.data || null;
 
   const hasPhotoConsent = consentSummary.scopes.photo.allowed;
   const hasWearablesConsent = consentSummary.scopes.wearables.allowed;
@@ -814,6 +819,26 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
           }
           profile={
             <>
+              {/* Паспорт здоров'я та клубна квота підписки B2B2C */}
+              <PlayerSubscriptionQuotaCard
+                playerId={id}
+                playerName={`${player.last_name} ${player.first_name}`}
+                initialSubscription={
+                  playerSub
+                    ? {
+                        status: playerSub.status,
+                        isActive: playerSub.status === "comped" || playerSub.status === "active",
+                        planCode: playerSub.plan_code,
+                        amountUah: Number(playerSub.amount_uah),
+                        billingInterval: playerSub.billing_interval,
+                        currentPeriodEnd: playerSub.current_period_end,
+                        compedReason: playerSub.comped_reason,
+                        compedBy: playerSub.comped_by,
+                      }
+                    : null
+                }
+              />
+
               {/* Згоди законних представників (батьків) та гравця */}
               <PlayerConsentsCard
                 playerId={id}

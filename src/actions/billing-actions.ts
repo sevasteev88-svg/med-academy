@@ -3,7 +3,7 @@
 import { createClient } from "@/utils/supabase/server";
 import { createAdminClient } from "@/utils/supabase/admin";
 import { revalidatePath } from "next/cache";
-import { assertDoctor, assertAuth } from "@/lib/auth";
+import { assertDoctor, assertAuth, assertTeamStaff } from "@/lib/auth";
 import { getPlayerSession } from "@/lib/player-auth";
 import {
   PRICING_PLANS,
@@ -152,9 +152,12 @@ export async function createCheckoutSessionAction(params: {
   }
 
   // WayForPay Sandbox / Live параметри
+  const isCustomMerchant = Boolean(process.env.WAYFORPAY_MERCHANT_ACCOUNT);
   const merchantAccount = process.env.WAYFORPAY_MERCHANT_ACCOUNT || "test_merch_n1";
-  const merchantDomain = process.env.NEXT_PUBLIC_APP_URL || "https://medacademy.app";
-  const merchantSecret = process.env.WAYFORPAY_SECRET_KEY || "flk3409refn54t54t*FNJret";
+  const merchantDomain = isCustomMerchant
+    ? (process.env.NEXT_PUBLIC_APP_URL || "https://medacademy.app")
+    : "www.market.ua"; // Стандартний домен для тестового мерчанта test_merch_n1 у WayForPay
+  const merchantSecret = process.env.WAYFORPAY_SECRET_KEY || "flk3409refn54t54t*fnstp6";
   const orderDate = Math.floor(Date.now() / 1000).toString();
   const productName = `Паспорт здоров'я MedAcademy (${plan.name})`;
   const amountStr = plan.amountUah.toString();
@@ -201,14 +204,14 @@ export async function createCheckoutSessionAction(params: {
 }
 
 /**
- * Присвоєння стипендіального безкоштовного статусу (квота директора/лікаря клубу)
+ * Присвоєння стипендіального безкоштовного статусу (квота директора/тренера/лікаря клубу)
  */
 export async function grantCompedSubscriptionAction(params: {
   playerId: string;
   reason: string;
   daysDuration?: number;
 }) {
-  const auth = await assertDoctor();
+  const auth = await assertTeamStaff();
   if ("error" in auth) {
     return { success: false, error: auth.error };
   }
@@ -252,5 +255,41 @@ export async function grantCompedSubscriptionAction(params: {
 
   revalidatePath(`/players/${params.playerId}`);
   revalidatePath("/rehab-portal");
+  revalidatePath("/team/readiness");
   return { success: true, message: `Надано стипендіальний доступ на ${days} днів` };
+}
+
+/**
+ * Скасування стипендіальної квоти (переведення на обов'язкову оплату батьків)
+ */
+export async function revokeCompedSubscriptionAction(params: {
+  playerId: string;
+}) {
+  const auth = await assertTeamStaff();
+  if ("error" in auth) {
+    return { success: false, error: auth.error };
+  }
+
+  const supabase = createAdminClient();
+  const pastDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+  const { error } = await supabase
+    .from("player_subscriptions")
+    .update({
+      status: "unpaid",
+      current_period_end: pastDate,
+      comped_reason: null,
+      comped_by: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("player_id", params.playerId);
+
+  if (error) {
+    return { success: false, error: error.message };
+  }
+
+  revalidatePath(`/players/${params.playerId}`);
+  revalidatePath("/rehab-portal");
+  revalidatePath("/team/readiness");
+  return { success: true, message: "Квоту скасовано. Гравця переведено на оплату батьків." };
 }
