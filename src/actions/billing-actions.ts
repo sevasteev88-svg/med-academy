@@ -377,3 +377,157 @@ export async function recordManualParentPaymentAction(params: {
     message: `Оплату підтверджено (${plan.name}). Доступ активний до ${new Date(periodEnd).toLocaleDateString("uk-UA")}`,
   };
 }
+
+/**
+ * Отримує зведені дані про підписки та фінанси команди/клубу
+ */
+export async function getTeamSubscriptionsAction(params?: {
+  teamId?: string;
+}) {
+  const auth = await assertTeamStaff(params?.teamId);
+  if ("error" in auth) {
+    return {
+      success: false,
+      error: auth.error,
+      players: [],
+      teams: [],
+      stats: {
+        totalPlayers: 0,
+        activePaidCount: 0,
+        compedCount: 0,
+        unpaidCount: 0,
+        totalMonthlyRevenueUah: 0,
+        collectionRatePercent: 0,
+      },
+      monobankJarUrl: "https://send.monobank.ua/jar/jzGthBnmx",
+    };
+  }
+
+  const supabase = createAdminClient();
+  const clubId = auth.user.clubId || "00000000-0000-0000-0000-000000000001";
+
+  // 1. Отримуємо команди клубу
+  const { data: teamsData } = await supabase
+    .from("teams")
+    .select("id, name")
+    .eq("club_id", clubId)
+    .order("name");
+
+  const teams = teamsData || [];
+
+  // 2. Отримуємо активних гравців
+  let playerQuery = supabase
+    .from("players")
+    .select("id, first_name, last_name, position, team_id, teams ( id, name )")
+    .eq("club_id", clubId)
+    .is("archived_at", null)
+    .order("last_name");
+
+  if (params?.teamId && params.teamId !== "all") {
+    playerQuery = playerQuery.eq("team_id", params.teamId);
+  }
+
+  const { data: playersData, error: pErr } = await playerQuery;
+
+  if (pErr || !playersData) {
+    return {
+      success: false,
+      error: pErr?.message || "Не вдалося отримати гравців",
+      players: [],
+      teams: [],
+      stats: {
+        totalPlayers: 0,
+        activePaidCount: 0,
+        compedCount: 0,
+        unpaidCount: 0,
+        totalMonthlyRevenueUah: 0,
+        collectionRatePercent: 0,
+      },
+      monobankJarUrl: "https://send.monobank.ua/jar/jzGthBnmx",
+    };
+  }
+
+  // 3. Отримуємо всі підписки гравців клубу
+  const playerIds = playersData.map((p) => p.id);
+  const { data: subsData } = await supabase
+    .from("player_subscriptions")
+    .select("*")
+    .in("player_id", playerIds.length > 0 ? playerIds : ["00000000-0000-0000-0000-000000000000"]);
+
+  const subMap = new Map((subsData || []).map((s) => [s.player_id, s]));
+
+  let activePaidCount = 0;
+  let compedCount = 0;
+  let unpaidCount = 0;
+  let totalMonthlyRevenueUah = 0;
+
+  const players = playersData.map((p) => {
+    const sub = subMap.get(p.id);
+    let isActive = false;
+    let status: SubscriptionStatus = "unpaid";
+
+    if (sub) {
+      status = sub.status as SubscriptionStatus;
+      isActive = isSubscriptionAccessGranted({
+        status,
+        currentPeriodEnd: sub.current_period_end,
+        gracePeriodEndsAt: sub.grace_period_ends_at,
+      });
+    }
+
+    if (isActive) {
+      if (status === "active") {
+        activePaidCount++;
+        totalMonthlyRevenueUah += sub?.billing_interval === "year" ? Math.round(1500 / 12) : 150;
+      } else if (status === "comped") {
+        compedCount++;
+      }
+    } else {
+      unpaidCount++;
+    }
+
+    return {
+      id: p.id,
+      firstName: p.first_name,
+      lastName: p.last_name,
+      position: p.position,
+      teamId: p.team_id,
+      teamName: (p.teams as any)?.name || "Без команди",
+      subscription: sub
+        ? {
+            status,
+            planCode: sub.plan_code,
+            amountUah: Number(sub.amount_uah),
+            billingInterval: sub.billing_interval,
+            currentPeriodEnd: sub.current_period_end,
+            compedReason: sub.comped_reason,
+            compedBy: sub.comped_by,
+            isActive,
+          }
+        : null,
+    };
+  });
+
+  const totalPlayers = players.length;
+  const collectionRatePercent =
+    totalPlayers > 0 ? Math.round(((activePaidCount + compedCount) / totalPlayers) * 100) : 0;
+
+  const monobankJarUrl =
+    process.env.NEXT_PUBLIC_MONOBANK_JAR_URL || "https://send.monobank.ua/jar/jzGthBnmx";
+
+  return {
+    success: true,
+    players,
+    teams,
+    currentTeamId: params?.teamId || "all",
+    stats: {
+      totalPlayers,
+      activePaidCount,
+      compedCount,
+      unpaidCount,
+      totalMonthlyRevenueUah,
+      collectionRatePercent,
+    },
+    monobankJarUrl,
+  };
+}
