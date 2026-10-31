@@ -113,20 +113,48 @@ export async function getTeamTrainingDataAction(params?: {
     .order("last_name", { ascending: true });
 
   const teamPlayers = rawPlayers || [];
+  const playerIds = teamPlayers.map((p) => p.id);
 
-  // 3. Перевіряємо, чи вже збережені сесії на цей день для цієї команди
+  // 3. Перевіряємо, чи вже збережені сесії на цей день для гравців цієї команди
   let existingWorkloads: any[] = [];
-  try {
-    const { data: wSessions } = await supabase
-      .from("workload_sessions")
-      .select("*")
-      .eq("team_id", selectedTeamId)
-      .eq("date", targetDate);
+  if (playerIds.length > 0) {
+    try {
+      const { data: wSessions } = await supabase
+        .from("workload_sessions")
+        .select("*")
+        .in("player_id", playerIds)
+        .eq("date", targetDate);
 
-    if (wSessions && wSessions.length > 0) {
-      existingWorkloads = wSessions;
-    }
-  } catch {}
+      if (wSessions && wSessions.length > 0) {
+        // Дедуплікуємо та парсимо поля сесії з notes ([COACH_SESSION])
+        const map = new Map<string, any>();
+        for (const s of wSessions) {
+          let parsedNotes: any = null;
+          if (s.notes && typeof s.notes === "string" && s.notes.startsWith("[COACH_SESSION]")) {
+            try {
+              parsedNotes = JSON.parse(s.notes.replace("[COACH_SESSION]", "").trim());
+            } catch {}
+          }
+          const merged = {
+            ...s,
+            coach_rpe: parsedNotes?.coach_rpe ?? s.rpe_score,
+            player_rpe: parsedNotes?.player_rpe ?? null,
+            attendance_status: parsedNotes?.attendance_status ?? (s.duration_minutes > 0 ? "present" : "absent"),
+            absence_reason: parsedNotes?.absence_reason ?? null,
+            team_session_id: parsedNotes?.team_session_id ?? null,
+            session_type: parsedNotes?.session_type ?? s.session_type,
+            cleanNotes: parsedNotes?.notes ?? (s.notes?.startsWith("[COACH_SESSION]") ? "" : s.notes),
+          };
+
+          const prev = map.get(s.player_id);
+          if (!prev || new Date(s.created_at).getTime() > new Date(prev.created_at).getTime()) {
+            map.set(s.player_id, merged);
+          }
+        }
+        existingWorkloads = Array.from(map.values());
+      }
+    } catch {}
+  }
 
   // 4. Отримуємо відповіді гравців з велнес-анкет за сьогодні (щоб дізнатися їхній власний player_rpe)
   let playerSelfRpeMap = new Map<string, number>();
@@ -171,7 +199,7 @@ export async function getTeamTrainingDataAction(params?: {
         minutes: existing.duration_minutes ?? 75,
         rpeScore: (existing.coach_rpe ?? existing.rpe_score ?? 6) as RpeScore,
         playerRpe: selfRpe !== null && selfRpe !== undefined ? (selfRpe as RpeScore) : null,
-        notes: existing.notes || "",
+        notes: (existing.cleanNotes ?? (existing.notes?.startsWith("[COACH_SESSION]") ? "" : existing.notes)) || "",
       };
     }
 
@@ -195,7 +223,7 @@ export async function getTeamTrainingDataAction(params?: {
         sessionType: (firstExisting.session_type as TrainingSessionType) || "training_team",
         defaultMinutes: firstExisting.duration_minutes || 75,
         defaultRpe: (firstExisting.coach_rpe ?? firstExisting.rpe_score ?? 6) as RpeScore,
-        sessionNotes: firstExisting.notes || "",
+        sessionNotes: (firstExisting.cleanNotes ?? (firstExisting.notes?.startsWith("[COACH_SESSION]") ? "" : firstExisting.notes)) || "",
         loggedAt: firstExisting.created_at || new Date().toISOString(),
       }
     : null;
@@ -291,33 +319,37 @@ export async function saveTeamTrainingAction(input: SaveTeamTrainingInput) {
     };
 
     // 1. Запис у workload_sessions
+    // Спочатку видаляємо попередній запис за цю дату, щоб уникнути дублювання
+    try {
+      await supabase
+        .from("workload_sessions")
+        .delete()
+        .eq("player_id", item.playerId)
+        .eq("date", input.date);
+    } catch {}
+
     let insertSuccess = false;
     try {
-      const { error: wErr } = await supabase
-        .from("workload_sessions")
-        .upsert(sessionPayload as any, { onConflict: "player_id, date" });
+      const { error: wErr } = await supabase.from("workload_sessions").insert({
+        id: sessionPayload.id,
+        club_id: clubId,
+        player_id: item.playerId,
+        date: input.date,
+        session_type: input.sessionType,
+        duration_minutes: duration,
+        rpe_score: Math.max(1, rpe),
+        workload_au: workloadAu,
+        notes: `[COACH_SESSION] ${JSON.stringify(sessionPayload)}`,
+      } as any);
 
       if (!wErr) {
         insertSuccess = true;
       }
     } catch {}
 
-    // Fallback: якщо таблиця недоступна без колонок — прямий insert або injury_logs
+    // Fallback: якщо таблиця недоступна — injury_logs
     if (!insertSuccess) {
       try {
-        await supabase.from("workload_sessions").insert({
-          id: sessionPayload.id,
-          club_id: clubId,
-          player_id: item.playerId,
-          date: input.date,
-          session_type: input.sessionType,
-          duration_minutes: duration,
-          rpe_score: Math.max(1, rpe), // для старого check constraint >= 1
-          workload_au: workloadAu,
-          notes: `[COACH_SESSION] ${JSON.stringify(sessionPayload)}`,
-        } as any);
-        insertSuccess = true;
-      } catch {
         await supabase.from("injury_logs").insert({
           club_id: clubId,
           injury_id: null as any,
@@ -325,7 +357,7 @@ export async function saveTeamTrainingAction(input: SaveTeamTrainingInput) {
           category: "note",
           note: `[WORKLOAD] ${JSON.stringify(sessionPayload)}`,
         } as any);
-      }
+      } catch {}
     }
 
     // 2. Пункт 4: запис у таблицю exposures (задача 4.2: реєстр хвилин навантаження)
