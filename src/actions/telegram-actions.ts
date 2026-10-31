@@ -20,14 +20,13 @@ import {
   memoryTelegramBindings,
   TELEGRAM_TOKEN_EXPIRATION_SECONDS,
 } from "@/lib/telegram-auth";
-import type {
-  TelegramWebhookUpdate,
-  CoachWeeklyTelegramSummary,
-  PlayerTelegramBinding,
+import {
+  type TelegramWebhookUpdate,
+  type CoachWeeklyTelegramSummary,
+  type PlayerTelegramBinding,
+  DEFAULT_DOCTOR_PHONE,
+  DEFAULT_DOCTOR_TG_URL,
 } from "@/types/telegram";
-
-export const DEFAULT_DOCTOR_PHONE = "+380935623945";
-export const DEFAULT_DOCTOR_TG_URL = "https://t.me/+380935623945";
 
 /**
  * 1. Генерація deep-link та QR-коду для прив'язки гравця до Telegram-бота (п. 8.7.1 & 8.7.5).
@@ -676,11 +675,14 @@ export async function processTelegramWebhookUpdateAction(
 export async function sendMorningWellnessRemindersAction(options?: {
   teamId?: string;
   baseUrl?: string;
+  isCron?: boolean;
 }) {
   try {
-    const auth = await assertTeamStaff();
-    if ("error" in auth) {
-      return { success: false, error: auth.error };
+    if (!options?.isCron) {
+      const auth = await assertTeamStaff();
+      if ("error" in auth) {
+        return { success: false, error: auth.error };
+      }
     }
 
     const supabase = createAdminClient();
@@ -1070,6 +1072,28 @@ export async function sendDoctorRecommendationAction(params: {
     const store = clubSettings.wellness_entries_store || {};
     const key = `${playerId}_${date}`;
     const currEntry = store[key] || {};
+    const existingRec = currEntry.doctor_recommendation || {};
+
+    const sentHistory = Array.isArray(existingRec.sentHistory)
+      ? [...existingRec.sentHistory]
+      : existingRec.text
+      ? [
+          {
+            text: existingRec.text,
+            sentAt: existingRec.sentAt || nowIso,
+            sentToTelegram: Boolean(existingRec.sentToTelegram),
+            doctor: existingRec.doctor || docName,
+          },
+        ]
+      : [];
+
+    sentHistory.push({
+      text: recommendation.trim(),
+      sentAt: nowIso,
+      sentToTelegram,
+      doctor: docName,
+    });
+
     currEntry.doctor_recommendation = {
       text: recommendation.trim(),
       template: templateTitle || null,
@@ -1077,8 +1101,9 @@ export async function sendDoctorRecommendationAction(params: {
       doctorPhone: DEFAULT_DOCTOR_PHONE,
       sentAt: nowIso,
       sentToTelegram,
-      playerReply: currEntry.doctor_recommendation?.playerReply || null,
-      replies: currEntry.doctor_recommendation?.replies || [],
+      playerReply: existingRec.playerReply || null,
+      replies: existingRec.replies || [],
+      sentHistory,
     };
     store[key] = currEntry;
 
@@ -1116,8 +1141,8 @@ export async function sendDoctorRecommendationAction(params: {
     };
   }
 }
-
-
+
+
 /**
  * Отримання рекомендації лікаря та відповідей гравця для вказаної дати
  */
@@ -1151,4 +1176,4 @@ export async function getPlayerDoctorRecommendationAction(params: {
       error: err?.message,
     };
   }
-}
+}

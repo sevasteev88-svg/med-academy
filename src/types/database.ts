@@ -581,4 +581,9 @@ export type OsiicsCode = {
   created_at: string;
 };
 
+// ─── B2B2C Підписки та Білінг ─────────────────────────────────────────
+export * from "./billing";
+
+
+
 

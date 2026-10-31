@@ -19,7 +19,8 @@ export type ReadinessGrayReason =
   | "no_consent" // Неповнолітній без згоди на обробку даних
   | "no_device" // Пристрій не активовано
   | "no_entry_today" // Сьогодні не заповнив анкету
-  | "collecting_baseline"; // Менше 14 відповідей за 28 днів
+  | "collecting_baseline" // Менше 14 відповідей за 28 днів
+  | "pending_subscription"; // Очікує оплати підписки (B2B2C)
 
 export type PhysicalFlagCategory = "біль" | "втома" | "сон" | "нездужання";
 
@@ -169,6 +170,7 @@ export interface CalculateReadinessOptions {
   todayDate: string; // YYYY-MM-DD
   hasConsent: boolean; // Наявність згоди
   hasActiveDevice: boolean; // Наявність активованого пристрою
+  isSubscriptionLocked?: boolean; // Чи заблоковано за несплату підписки (B2B2C)
   entriesLast28Days: WellnessEntry[]; // Анкети за останні 28 днів включно із сьогоднішньою
   thresholds?: ReadinessThresholds;
   visibility?: CoachCategoryVisibility;
@@ -301,6 +303,16 @@ export function evaluatePlayerReadiness(
       grayReason: "no_device",
       statusLabel: "Не активовано",
       actionPrompt: "Гравець ще не активував пристрій по QR-коду",
+    };
+  }
+
+  if (options.isSubscriptionLocked) {
+    return {
+      ...baseResult,
+      status: "gray",
+      grayReason: "pending_subscription",
+      statusLabel: "Очікує оплати",
+      actionPrompt: "Підписка на паспорт здоров'я очікує оплати батьками",
     };
   }
 

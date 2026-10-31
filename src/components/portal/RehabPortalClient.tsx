@@ -21,6 +21,7 @@ import {
 } from "@/lib/constants";
 import PwaInstallPromptModal from "@/components/portal/PwaInstallPromptModal";
 import PlayerWellnessQuiz from "@/components/wellness/PlayerWellnessQuiz";
+import SubscriptionPaywall from "@/components/portal/SubscriptionPaywall";
 
 interface Props {
   initialSessionData?: any;
@@ -548,6 +549,9 @@ export default function RehabPortalClient({
 
   // 2. Logged-in Player Cabinet Screen
   if (authenticatedPlayer) {
+    const isSubscriptionRequired = Boolean(
+      initialSessionData?.subscriptionRequired || authenticatedPlayer?.subscriptionRequired
+    );
     const doctorInstruction = authenticatedPlayer.doctorInstruction;
     const pastCheckins = authenticatedPlayer.pastCheckins || [];
     const weeklySummary = authenticatedPlayer.weeklySummary;
@@ -586,7 +590,17 @@ export default function RehabPortalClient({
           </button>
         </div>
 
-        {/* 11. Баннер первого входа: блокирует отправку рапорта до установки постоянного PIN */}
+        {/* Soft-lock: якщо підписка очікує оплати */}
+        {isSubscriptionRequired ? (
+          <SubscriptionPaywall
+            playerId={authenticatedPlayer.id}
+            playerName={authenticatedPlayer.name}
+            teamName={authenticatedPlayer.team}
+            subscription={initialSessionData?.subscription}
+          />
+        ) : (
+          <>
+            {/* 11. Баннер первого входа: блокирует отправку рапорта до установки постоянного PIN */}
         {mustChangePin && (
           <div className="p-4 rounded-2xl bg-rose-950/60 border border-rose-500/40 text-left space-y-3 shadow-xl animate-pulse">
             <div className="flex items-center gap-2 text-rose-300 font-bold text-xs">
@@ -1804,6 +1818,8 @@ export default function RehabPortalClient({
               </p>
             </div>
           </div>
+        )}
+          </>
         )}
       </div>
     );

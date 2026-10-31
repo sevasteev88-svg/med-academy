@@ -23,6 +23,7 @@ import { assertDoctor, DEFAULT_CLUB_ID } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { getPlayerWeeklySummaryAction } from "@/actions/wellness-entry-actions";
 import { submitPlayerSelfRpeAction } from "./training-session-actions";
+import { isSubscriptionAccessGranted } from "@/lib/billing";
 
 /**
  * Отримує або ініціалізує portal_token для гравця (викликається сервером або лікарем).
@@ -605,9 +606,45 @@ export async function getAuthorizedPlayerCabinetData() {
   // 8. Персональна тижнева динаміка та статус перегляду штабом (8.5)
   const weeklySummary = await getPlayerWeeklySummaryAction(player.id);
 
+  // 9. Перевірка статусу B2B2C підписки гравця
+  let isSubscriptionActive = true;
+  let subscriptionDetails: any = null;
+
+  try {
+    const { data: sub } = await supabase
+      .from("player_subscriptions")
+      .select("status, plan_code, amount_uah, billing_interval, current_period_end, grace_period_ends_at, card_last4, comped_reason")
+      .eq("player_id", player.id)
+      .maybeSingle();
+
+    if (sub) {
+      isSubscriptionActive = isSubscriptionAccessGranted({
+        status: sub.status as any,
+        currentPeriodEnd: sub.current_period_end,
+        gracePeriodEndsAt: sub.grace_period_ends_at,
+      });
+      subscriptionDetails = {
+        ...sub,
+        isActive: isSubscriptionActive,
+      };
+    } else {
+      isSubscriptionActive = false;
+      subscriptionDetails = {
+        status: "unpaid",
+        isActive: false,
+        amount_uah: 150,
+        plan_code: "monthly_150_uah",
+      };
+    }
+  } catch {
+    isSubscriptionActive = true;
+  }
+
   return {
     success: true,
     mustChangePin: session.mustChangePin,
+    subscriptionRequired: !isSubscriptionActive,
+    subscription: subscriptionDetails,
     player: {
       id: player.id,
       name: `${player.last_name} ${player.first_name}`,

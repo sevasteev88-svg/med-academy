@@ -1,3 +1,6 @@
+export const DEFAULT_DOCTOR_PHONE = "+380935623945";
+export const DEFAULT_DOCTOR_TG_URL = "https://t.me/+380935623945";
+
 export interface PlayerTelegramToken {
   id: string;
   player_id: string;

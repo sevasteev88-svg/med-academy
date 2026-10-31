@@ -29,6 +29,7 @@ import {
   sanitizeReadinessForCoach,
   type PlayerReadinessResult,
 } from "@/lib/readiness";
+import { isSubscriptionAccessGranted } from "@/lib/billing";
 import type { WellnessEntry, TeamComplianceStats } from "@/types/wellness";
 import { calculateWearableBaseline } from "@/lib/wearables-baseline";
 import type { WearableEntry, WearableBaselineReport } from "@/types/wearables";
@@ -583,6 +584,19 @@ export async function getTeamReadinessAction(params?: {
     } catch {}
   }
 
+  // 7c. Перевірка статусу B2B2C підписок гравців для відображення в світлофорі
+  const subByPlayer = new Map<string, any>();
+  try {
+    const { data: subsData } = await supabase
+      .from("player_subscriptions")
+      .select("player_id, status, current_period_end, grace_period_ends_at")
+      .in("player_id", playerIds);
+
+    for (const s of subsData ?? []) {
+      subByPlayer.set(s.player_id, s);
+    }
+  } catch {}
+
   // 8. Перевірка згод та розрахунок світлофора для кожного гравця
   const results: PlayerReadinessResult[] = [];
 
@@ -599,6 +613,16 @@ export async function getTeamReadinessAction(params?: {
 
     const pEntries = entriesByPlayer.get(p.id) || [];
     const hasActiveDevice = activeDevicePlayerIds.has(p.id) || pEntries.length > 0;
+
+    // Перевірка активності підписки гравця
+    const pSub = subByPlayer.get(p.id);
+    const isSubscriptionLocked = pSub
+      ? !isSubscriptionAccessGranted({
+          status: pSub.status,
+          currentPeriodEnd: pSub.current_period_end,
+          gracePeriodEndsAt: pSub.grace_period_ends_at,
+        })
+      : false;
 
     // Розрахунок особистої норми з носимих пристроїв для лікаря/адміна
     let pWearablesReport: WearableBaselineReport | null = null;
@@ -620,6 +644,7 @@ export async function getTeamReadinessAction(params?: {
       todayDate: today,
       hasConsent,
       hasActiveDevice,
+      isSubscriptionLocked,
       entriesLast28Days: pEntries,
       thresholds: config.thresholds,
       visibility: config.visibility,

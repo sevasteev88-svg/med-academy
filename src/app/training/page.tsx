@@ -33,6 +33,7 @@ export default async function TrainingPage({
     <div className="min-h-screen bg-transparent text-slate-100 p-4 sm:p-6 md:p-8">
       <div className="max-w-6xl mx-auto space-y-6">
         <CoachTrainingClient
+          key={`${data.team?.id || "team"}-${data.date}`}
           initialTeam={data.team}
           teams={data.teams}
           initialDate={data.date}

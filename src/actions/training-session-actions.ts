@@ -486,3 +486,143 @@ export async function submitPlayerSelfRpeAction(input: {
     diff: coachRpe !== null ? Math.abs(Number(input.playerRpe) - Number(coachRpe)) : null,
   };
 }
+
+
+export type MicrocycleDayPlan = {
+  date: string;
+  dayName: string;
+  matchdayLabel?: string; // e.g. "MD-4", "MD", "MD+1"
+  sessionType: TrainingSessionType;
+  minutes: number;
+  rpeScore: RpeScore;
+  notes?: string;
+  isDayOff?: boolean;
+};
+
+/**
+ * 3в. Отримання збереженого плану тижневого мікроциклу для команди
+ */
+export async function getWeeklyMicrocyclePlanAction(params: {
+  teamId: string;
+  weekStart: string;
+}) {
+  try {
+    const supabase = createAdminClient();
+    const { data: club } = await supabase
+      .from("clubs")
+      .select("settings")
+      .eq("id", DEFAULT_CLUB_ID)
+      .maybeSingle();
+
+    const microcycles = (club?.settings as any)?.microcycle_plans || {};
+    const key = `${params.teamId}_${params.weekStart}`;
+    const plan = microcycles[key] || null;
+
+    return {
+      success: true,
+      plan,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err?.message || "Помилка завантаження плану мікроциклу",
+    };
+  }
+}
+
+/**
+ * 3в. Збереження плану навантаження на весь тижневий мікроцикл (Пн-Нд).
+ * Тренер розписує планові тренування на тиждень, і вони автоматично
+ * стають базовими параметрами навантаження для кожного дня сесії.
+ */
+export async function saveWeeklyMicrocyclePlanAction(params: {
+  teamId: string;
+  weekStart: string;
+  days: MicrocycleDayPlan[];
+}) {
+  const staffCheck = await assertTeamStaff(params.teamId);
+  if ("error" in staffCheck) {
+    return { success: false, error: staffCheck.error };
+  }
+
+  const { user } = staffCheck;
+  const clubId = user.clubId || DEFAULT_CLUB_ID;
+  const supabase = createAdminClient();
+
+  try {
+    // 1. Отримуємо активних гравців команди
+    const { data: players } = await supabase
+      .from("players")
+      .select("id, first_name, last_name")
+      .eq("team_id", params.teamId)
+      .is("archived_at", null);
+
+    const activePlayers = players || [];
+
+    // 2. Для кожного дня тижня зберігаємо/створюємо базове групове тренування
+    for (const day of params.days) {
+      if (activePlayers.length > 0) {
+        const isOff = Boolean(day.isDayOff);
+        await saveTeamTrainingAction({
+          teamId: params.teamId,
+          date: day.date,
+          sessionType: isOff ? "recovery" : day.sessionType,
+          defaultMinutes: isOff ? 0 : day.minutes,
+          defaultRpe: isOff ? 0 : day.rpeScore,
+          sessionNotes: day.notes || (isOff ? "Вихідний день" : ""),
+          players: activePlayers.map((p) => ({
+            playerId: p.id,
+            isPresent: !isOff,
+            absenceReason: isOff ? "rest_day" : null,
+            minutes: isOff ? 0 : day.minutes,
+            rpeScore: isOff ? 0 : day.rpeScore,
+            notes: day.notes || null,
+          })),
+        });
+      }
+    }
+
+    // 3. Зберігаємо структуру плану в clubs.settings.microcycle_plans
+    const { data: club } = await supabase
+      .from("clubs")
+      .select("id, settings")
+      .eq("id", clubId)
+      .maybeSingle();
+
+    const clubSettings = (club?.settings as any) || {};
+    const microcycles = clubSettings.microcycle_plans || {};
+    const key = `${params.teamId}_${params.weekStart}`;
+
+    microcycles[key] = {
+      teamId: params.teamId,
+      weekStart: params.weekStart,
+      updatedAt: new Date().toISOString(),
+      updatedBy: user.email || "Тренер",
+      days: params.days,
+    };
+
+    await supabase
+      .from("clubs")
+      .update({
+        settings: {
+          ...clubSettings,
+          microcycle_plans: microcycles,
+        },
+      })
+      .eq("id", club?.id || clubId);
+
+    revalidatePath("/training");
+    revalidatePath("/workload");
+
+    return {
+      success: true,
+      daysSaved: params.days.length,
+      playersCount: activePlayers.length,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err?.message || "Помилка збереження мікроциклу",
+    };
+  }
+}

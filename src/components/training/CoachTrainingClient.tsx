@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect, useRef } from "react";
+import WeeklyMicrocyclePlannerModal from "./WeeklyMicrocyclePlannerModal";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -64,6 +65,24 @@ export default function CoachTrainingClient({
 
   // Стан гравців
   const [players, setPlayers] = useState<TeamTrainingPlayerItem[]>(initialPlayers);
+
+  // Стан планувальника мікроциклу на тиждень
+  const [isMicrocycleOpen, setIsMicrocycleOpen] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
+  const [lastSavedToast, setLastSavedToast] = useState<string | null>(null);
+  const dateInputRef = useRef<HTMLInputElement>(null);
+
+  // Синхронізація стейту при зміні пропсів (команда, дата, сесія)
+  useEffect(() => {
+    setSelectedTeamId(initialTeam?.id || teams[0]?.id || "");
+    setDate(initialDate);
+    setPlayers(initialPlayers);
+    setSessionType(existingSession?.sessionType || "training_team");
+    setTeamMinutes(existingSession?.defaultMinutes || 75);
+    setTeamRpe(existingSession?.defaultRpe ?? 6);
+    setSessionNotes(existingSession?.sessionNotes || "");
+    setJustSaved(false);
+  }, [initialTeam?.id, initialDate, initialPlayers, existingSession]);
 
   // Сповіщення
   const [notification, setNotification] = useState<{
@@ -182,10 +201,16 @@ export default function CoachTrainingClient({
       if (!res.success) {
         setNotification({ type: "error", message: res.error || "Помилка збереження" });
       } else {
+        setJustSaved(true);
+        setTimeout(() => setJustSaved(false), 5000);
+        const timeNow = new Date().toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" });
+        const successMsg = `Тренування успішно збережено о ${timeNow}! Присутніх: ${res.presentCount}, відсутніх: ${res.absentCount}.`;
         setNotification({
           type: "success",
-          message: `Тренування успішно збережено! Присутніх: ${res.presentCount}, відсутніх: ${res.absentCount}. Дані внесені до ACWR та експозицій.`,
+          message: successMsg,
         });
+        setLastSavedToast(`Збережено о ${timeNow} (${res.presentCount} гравців, ${totalAu} AU)`);
+        setTimeout(() => setLastSavedToast(null), 5000);
       }
     });
   }
@@ -212,6 +237,14 @@ export default function CoachTrainingClient({
 
         {/* Швидкі посилання */}
         <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={() => setIsMicrocycleOpen(true)}
+            className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500/20 to-orange-500/20 border border-amber-500/40 hover:border-amber-400 text-xs font-bold text-amber-200 transition-all flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
+          >
+            <span>📅</span>
+            <span>Розписати весь тиждень</span>
+          </button>
           <Link
             href="/workload"
             className="px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-xs font-semibold text-slate-300 transition-all flex items-center gap-1.5"
@@ -290,10 +323,21 @@ export default function CoachTrainingClient({
                 <button
                   type="button"
                   onClick={() => {
+                    const d = new Date(Date.now() - 2 * 86400000).toISOString().split("T")[0];
+                    handleFilterChange(selectedTeamId, d);
+                  }}
+                  className="text-slate-400 hover:text-sky-300 underline cursor-pointer"
+                >
+                  Позавчора
+                </button>
+                <span>·</span>
+                <button
+                  type="button"
+                  onClick={() => {
                     const yest = new Date(Date.now() - 86400000).toISOString().split("T")[0];
                     handleFilterChange(selectedTeamId, yest);
                   }}
-                  className="text-slate-400 hover:text-sky-300 underline"
+                  className="text-slate-400 hover:text-sky-300 underline cursor-pointer"
                 >
                   Вчора
                 </button>
@@ -304,18 +348,55 @@ export default function CoachTrainingClient({
                     const tod = new Date().toISOString().split("T")[0];
                     handleFilterChange(selectedTeamId, tod);
                   }}
-                  className="text-slate-400 hover:text-sky-300 underline"
+                  className="text-slate-400 hover:text-sky-300 underline cursor-pointer"
                 >
                   Сьогодні
                 </button>
               </div>
             </div>
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => handleFilterChange(selectedTeamId, e.target.value)}
-              className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white font-mono focus:border-sky-500 focus:outline-none"
-            />
+
+            <div className="relative flex items-center">
+              <input
+                ref={dateInputRef}
+                type="date"
+                value={date}
+                onClick={(e) => {
+                  try {
+                    e.currentTarget.showPicker();
+                  } catch {}
+                }}
+                onChange={(e) => handleFilterChange(selectedTeamId, e.target.value)}
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white font-mono focus:border-sky-500 focus:outline-none cursor-pointer"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  try {
+                    dateInputRef.current?.showPicker();
+                  } catch {}
+                }}
+                title="Відкрити календар"
+                className="absolute right-2.5 text-slate-400 hover:text-white p-1 rounded-lg transition-colors cursor-pointer"
+              >
+                📅
+              </button>
+            </div>
+
+            {/* Статус сесії для обраної дати */}
+            <div className="mt-1.5">
+              {existingSession ? (
+                <div className="flex items-center gap-1.5 text-[11px] text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
+                  <span>🟢</span>
+                  <span>Сесію збережено {new Date(existingSession.loggedAt).toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" })}</span>
+                  <span className="text-[10px] text-slate-400 font-normal ml-auto">(можна коригувати)</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 text-[11px] text-slate-400 font-normal bg-slate-800/40 px-2 py-0.5 rounded-md border border-slate-700/40">
+                  <span>⚪</span>
+                  <span>Сесію на цю дату ще не внесено</span>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Тип тренувального заняття */}
@@ -673,24 +754,54 @@ export default function CoachTrainingClient({
             алгоритмі <strong className="text-amber-400">ACWR</strong>.
           </div>
 
-          <button
-            type="submit"
-            disabled={isPending || players.length === 0}
-            className="px-6 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-black text-sm tracking-wide transition-all shadow-lg shadow-emerald-500/20 active:scale-95 flex items-center justify-center gap-2"
-          >
-            {isPending ? (
-              <span>Збереження навантаження...</span>
-            ) : (
-              <>
-                <span>💾</span>
-                <span>
-                  Зберегти навантаження ({presentCount} присутніх, {absentCount} відсутніх)
-                </span>
-              </>
+          <div className="flex items-center gap-3">
+            {lastSavedToast && (
+              <div className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-950/70 border border-emerald-500/40 text-emerald-300 text-xs font-semibold animate-fadeIn">
+                <span>✅</span>
+                <span>{lastSavedToast}</span>
+              </div>
             )}
-          </button>
+
+            <button
+              type="submit"
+              disabled={isPending || players.length === 0}
+              className={`px-6 py-3 rounded-xl disabled:opacity-50 font-black text-sm tracking-wide transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2 cursor-pointer ${
+                justSaved
+                  ? "bg-emerald-400 text-slate-950 ring-2 ring-emerald-300 shadow-emerald-500/40"
+                  : "bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-emerald-500/20"
+              }`}
+            >
+              {isPending ? (
+                <span>Збереження навантаження...</span>
+              ) : justSaved ? (
+                <>
+                  <span>✅</span>
+                  <span>Успішно збережено! ({presentCount} гравців, {totalAu} AU)</span>
+                </>
+              ) : (
+                <>
+                  <span>💾</span>
+                  <span>
+                    Зберегти навантаження ({presentCount} присутніх, {absentCount} відсутніх)
+                  </span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* 3в. МОДАЛЬНЕ ВІКНО ПЛАНУВАЛЬНИКА МІКРОЦИКЛУ НА ТИЖДЕНЬ */}
+      <WeeklyMicrocyclePlannerModal
+        isOpen={isMicrocycleOpen}
+        onClose={() => setIsMicrocycleOpen(false)}
+        teamId={selectedTeamId}
+        teamName={initialTeam?.name || "Команда"}
+        currentDate={date}
+        onPlanApplied={(newDate) => {
+          handleFilterChange(selectedTeamId, newDate);
+        }}
+      />
     </form>
   );
 }

@@ -8,9 +8,11 @@ import {
   getPlayerTelegramBindingAction,
   sendDoctorRecommendationAction,
   getPlayerDoctorRecommendationAction,
+} from "@/actions/telegram-actions";
+import {
   DEFAULT_DOCTOR_PHONE,
   DEFAULT_DOCTOR_TG_URL,
-} from "@/actions/telegram-actions";
+} from "@/types/telegram";
 
 export const PAIN_SYMPTOM_MAP_UA: Record<string, string> = {
   sharp_movement: "⚡ Різкий при русі",
@@ -62,6 +64,7 @@ export interface DoctorPlayerReadinessModalProps {
   onAcknowledge?: (playerId: string, date: string) => void;
   isPendingAck?: boolean;
   initialDate?: string;
+  userRole?: "coach" | "doctor" | "admin";
 }
 
 export function DoctorPlayerReadinessModal({
@@ -70,7 +73,9 @@ export function DoctorPlayerReadinessModal({
   onAcknowledge,
   isPendingAck,
   initialDate,
+  userRole,
 }: DoctorPlayerReadinessModalProps) {
+  const isDoctorOrAdmin = userRole !== "coach";
   const [activeDate, setActiveDate] = useState<string>(initialDate || player.date);
 
   // Знаходимо точку тренду для вибраного дня
@@ -169,14 +174,40 @@ export function DoctorPlayerReadinessModal({
         recommendation: recommendationText.trim(),
       });
       if (res.success) {
+        const nowIso = new Date().toISOString();
+        const prevHistory = Array.isArray(savedRecommendation?.sentHistory)
+          ? [...savedRecommendation.sentHistory]
+          : savedRecommendation?.text
+          ? [
+              {
+                text: savedRecommendation.text,
+                sentAt: savedRecommendation.sentAt || nowIso,
+                sentToTelegram: Boolean(savedRecommendation.sentToTelegram),
+                doctor: "Медичний штаб",
+              },
+            ]
+          : [];
+
+        const updatedHistory = [
+          ...prevHistory,
+          {
+            text: recommendationText.trim(),
+            sentAt: nowIso,
+            sentToTelegram: res.sentToTelegram,
+            doctor: "Медичний штаб",
+          },
+        ];
+
         setSavedRecommendation({
           text: recommendationText.trim(),
-          sentAt: new Date().toISOString(),
+          sentAt: nowIso,
           sentToTelegram: res.sentToTelegram,
           doctorPhone: DEFAULT_DOCTOR_PHONE,
           playerReply: savedRecommendation?.playerReply || null,
           replies: savedRecommendation?.replies || [],
+          sentHistory: updatedHistory,
         });
+        setRecommendationText(""); // Очищуємо поле для нового повідомлення!
         setRecFeedback({
           success: true,
           msg: res.sentToTelegram
@@ -216,7 +247,9 @@ export function DoctorPlayerReadinessModal({
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-1">
-              Детальний медичний звіт: анкета Hooper-Mackinnon + біометрія з носимих пристроїв
+              {isDoctorOrAdmin
+                ? "Детальний медичний звіт: анкета Hooper-Mackinnon + біометрія з носимих пристроїв"
+                : "Звіт готовності гравця: анкета Hooper-Mackinnon + оцінка відновлення"}
             </p>
           </div>
 
@@ -524,13 +557,13 @@ export function DoctorPlayerReadinessModal({
                 </div>
               )}
 
-              {/* СЕКЦІЯ ВІДПОВІДІ / РЕКОМЕНДАЦІЇ ЛІКАРЯ В TELEGRAM */}
+              {/* СЕКЦІЯ ВІДПОВІДІ / РЕКОМЕНДАЦІЇ ЛІКАРЯ ТА ІСТОРІЯ ПОВІДОМЛЕНЬ */}
               <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-950 to-slate-900 border border-sky-500/30 space-y-3">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-b border-slate-800 pb-2.5">
                   <div className="flex items-center gap-2">
                     <span className="text-base">👨‍⚕️</span>
                     <span className="text-xs font-bold text-sky-300 tracking-tight">
-                      Оперативна вказівка / Рекомендація лікаря
+                      {isDoctorOrAdmin ? "Оперативна вказівка / Рекомендація лікаря" : "Призначення та зв'язок з лікарем"}
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
@@ -548,72 +581,72 @@ export function DoctorPlayerReadinessModal({
                   </div>
                 </div>
 
-                {/* Швидкі шаблони */}
-                <div className="space-y-1.5">
-                  <span className="text-[10px] text-slate-400 font-medium block">
-                    Швидкі шаблони в один клік:
-                  </span>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-                    {DOCTOR_TEMPLATES.map((tpl) => (
+                {/* Якщо лікар чи адмін — форма відправки повідомлення */}
+                {isDoctorOrAdmin && (
+                  <>
+                    {/* Швидкі шаблони */}
+                    <div className="space-y-1.5">
+                      <span className="text-[10px] text-slate-400 font-medium block">
+                        Швидкі шаблони в один клік:
+                      </span>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                        {DOCTOR_TEMPLATES.map((tpl) => (
+                          <button
+                            key={tpl.title}
+                            type="button"
+                            onClick={() => setRecommendationText(tpl.text)}
+                            className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-sky-500/50 text-left transition-all active:scale-95 group cursor-pointer"
+                          >
+                            <div className="text-sm mb-0.5">{tpl.icon}</div>
+                            <div className="text-[11px] font-bold text-slate-200 group-hover:text-sky-300 truncate">
+                              {tpl.title}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Поле вводу рекомендації */}
+                    <div className="space-y-1.5">
+                      <textarea
+                        rows={3}
+                        value={recommendationText}
+                        onChange={(e) => setRecommendationText(e.target.value)}
+                        placeholder="Введіть рекомендацію або оберіть шаблон вище (наприклад: залишайся вдома, спокій, зв'язок о 14:00)..."
+                        className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 focus:border-sky-500 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors leading-relaxed"
+                      />
+                    </div>
+
+                    {/* Фідбек відправки */}
+                    {recFeedback && (
+                      <div className={`p-2.5 rounded-xl text-xs flex items-center gap-2 ${
+                        recFeedback.success
+                          ? "bg-emerald-950/40 border border-emerald-500/30 text-emerald-200"
+                          : "bg-rose-950/40 border border-rose-500/30 text-rose-200"
+                      }`}>
+                        <span>{recFeedback.success ? "✓" : "⚠️"}</span>
+                        <span>{recFeedback.msg}</span>
+                      </div>
+                    )}
+
+                    {/* Кнопка відправки */}
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="text-[10px] text-slate-500">
+                        {telegramStatus.isBound ? "Надійде гравцю в Telegram-бот" : "Збережеться в кабінеті"}
+                      </span>
+
                       <button
-                        key={tpl.title}
                         type="button"
-                        onClick={() => setRecommendationText(tpl.text)}
-                        className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-sky-500/50 text-left transition-all active:scale-95 group cursor-pointer"
+                        disabled={isSendingRec || !recommendationText.trim()}
+                        onClick={handleSendRecommendation}
+                        className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs transition-all flex items-center gap-2 shadow-md active:scale-95 cursor-pointer"
                       >
-                        <div className="text-sm mb-0.5">{tpl.icon}</div>
-                        <div className="text-[11px] font-bold text-slate-200 group-hover:text-sky-300 truncate">
-                          {tpl.title}
-                        </div>
+                        <span>{isSendingRec ? "⏳" : "✈️"}</span>
+                        <span>{isSendingRec ? "Відправка..." : "Надіслати вказівку гравцю"}</span>
                       </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Поле вводу рекомендації */}
-                <div className="space-y-1.5">
-                  <textarea
-                    rows={3}
-                    value={recommendationText}
-                    onChange={(e) => setRecommendationText(e.target.value)}
-                    placeholder="Введіть рекомендацію або оберіть шаблон вище (наприклад: залишайся вдома, спокій, зв'язок о 14:00)..."
-                    className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 focus:border-sky-500 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors leading-relaxed"
-                  />
-                </div>
-
-                {/* Фідбек відправки */}
-                {recFeedback && (
-                  <div className={`p-2.5 rounded-xl text-xs flex items-center gap-2 ${
-                    recFeedback.success
-                      ? "bg-emerald-950/40 border border-emerald-500/30 text-emerald-200"
-                      : "bg-rose-950/40 border border-rose-500/30 text-rose-200"
-                  }`}>
-                    <span>{recFeedback.success ? "✓" : "⚠️"}</span>
-                    <span>{recFeedback.msg}</span>
-                  </div>
+                    </div>
+                  </>
                 )}
-
-                {/* Кнопка відправки */}
-                <div className="flex items-center justify-between pt-1">
-                  {savedRecommendation?.sentAt ? (
-                    <span className="text-[10px] text-slate-400">
-                      Надіслано: {new Date(savedRecommendation.sentAt).toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" })}
-                      {savedRecommendation.sentToTelegram ? " (в Telegram ✓)" : " (в кабінет)"}
-                    </span>
-                  ) : (
-                    <span className="text-[10px] text-slate-500">Вказівка ще не надсилалась</span>
-                  )}
-
-                  <button
-                    type="button"
-                    disabled={isSendingRec || !recommendationText.trim()}
-                    onClick={handleSendRecommendation}
-                    className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs transition-all flex items-center gap-2 shadow-md active:scale-95"
-                  >
-                    <span>{isSendingRec ? "⏳" : "✈️"}</span>
-                    <span>{isSendingRec ? "Відправка..." : "Надіслати вказівку гравцю"}</span>
-                  </button>
-                </div>
 
                 {/* ПРЯМИЙ КОНТАКТ З ЛІКАРЕМ */}
                 <div className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
@@ -632,14 +665,14 @@ export function DoctorPlayerReadinessModal({
                       className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-300 text-[11px] font-medium transition-colors"
                     >
                       <span>💬</span>
-                      <span>Відкрити мій Telegram</span>
+                      <span>Відкрити Telegram лікаря</span>
                     </a>
                     <button
                       type="button"
                       onClick={handleManualRefresh}
                       disabled={isRefreshingReplies}
                       title="Оновити відповіді з Telegram"
-                      className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-medium transition-colors flex items-center gap-1 disabled:opacity-50"
+                      className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-medium transition-colors flex items-center gap-1 disabled:opacity-50 cursor-pointer"
                     >
                       <span className={isRefreshingReplies ? "animate-spin" : ""}>🔄</span>
                       <span>{isRefreshingReplies ? "Оновлення..." : "Оновити"}</span>
@@ -647,64 +680,106 @@ export function DoctorPlayerReadinessModal({
                   </div>
                 </div>
 
-                {/* ВІДПОВІДЬ ГРАВЦЯ З TELEGRAM */}
-                {savedRecommendation?.playerReply ? (
-                  <div className="p-3 rounded-2xl bg-gradient-to-br from-indigo-950/50 to-slate-900 border border-indigo-500/40 space-y-2 animate-fadeIn">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-bold text-indigo-300 flex items-center gap-1.5">
-                        <span className="text-sm">💬</span>
-                        <span>Відповідь гравця з Telegram:</span>
-                        {savedRecommendation.playerReply.username && (
-                          <span className="text-[11px] text-indigo-200/80 font-normal">
-                            ({savedRecommendation.playerReply.username})
-                          </span>
-                        )}
-                      </span>
-                      <span className="text-[10px] text-slate-400">
-                        {new Date(savedRecommendation.playerReply.receivedAt).toLocaleTimeString("uk-UA", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </span>
-                    </div>
-
-                    <div className="p-3 rounded-xl bg-slate-950/90 border border-indigo-500/25 text-xs text-slate-100 font-medium whitespace-pre-wrap leading-relaxed shadow-inner">
-                      {savedRecommendation.playerReply.text}
-                    </div>
-
-                    {/* Історія попередніх повідомлень гравця за день, якщо їх декілька */}
-                    {Array.isArray(savedRecommendation.replies) && savedRecommendation.replies.length > 1 && (
-                      <div className="space-y-1 pt-1.5 border-t border-indigo-500/20">
-                        <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
-                          Попередня історія за день ({savedRecommendation.replies.length}):
-                        </span>
-                        <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
-                          {savedRecommendation.replies.slice(0, -1).map((r: any, idx: number) => (
-                            <div
-                              key={idx}
-                              className="text-[11px] text-slate-300 bg-slate-900/60 p-2 rounded-lg border border-slate-800 flex items-start justify-between gap-2"
-                            >
-                              <span className="line-clamp-2">{r.text}</span>
-                              <span className="text-[9px] text-slate-500 shrink-0 font-mono">
-                                {new Date(r.receivedAt).toLocaleTimeString("uk-UA", {
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                })}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ) : savedRecommendation?.sentToTelegram ? (
-                  <div className="p-2.5 rounded-xl bg-slate-950/50 border border-slate-800/80 text-[11px] text-slate-400 flex items-center justify-between">
-                    <span className="flex items-center gap-2">
-                      <span className="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-                      <span>Вказівку доставлено в Telegram. Очікується відповідь гравця або дзвінок.</span>
+                {/* ІСТОРІЯ ПОВІДОМЛЕНЬ ТА ВІДПОВІДЕЙ ЗА ДЕНЬ (ХРОНОЛОГІЧНА СТРІЧКА) */}
+                <div className="space-y-2 pt-2 border-t border-slate-800/80">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-slate-300 flex items-center gap-1.5 text-[11px] uppercase tracking-wider">
+                      <span>📨</span>
+                      <span>Історія листування за {activeDate}</span>
+                    </span>
+                    <span className="text-[10px] text-slate-500">
+                      Автоматична фіксація часу
                     </span>
                   </div>
-                ) : null}
+
+                  {(() => {
+                    const docItems = (
+                      Array.isArray(savedRecommendation?.sentHistory) && savedRecommendation.sentHistory.length > 0
+                        ? savedRecommendation.sentHistory
+                        : savedRecommendation?.text
+                        ? [
+                            {
+                              text: savedRecommendation.text,
+                              sentAt: savedRecommendation.sentAt || new Date().toISOString(),
+                              sentToTelegram: Boolean(savedRecommendation.sentToTelegram),
+                              doctor: savedRecommendation.doctor || "Медичний штаб",
+                            },
+                          ]
+                        : []
+                    ).map((m: any, idx: number) => ({
+                      id: `doc_${m.sentAt || idx}`,
+                      role: "doctor" as const,
+                      text: m.text,
+                      time: m.sentAt,
+                      sentToTelegram: m.sentToTelegram,
+                      sender: m.doctor || "Медичний штаб",
+                    }));
+
+                    const plyItems = (
+                      Array.isArray(savedRecommendation?.replies) && savedRecommendation.replies.length > 0
+                        ? savedRecommendation.replies
+                        : savedRecommendation?.playerReply
+                        ? [savedRecommendation.playerReply]
+                        : []
+                    ).map((r: any, idx: number) => ({
+                      id: `ply_${r.receivedAt || idx}`,
+                      role: "player" as const,
+                      text: r.text,
+                      time: r.receivedAt,
+                      sender: r.username ? `@${r.username}` : (player.playerName || "Гравець"),
+                    }));
+
+                    const allItems = [...docItems, ...plyItems].sort(
+                      (a, b) => new Date(a.time || 0).getTime() - new Date(b.time || 0).getTime()
+                    );
+
+                    if (allItems.length === 0) {
+                      return (
+                        <div className="p-3 rounded-xl bg-slate-950/40 border border-slate-800/80 text-[11px] text-slate-500 text-center">
+                          Повідомлень та вказівок за цей день ще немає.
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                        {allItems.map((msg) => {
+                          const isDoc = msg.role === "doctor";
+                          const timeStr = msg.time
+                            ? new Date(msg.time).toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" })
+                            : "--:--";
+
+                          return (
+                            <div
+                              key={msg.id}
+                              className={`p-3 rounded-2xl border text-xs leading-relaxed ${
+                                isDoc
+                                  ? "bg-sky-950/30 border-sky-500/30 ml-4 sm:ml-8"
+                                  : "bg-indigo-950/30 border-indigo-500/30 mr-4 sm:mr-8"
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-2 mb-1">
+                                <span className={`font-bold flex items-center gap-1.5 ${
+                                  isDoc ? "text-sky-300" : "text-indigo-300"
+                                }`}>
+                                  <span>{isDoc ? "👨‍⚕️" : "⚽"}</span>
+                                  <span>{msg.sender}</span>
+                                </span>
+                                <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-mono">
+                                  <span>{timeStr}</span>
+                                  {isDoc && msg.sentToTelegram && (
+                                    <span className="text-emerald-400 font-semibold">(в Telegram ✓)</span>
+                                  )}
+                                </div>
+                              </div>
+                              <p className="text-slate-100 whitespace-pre-wrap">{msg.text}</p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </div>
               </div>
             </div>
           )}

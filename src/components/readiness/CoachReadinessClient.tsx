@@ -13,6 +13,7 @@ import {
 } from "@/lib/readiness-constants";
 import type { TeamComplianceStats } from "@/types/wellness";
 import { acknowledgeReadinessAction } from "@/actions/readiness-actions";
+import { sendMorningWellnessRemindersAction } from "@/actions/telegram-actions";
 import { DoctorPlayerReadinessModal } from "./DoctorPlayerReadinessModal";
 
 interface Props {
@@ -42,6 +43,7 @@ export default function CoachReadinessClient({
   const [selectedDoctorPlayer, setSelectedDoctorPlayer] = useState<PlayerReadinessResult | null>(null);
   const [selectedDoctorDate, setSelectedDoctorDate] = useState<string | undefined>(undefined);
   const [ackToast, setAckToast] = useState<string | null>(null);
+  const [isSendingReminder, setIsSendingReminder] = useState(false);
   const [isGuideOpen, setIsGuideOpen] = useState(true);
   const [, startTransition] = useTransition();
 
@@ -78,6 +80,27 @@ export default function CoachReadinessClient({
     d.setUTCDate(d.getUTCDate() + 1);
     const nextStr = d.toISOString().split("T")[0];
     changeDate(nextStr);
+  };
+
+  const handleSendTelegramReminder = async () => {
+    setIsSendingReminder(true);
+    try {
+      const res = await sendMorningWellnessRemindersAction({
+        teamId: selectedTeamId,
+      });
+      if (res.success) {
+        setAckToast(
+          `📢 Надіслано нагадування в Telegram: ${res.sentCount || 0} гравцям (${res.skippedCount || 0} вже заповнили анкету).`
+        );
+        setTimeout(() => setAckToast(null), 5000);
+      } else {
+        alert(res.error || "Помилка відправки нагадувань");
+      }
+    } catch (e: any) {
+      alert(e?.message || "Помилка мережі");
+    } finally {
+      setIsSendingReminder(false);
+    }
   };
 
   const handleAcknowledge = (playerId: string, date: string) => {
@@ -299,9 +322,26 @@ export default function CoachReadinessClient({
           />
         </div>
 
-        {/* Посилання для лікаря на налаштування порогових значень */}
-        {isDoctorOrAdmin && (
-          <div className="flex items-center gap-2">
+        {/* Кнопка нагадування в Telegram та налаштування */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {isToday && grayCount > 0 && (
+            <button
+              type="button"
+              disabled={isSendingReminder}
+              onClick={handleSendTelegramReminder}
+              title="Надіслати нагадування в Telegram гравцям, які ще не заповнили анкету сьогодні"
+              className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-sky-500/30 bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 font-semibold transition-colors cursor-pointer disabled:opacity-50 shadow-sm"
+            >
+              <span>{isSendingReminder ? "⏳" : "📢"}</span>
+              <span>
+                {isSendingReminder
+                  ? "Відправка..."
+                  : `Нагадати в Telegram (${grayCount} без анкети)`}
+              </span>
+            </button>
+          )}
+
+          {isDoctorOrAdmin && (
             <Link
               href="/admin/readiness-settings"
               className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 transition-colors font-medium"
@@ -313,8 +353,8 @@ export default function CoachReadinessClient({
                   : "Порогові правила лікаря"}
               </span>
             </Link>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* 3. КАРТКИ ЗВЕДЕНОЇ СТАТИСТИКИ ТА ТАБИ ФІЛЬТРАЦІЇ */}
@@ -551,10 +591,11 @@ export default function CoachReadinessClient({
       </div>
 
       {/* 8.8 МОДАЛЬНЕ ВІКНО МЕДИЧНИХ ДЕТАЛЕЙ ТА ГОДИННИКА (ТІЛЬКИ ДЛЯ ЛІКАРЯ ТА АДМІНА) */}
-      {selectedDoctorPlayer && isDoctorOrAdmin && (
+      {selectedDoctorPlayer && (
         <DoctorPlayerReadinessModal
           player={selectedDoctorPlayer}
           initialDate={selectedDoctorDate}
+          userRole={userRole}
           onClose={() => {
             setSelectedDoctorPlayer(null);
             setSelectedDoctorDate(undefined);
@@ -773,7 +814,7 @@ function PlayerReadinessCard({
                     key={pt.date}
                     type="button"
                     onClick={() => {
-                      if (isDoctorOrAdmin && onOpenDoctorModal) {
+                      if (onOpenDoctorModal) {
                         onOpenDoctorModal(player, pt.date);
                       }
                     }}
@@ -798,15 +839,15 @@ function PlayerReadinessCard({
             </div>
           </div>
 
-          {/* 8.8 КНОПКА «АНКЕТА ТА ГОДИННИК» ТІЛЬКИ ДЛЯ ЛІКАРЯ ТА АДМІНА */}
-          {isDoctorOrAdmin && onOpenDoctorModal && (
+          {/* 8.8 КНОПКА «АНКЕТА ТА ГОДИННИК / ДЕТАЛІ» */}
+          {onOpenDoctorModal && (
             <button
               type="button"
               onClick={() => onOpenDoctorModal(player, selectedDate || player.date)}
               className="px-3 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-700/80 shadow-sm whitespace-nowrap"
             >
-              <span>🩺</span>
-              <span>Анкета та годинник</span>
+              <span>{isDoctorOrAdmin ? "🩺" : "📋"}</span>
+              <span>{isDoctorOrAdmin ? "Анкета та годинник" : "Деталі анкети"}</span>
               {player.doctorDetails?.wearables && (
                 <span className="w-2 h-2 rounded-full bg-sky-400 inline-block ml-0.5" />
               )}
