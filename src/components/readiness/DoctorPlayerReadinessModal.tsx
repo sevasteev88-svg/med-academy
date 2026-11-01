@@ -1,9 +1,11 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Link from "next/link";
 import type { PlayerReadinessResult } from "@/lib/readiness";
 import { WEARABLES_DISCLAIMER_TEXT } from "@/lib/wearables-constants";
 import { formatPainLocation } from "@/lib/dictionaries";
+import type { InjuryLocation, InjurySide, InjuryType } from "@/types/database";
 import {
   getPlayerTelegramBindingAction,
   sendDoctorRecommendationAction,
@@ -57,6 +59,71 @@ export const DOCTOR_TEMPLATES = [
     text: "Прийми призначений протизапальний препарат за схемою після їжі. Нанеси охолоджувальний гель на уражену ділянку. Повторний звіт про стан о 12:00.",
   },
 ];
+
+function buildInjuryUrl(
+  playerId: string,
+  date: string,
+  details: NonNullable<PlayerReadinessResult["doctorDetails"]>
+): string {
+  let location: InjuryLocation = "other";
+  let side: InjurySide = "left";
+  let suggestedType: InjuryType = "muscular";
+
+  const rawLoc = details.painLocations?.[0]?.toLowerCase() || "";
+  if (rawLoc.includes("knee")) {
+    location = "knee";
+    suggestedType = "ligament";
+    if (rawLoc.includes("left")) side = "left";
+    if (rawLoc.includes("right")) side = "right";
+  } else if (rawLoc.includes("ankle") || rawLoc.includes("achilles") || rawLoc.includes("foot_ankle")) {
+    location = "ankle";
+    suggestedType = rawLoc.includes("achilles") ? "tendon" : "ligament";
+  } else if (rawLoc.includes("foot")) {
+    location = "foot";
+    suggestedType = "bone";
+  } else if (rawLoc.includes("thigh") || rawLoc.includes("hamstring") || rawLoc.includes("quadriceps")) {
+    location = "thigh";
+    suggestedType = "muscular";
+  } else if (rawLoc.includes("calf") || rawLoc.includes("shin")) {
+    location = "calf";
+    suggestedType = "muscular";
+  } else if (rawLoc.includes("groin") || rawLoc.includes("adductor")) {
+    location = "groin";
+    suggestedType = "muscular";
+  } else if (rawLoc.includes("spine") || rawLoc.includes("back") || rawLoc.includes("lumbar")) {
+    location = "spine";
+    suggestedType = "muscular";
+  } else if (rawLoc.includes("shoulder")) {
+    location = "shoulder";
+    suggestedType = "muscular";
+  } else if (rawLoc.includes("head")) {
+    location = "head";
+    suggestedType = "concussion";
+  }
+
+  const symptomsDesc = details.painSymptoms && details.painSymptoms.length > 0
+    ? `Симптоми: ${details.painSymptoms.map((s: string) => PAIN_SYMPTOM_MAP_UA[s] || s).join(", ")}. `
+    : "";
+  const commentDesc = details.painComment ? `Коментар: ${details.painComment}. ` : "";
+  const desc = `Зафіксовано з ранкового звіту Hooper (${date}). ${symptomsDesc}${commentDesc}`.trim();
+
+  return `/injuries/new?playerId=${playerId}&location=${location}&side=${side}&type=${suggestedType}&vas=${details.painVas ?? 5}&date=${date}&onset=acute&desc=${encodeURIComponent(desc)}`;
+}
+
+function buildIllnessUrl(
+  playerId: string,
+  date: string,
+  details: NonNullable<PlayerReadinessResult["doctorDetails"]>
+): string {
+  const tempStr = details.temperature ? `${details.temperature}°C` : "підвищена";
+  const symptomsDesc = details.illnessSymptoms && details.illnessSymptoms.length > 0
+    ? `Симптоми: ${details.illnessSymptoms.map((s: string) => ILLNESS_SYMPTOM_MAP_UA[s] || s).join(", ")}. `
+    : "";
+  const commentDesc = details.illnessComment ? `Коментар: ${details.illnessComment}. ` : "";
+  const desc = `Захворювання / ГРВІ за ранковим звітом (${date}). Температура: ${tempStr}. ${symptomsDesc}${commentDesc}Призначено домашній / лікарняний режим.`.trim();
+
+  return `/injuries/new?playerId=${playerId}&type=other&location=other&side=bilateral&vas=0&date=${date}&onset=gradual&mechanism=non_contact&osiics=INFC&isIllness=true&desc=${encodeURIComponent(desc)}`;
+}
 
 export interface DoctorPlayerReadinessModalProps {
   player: PlayerReadinessResult;
@@ -450,112 +517,184 @@ export function DoctorPlayerReadinessModal({
             <div className="space-y-3">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 {/* Картка болю */}
-                <div className={`p-3.5 rounded-2xl border ${
+                <div className={`p-3.5 rounded-2xl border flex flex-col justify-between ${
                   details.pain
                     ? "bg-rose-950/20 border-rose-500/40 text-rose-200"
                     : "bg-slate-950/60 border-slate-800 text-slate-300"
                 }`}>
-                  <span className="text-[10px] font-bold uppercase tracking-wider block">
-                    {details.pain ? "⚠️ Біль присутній" : "🍏 Скарг на біль немає"}
-                  </span>
-                  {details.pain && (
-                    <div className="mt-2 space-y-2 text-xs">
-                      <div className="flex items-center gap-2">
-                        <span className="text-slate-400">Шкала ВАШ:</span>
-                        <strong className="text-rose-400 font-mono text-sm px-2 py-0.5 rounded bg-rose-500/20 border border-rose-500/30">
-                          {details.painVas ?? 0} / 10
-                        </strong>
-                      </div>
-                      {details.painLocations && details.painLocations.length > 0 && (
-                        <div className="text-[11px] text-slate-200 bg-slate-900/60 p-2 rounded-xl border border-slate-800">
-                          <span className="text-slate-400 block mb-0.5">Локалізація:</span>
-                          <strong className="text-sky-300 font-semibold">
-                            {details.painLocations.map((loc) => formatPainLocation(loc)).join(", ")}
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider block">
+                      {details.pain ? "⚠️ Біль присутній" : "🍏 Скарг на біль немає"}
+                    </span>
+                    {details.pain && (
+                      <div className="mt-2 space-y-2 text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-400">Шкала ВАШ:</span>
+                          <strong className="text-rose-400 font-mono text-sm px-2 py-0.5 rounded bg-rose-500/20 border border-rose-500/30">
+                            {details.painVas ?? 0} / 10
                           </strong>
                         </div>
-                      )}
-                      {/* Характер болю */}
-                      {details.painSymptoms && details.painSymptoms.length > 0 && (
-                        <div className="space-y-1">
-                          <span className="text-[10px] text-amber-300 font-bold uppercase block">
-                            Характер болю:
-                          </span>
-                          <div className="flex flex-wrap gap-1">
-                            {details.painSymptoms.map((sym: string) => (
-                              <span
-                                key={sym}
-                                className="text-[10px] px-2 py-0.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-200 font-medium"
-                              >
-                                {PAIN_SYMPTOM_MAP_UA[sym] || sym}
-                              </span>
-                            ))}
+                        {details.painLocations && details.painLocations.length > 0 && (
+                          <div className="text-[11px] text-slate-200 bg-slate-900/60 p-2 rounded-xl border border-slate-800">
+                            <span className="text-slate-400 block mb-0.5">Локалізація:</span>
+                            <strong className="text-sky-300 font-semibold">
+                              {details.painLocations.map((loc) => formatPainLocation(loc)).join(", ")}
+                            </strong>
                           </div>
+                        )}
+                        {/* Характер болю */}
+                        {details.painSymptoms && details.painSymptoms.length > 0 && (
+                          <div className="space-y-1">
+                            <span className="text-[10px] text-amber-300 font-bold uppercase block">
+                              Характер болю:
+                            </span>
+                            <div className="flex flex-wrap gap-1">
+                              {details.painSymptoms.map((sym: string) => (
+                                <span
+                                  key={sym}
+                                  className="text-[10px] px-2 py-0.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-200 font-medium"
+                                >
+                                  {PAIN_SYMPTOM_MAP_UA[sym] || sym}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {/* Коментар до болю */}
+                        {details.painComment && (
+                          <div className="p-2 rounded-xl bg-slate-900/80 border border-amber-500/30 text-[11px] text-amber-200 italic">
+                            📝 «{details.painComment}»
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Швидка дія: фіксація травми */}
+                  <div className="pt-3 border-t border-slate-800/80 mt-3">
+                    {isDoctorOrAdmin ? (
+                      details.pain ? (
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <span className="text-[10px] text-rose-300/80">Потребує огляду:</span>
+                          <Link
+                            href={buildInjuryUrl(player.playerId, activeDate, details)}
+                            className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white text-xs font-bold transition-all shadow-md shadow-rose-900/30 active:scale-95 flex items-center justify-center gap-1.5"
+                          >
+                            <span>🚑</span>
+                            <span>Зафіксувати травму →</span>
+                          </Link>
                         </div>
-                      )}
-                      {/* Коментар до болю */}
-                      {details.painComment && (
-                        <div className="p-2 rounded-xl bg-slate-900/80 border border-amber-500/30 text-[11px] text-amber-200 italic">
-                          📝 «{details.painComment}»
+                      ) : (
+                        <div className="text-right">
+                          <Link
+                            href={`/injuries/new?playerId=${player.playerId}&date=${activeDate}`}
+                            className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors inline-flex items-center gap-1"
+                          >
+                            <span>+ Зафіксувати травму вручну</span>
+                          </Link>
                         </div>
-                      )}
-                    </div>
-                  )}
+                      )
+                    ) : (
+                      details.pain && (
+                        <div className="flex items-center justify-between gap-1 text-[11px] text-rose-300 bg-rose-950/40 p-1.5 rounded-lg border border-rose-500/20">
+                          <span>👨‍⚕️ Сигнал медштабу:</span>
+                          <span className="font-semibold">Передано на огляд</span>
+                        </div>
+                      )
+                    )}
+                  </div>
                 </div>
 
                 {/* Картка хвороби / ГРВІ */}
-                <div className={`p-3.5 rounded-2xl border ${
+                <div className={`p-3.5 rounded-2xl border flex flex-col justify-between ${
                   details.illness
                     ? "bg-rose-950/20 border-rose-500/40 text-rose-200"
                     : "bg-slate-950/60 border-slate-800 text-slate-300"
                 }`}>
-                  <span className="text-[10px] font-bold uppercase tracking-wider block">
-                    {details.illness ? "🤒 Ознаки захворювання / ГРВІ" : "🍏 Соматично здоровий"}
-                  </span>
-                  {details.illness ? (
-                    <div className="mt-2 space-y-2 text-xs">
-                      {/* Температура */}
-                      <div className="flex items-center gap-2">
-                        <span className="text-slate-400">Температура:</span>
-                        <strong className={`font-mono text-sm px-2 py-0.5 rounded border ${
-                          details.temperature && Number(String(details.temperature).replace("+", "")) >= 37.2
-                            ? "bg-rose-500/25 border-rose-500/40 text-rose-300"
-                            : "bg-amber-500/20 border-amber-500/30 text-amber-200"
-                        }`}>
-                          🌡️ {details.temperature ? `${details.temperature}°C` : "Не вказано"}
-                        </strong>
-                      </div>
-
-                      {/* Симптоми ГРВІ */}
-                      {details.illnessSymptoms && details.illnessSymptoms.length > 0 && (
-                        <div className="space-y-1">
-                          <span className="text-[10px] text-rose-300 font-bold uppercase block">
-                            Симптоми:
-                          </span>
-                          <div className="flex flex-wrap gap-1">
-                            {details.illnessSymptoms.map((sym: string) => (
-                              <span
-                                key={sym}
-                                className="text-[10px] px-2 py-0.5 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-200 font-medium"
-                              >
-                                {ILLNESS_SYMPTOM_MAP_UA[sym] || sym}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Коментар до хвороби */}
-                      {details.illnessComment && (
-                        <div className="p-2 rounded-xl bg-slate-900/80 border border-rose-500/30 text-[11px] text-rose-200 italic">
-                          💬 «{details.illnessComment}»
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <span className="text-[11px] text-slate-400 mt-2 block">
-                      Симптоми ГРВІ та підвищена температура відсутні.
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider block">
+                      {details.illness ? "🤒 Ознаки захворювання / ГРВІ" : "🍏 Соматично здоровий"}
                     </span>
-                  )}
+                    {details.illness ? (
+                      <div className="mt-2 space-y-2 text-xs">
+                        {/* Температура */}
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-400">Температура:</span>
+                          <strong className={`font-mono text-sm px-2 py-0.5 rounded border ${
+                            details.temperature && Number(String(details.temperature).replace("+", "")) >= 37.2
+                              ? "bg-rose-500/25 border-rose-500/40 text-rose-300"
+                              : "bg-amber-500/20 border-amber-500/30 text-amber-200"
+                          }`}>
+                            🌡️ {details.temperature ? `${details.temperature}°C` : "Не вказано"}
+                          </strong>
+                        </div>
+
+                        {/* Симптоми ГРВІ */}
+                        {details.illnessSymptoms && details.illnessSymptoms.length > 0 && (
+                          <div className="space-y-1">
+                            <span className="text-[10px] text-rose-300 font-bold uppercase block">
+                              Симптоми:
+                            </span>
+                            <div className="flex flex-wrap gap-1">
+                              {details.illnessSymptoms.map((sym: string) => (
+                                <span
+                                  key={sym}
+                                  className="text-[10px] px-2 py-0.5 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-200 font-medium"
+                                >
+                                  {ILLNESS_SYMPTOM_MAP_UA[sym] || sym}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Коментар до хвороби */}
+                        {details.illnessComment && (
+                          <div className="p-2 rounded-xl bg-slate-900/80 border border-rose-500/30 text-[11px] text-rose-200 italic">
+                            💬 «{details.illnessComment}»
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-[11px] text-slate-400 mt-2 block">
+                        Симптоми ГРВІ та підвищена температура відсутні.
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Швидка дія: фіксація захворювання / лікарняного */}
+                  <div className="pt-3 border-t border-slate-800/80 mt-3">
+                    {isDoctorOrAdmin ? (
+                      details.illness ? (
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <span className="text-[10px] text-amber-300/80">Оформити ізоляцію:</span>
+                          <Link
+                            href={buildIllnessUrl(player.playerId, activeDate, details)}
+                            className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white text-xs font-bold transition-all shadow-md shadow-amber-900/30 active:scale-95 flex items-center justify-center gap-1.5"
+                          >
+                            <span>🤒</span>
+                            <span>Зафіксувати захворювання →</span>
+                          </Link>
+                        </div>
+                      ) : (
+                        <div className="text-right">
+                          <Link
+                            href={`/injuries/new?playerId=${player.playerId}&type=other&location=other&vas=0&date=${activeDate}&onset=gradual&mechanism=non_contact&osiics=INFC&isIllness=true`}
+                            className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors inline-flex items-center gap-1"
+                          >
+                            <span>+ Оформити лікарняний вручну</span>
+                          </Link>
+                        </div>
+                      )
+                    ) : (
+                      details.illness && (
+                        <div className="flex items-center justify-between gap-1 text-[11px] text-amber-300 bg-amber-950/40 p-1.5 rounded-lg border border-amber-500/20">
+                          <span>🏠 Режим тренера:</span>
+                          <span className="font-semibold">Скасувати тренування</span>
+                        </div>
+                      )
+                    )}
+                  </div>
                 </div>
               </div>
 

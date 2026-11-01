@@ -20,12 +20,28 @@ import type {
   InjuryType,
 } from "@/types/database";
 
+export type InjuryFormInitialValues = {
+  injuryType?: InjuryType;
+  location?: InjuryLocation;
+  side?: InjurySide;
+  severity?: InjurySeverity;
+  mechanism?: InjuryMechanism;
+  vasScore?: number;
+  dateOfInjury?: string;
+  description?: string;
+  onset?: InjuryOnset;
+  occurrence?: InjuryOccurrence;
+  osiicsCode?: string;
+  isIllness?: boolean;
+};
+
 type Props = {
   playerId: string;
   playerName?: string;
   successRedirectUrl?: string; // ← куди редиректити після збереження
   onSuccess?: () => void;
   onCancel?: () => void;
+  initialValues?: InjuryFormInitialValues;
 };
 
 const INJURY_TYPES: { value: InjuryType; label: string }[] = [
@@ -36,7 +52,7 @@ const INJURY_TYPES: { value: InjuryType; label: string }[] = [
   { value: "cartilage",  label: "Хрящова" },
   { value: "concussion", label: "Струс мозку" },
   { value: "contusion",  label: "Забій" },
-  { value: "other",      label: "Інше" },
+  { value: "other",      label: "Захворювання / Лікарняний / Інше" },
 ];
 
 const LOCATIONS: { value: InjuryLocation; label: string }[] = [
@@ -50,8 +66,8 @@ const LOCATIONS: { value: InjuryLocation; label: string }[] = [
   { value: "spine",    label: "Хребет / спина" },
   { value: "elbow",    label: "Лікоть" },
   { value: "wrist",    label: "Зап'ясток" },
-  { value: "head",     label: "Голова" },
-  { value: "other",    label: "Інше" },
+  { value: "head",     label: "Голова / ЛОР" },
+  { value: "other",    label: "Загальне / Інше" },
 ];
 
 const SEVERITIES: { value: InjurySeverity; label: string }[] = [
@@ -69,25 +85,45 @@ const MECHANISMS: { value: InjuryMechanism; label: string }[] = [
 ];
 
 export default function InjuryForm({
-  playerId, playerName, successRedirectUrl, onSuccess, onCancel
+  playerId, playerName, successRedirectUrl, onSuccess, onCancel, initialValues
 }: Props) {
   const router = useRouter();
 
-  const [injuryType, setInjuryType] = useState<InjuryType>("muscular");
-  const [location, setLocation] = useState<InjuryLocation | "">("");
-  const [side, setSide] = useState<InjurySide>("left");
-  const [severity, setSeverity] = useState<InjurySeverity>("moderate");
-  const [mechanism, setMechanism] = useState<InjuryMechanism>("non_contact");
-  const [vasScore, setVasScore] = useState<number>(5);
-  const [dateOfInjury, setDateOfInjury] = useState(new Date().toISOString().split("T")[0]);
+  const [injuryType, setInjuryType] = useState<InjuryType>(
+    initialValues?.injuryType || (initialValues?.isIllness ? "other" : "muscular")
+  );
+  const [location, setLocation] = useState<InjuryLocation | "">(
+    initialValues?.location || (initialValues?.isIllness ? "other" : "")
+  );
+  const [side, setSide] = useState<InjurySide>(
+    initialValues?.side || (initialValues?.isIllness ? "bilateral" : "left")
+  );
+  const [severity, setSeverity] = useState<InjurySeverity>(
+    initialValues?.severity || "moderate"
+  );
+  const [mechanism, setMechanism] = useState<InjuryMechanism>(
+    initialValues?.mechanism || "non_contact"
+  );
+  const [vasScore, setVasScore] = useState<number>(
+    initialValues?.vasScore !== undefined ? initialValues.vasScore : (initialValues?.isIllness ? 0 : 5)
+  );
+  const [dateOfInjury, setDateOfInjury] = useState(
+    initialValues?.dateOfInjury || new Date().toISOString().split("T")[0]
+  );
   const [activityType, setActivityType] = useState<"training" | "match" | "other">("training");
   const [expectedReturnDate, setExpectedReturnDate] = useState<string>("");
-  const [description, setDescription] = useState("");
+  const [description, setDescription] = useState(initialValues?.description || "");
 
   // Стандарти OSIICS та UEFA
-  const [onset, setOnset] = useState<InjuryOnset>("acute");
-  const [occurrence, setOccurrence] = useState<InjuryOccurrence>("new");
-  const [osiicsCode, setOsiicsCode] = useState<string>("");
+  const [onset, setOnset] = useState<InjuryOnset>(
+    initialValues?.onset || (initialValues?.isIllness ? "gradual" : "acute")
+  );
+  const [occurrence, setOccurrence] = useState<InjuryOccurrence>(
+    initialValues?.occurrence || "new"
+  );
+  const [osiicsCode, setOsiicsCode] = useState<string>(
+    initialValues?.osiicsCode || (initialValues?.isIllness ? "INFC" : "")
+  );
   const [previousInjuryId, setPreviousInjuryId] = useState<string>("");
   const [pastInjuries, setPastInjuries] = useState<PastInjurySummary[]>([]);
   const [isLoadingPastInjuries, setIsLoadingPastInjuries] = useState<boolean>(false);
@@ -174,6 +210,22 @@ export default function InjuryForm({
       {playerName && (
         <div className="text-sm text-gray-400">
           Гравець: <span className="text-white font-medium">{playerName}</span>
+        </div>
+      )}
+
+      {initialValues && (
+        <div className="p-3.5 rounded-xl bg-sky-950/40 border border-sky-500/30 text-xs text-sky-200 flex items-center justify-between gap-3 shadow-sm">
+          <div className="flex items-center gap-2.5">
+            <span className="text-lg">{initialValues.isIllness ? "🤒" : "⚡"}</span>
+            <div className="leading-tight">
+              <span className="font-bold block text-white">
+                {initialValues.isIllness ? "Оформлення лікарняного / захворювання" : "Фіксація за ранковим звітом"}
+              </span>
+              <span className="text-[11px] text-sky-300/80">
+                Поля форми автоматично заповнено з щоденної анкети Hooper-Mackinnon.
+              </span>
+            </div>
+          </div>
         </div>
       )}
 
