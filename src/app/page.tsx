@@ -14,6 +14,7 @@ import RiskAlertsCenter from "@/components/alerts/RiskAlertsCenter";
 import { getRiskAlerts } from "@/lib/get-risk-alerts";
 import { getPlayerAvailability } from "@/lib/availability";
 import { calculateExposureMetrics, INSUFFICIENT_EXPOSURE_DATA_MSG } from "@/lib/exposure-calculator";
+import { getClubDate, getClubTimezone } from "@/lib/club-timezone";
 
 // ─── Типи ────────────────────────────────────────────────────────────────────
 type StatCard = {
@@ -39,9 +40,10 @@ function todayUk(): string {
   });
 }
 
-function vasZone(vas: number | null): "red" | "amber" {
+function vasZone(vas: number | null): "red" | "amber" | "green" {
   if (vas != null && vas >= 7) return "red";
-  return "amber";
+  if (vas != null && vas >= 4) return "amber";
+  return "green";
 }
 // Зона ризику росту (PHV) — остання оцінка. Повертаємо лише yellow/red.
 function growthZone(player: any): "yellow" | "red" | null {
@@ -180,17 +182,134 @@ export default async function Home() {
 
   const displayAlerts = isCoach ? alerts.filter((a: any) => a.type !== "pharmacy") : alerts;
 
-  // ── Тріаж: активні + реабілітація, сортування за ВАШ ──
-  const { data: triageInjuries } = await supabase
+  // ── Тріаж: активні + реабілітація, динамічний ВАШ із ранкового світлофора ──
+  const timezone = await getClubTimezone(user?.clubId || undefined);
+  const todayClubDate = getClubDate(timezone);
+  const yesterdayObj = new Date();
+  yesterdayObj.setDate(yesterdayObj.getDate() - 1);
+  const yesterdayClubDate = getClubDate(timezone, yesterdayObj);
+
+  const { data: rawTriageInjuries } = await supabase
     .from("injuries")
     .select(`
-      id, location, injury_type, vas_score, status,
+      id, player_id, location, injury_type, vas_score, status,
       is_classified, mlgr_code, bamic_code, munich_type, rtp_min_days, rtp_max_days, rtp_risk,
-      players ( first_name, last_name, position, teams ( name ), maturation_assessments ( risk_zone, created_at ) )
+      players ( id, first_name, last_name, position, teams ( name ), maturation_assessments ( risk_zone, created_at ) )
     `)
-    .in("status", ["active", "rehabilitation"])
-    .order("vas_score", { ascending: false, nullsFirst: false })
-    .limit(5);
+    .in("status", ["active", "rehabilitation"]);
+
+  const injuredPlayerIds = Array.from(
+    new Set(
+      (rawTriageInjuries ?? [])
+        .map((inj: any) => inj.player_id || inj.players?.id)
+        .filter(Boolean)
+    )
+  );
+
+  let wellnessList: Array<{ player_id: string; date: string; pain?: boolean | null; pain_vas?: number | null }> = [];
+  if (injuredPlayerIds.length > 0) {
+    try {
+      const { data: weData } = await supabase
+        .from("wellness_entries")
+        .select("player_id, date, pain, pain_vas")
+        .in("player_id", injuredPlayerIds)
+        .gte("date", yesterdayClubDate)
+        .lte("date", todayClubDate);
+      if (weData) wellnessList.push(...weData);
+    } catch {}
+
+    try {
+      const { data: wsData } = await supabase
+        .from("wellness_surveys")
+        .select("player_id, date, notes")
+        .in("player_id", injuredPlayerIds)
+        .gte("date", yesterdayClubDate)
+        .lte("date", todayClubDate);
+      if (wsData) {
+        for (const s of wsData) {
+          let extra: any = {};
+          if (s.notes && typeof s.notes === "string" && s.notes.startsWith("{")) {
+            try { extra = JSON.parse(s.notes); } catch {}
+          }
+          wellnessList.push({
+            player_id: s.player_id,
+            date: s.date,
+            pain: extra.pain ?? false,
+            pain_vas: extra.pain_vas ?? null,
+          });
+        }
+      }
+    } catch {}
+
+    try {
+      if (user?.clubId) {
+        const { data: clubSettingsData } = await supabase
+          .from("clubs")
+          .select("settings")
+          .eq("id", user.clubId)
+          .maybeSingle();
+        const store = (clubSettingsData as any)?.settings?.wellness_entries_store || {};
+        for (const [, val] of Object.entries(store)) {
+          const entry = val as any;
+          if (injuredPlayerIds.includes(entry.player_id) && (entry.date === todayClubDate || entry.date === yesterdayClubDate)) {
+            wellnessList.push({
+              player_id: entry.player_id,
+              date: entry.date,
+              pain: entry.pain ?? false,
+              pain_vas: entry.pain_vas ?? null,
+            });
+          }
+        }
+      }
+    } catch {}
+  }
+
+  // Обчислюємо динамічний ВАШ:
+  // 1. Сьогоднішня анкета (якщо заповнив: з болем -> ВАШ, без болю/не вказано -> 0)
+  // 2. Якщо сьогодні ще не заповнив -> беремо вчорашню анкету з приміткою
+  // 3. Якщо і вчора не було анкети -> базовий ВАШ із огляду/картки травми з приміткою
+  const triageInjuries = (rawTriageInjuries ?? [])
+    .map((inj: any) => {
+      const pid = inj.player_id || inj.players?.id;
+      const todayEntry = wellnessList.find((w) => w.player_id === pid && w.date === todayClubDate);
+      const yesterdayEntry = wellnessList.find((w) => w.player_id === pid && w.date === yesterdayClubDate);
+
+      let dynamicVas: number = 0;
+      let vasSource: "today" | "yesterday" | "card" = "card";
+
+      if (todayEntry) {
+        vasSource = "today";
+        if (todayEntry.pain && todayEntry.pain_vas != null) {
+          dynamicVas = Number(todayEntry.pain_vas);
+        } else {
+          dynamicVas = 0;
+        }
+      } else if (yesterdayEntry) {
+        vasSource = "yesterday";
+        if (yesterdayEntry.pain && yesterdayEntry.pain_vas != null) {
+          dynamicVas = Number(yesterdayEntry.pain_vas);
+        } else {
+          dynamicVas = 0;
+        }
+      } else {
+        vasSource = "card";
+        dynamicVas = inj.vas_score ?? 0;
+      }
+
+      return {
+        ...inj,
+        dynamicVas,
+        vasSource,
+      };
+    })
+    .sort((a: any, b: any) => {
+      if (b.dynamicVas !== a.dynamicVas) {
+        return b.dynamicVas - a.dynamicVas;
+      }
+      const sourceRank = { today: 3, yesterday: 2, card: 1 };
+      return (sourceRank[b.vasSource as keyof typeof sourceRank] || 0) - (sourceRank[a.vasSource as keyof typeof sourceRank] || 0);
+    })
+    .slice(0, 5);
 
   // ── Реабілітація: фази з прогресом (RTP Clearance + RTP Phases) ──
   const [{ data: rehabInjuries }, { data: rtpClearanceLogs }] = await Promise.all([
@@ -379,7 +498,7 @@ export default async function Home() {
                 </div>
               ) : (
                 (triageInjuries ?? []).map((inj: any) => {
-                  const zone = vasZone(inj.vas_score);
+                  const zone = vasZone(inj.dynamicVas);
                   const c = ACCENT[zone];
                   const p = inj.players;
                   const gZone = growthZone(p);
@@ -413,17 +532,32 @@ export default async function Home() {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 flex-shrink-0">
+                      <div className="flex items-center gap-3 flex-shrink-0">
                         {gZone && (
                           <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border ${gZone === "red" ? "bg-red-500/15 text-red-400 border-red-500/30" : "bg-amber-500/15 text-amber-400 border-amber-500/30"}`}>
                             PHV {gZone}
                           </span>
                         )}
-                        {inj.vas_score != null && (
+                        <div className="flex flex-col items-end">
                           <span className={`px-2.5 py-1 rounded-lg text-xs font-bold font-mono border ${c.badge}`}>
-                            VAS {inj.vas_score}/10
+                            VAS {inj.dynamicVas}/10
                           </span>
-                        )}
+                          {inj.vasSource === "yesterday" && (
+                            <span className="text-[9px] text-amber-400 font-medium tracking-tight mt-0.5">
+                              вчора · сьогодні ще немає
+                            </span>
+                          )}
+                          {inj.vasSource === "card" && (
+                            <span className="text-[9px] text-slate-500 font-medium tracking-tight mt-0.5">
+                              огляд · сьогодні ще немає
+                            </span>
+                          )}
+                          {inj.vasSource === "today" && (
+                            <span className="text-[9px] text-emerald-400 font-medium tracking-tight mt-0.5">
+                              сьогодні (ранок)
+                            </span>
+                          )}
+                        </div>
                         <ChevronRight size={14} className="text-slate-500 group-hover:text-white transition-colors" />
                       </div>
                     </Link>
