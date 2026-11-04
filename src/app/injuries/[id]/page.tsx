@@ -22,6 +22,7 @@ import type { LsiAssessmentRecord } from "@/types/lsi";
 import { InjuryAttachmentsSection } from "@/components/injuries/InjuryAttachmentsSection";
 import type { InjuryAttachment } from "@/types/injury-attachment";
 import { hasConsent } from "@/lib/consents";
+import InjuryStatusActions from "@/components/injuries/InjuryStatusActions";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -260,15 +261,23 @@ export default async function InjuryDetailPage({ params }: Props) {
               </div>
             </div>
           </div>
-          {player && (
-            <Link
-              href={`/players/${player.id}`}
-              className="px-4 py-2 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700/60 text-xs text-sky-400 font-semibold transition-all flex items-center justify-center gap-1.5 self-start sm:self-center"
-            >
-              <span>Профіль гравця</span>
-              <span>→</span>
-            </Link>
-          )}
+          <div className="flex items-center gap-2.5 self-start sm:self-center flex-wrap">
+            <InjuryStatusActions
+              injuryId={id}
+              status={injury.status}
+              actualReturnDate={injury.actual_return_date}
+              variant="hero"
+            />
+            {player && (
+              <Link
+                href={`/players/${player.id}`}
+                className="px-3.5 py-2 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700/60 text-xs text-sky-400 font-semibold transition-all flex items-center justify-center gap-1.5"
+              >
+                <span>Профіль гравця</span>
+                <span>→</span>
+              </Link>
+            )}
+          </div>
         </div>
 
         {/* Лічильники */}
@@ -535,6 +544,12 @@ export default async function InjuryDetailPage({ params }: Props) {
             <span>+</span>
             <span>Додати новий огляд</span>
           </Link>
+          <InjuryStatusActions
+            injuryId={id}
+            status={injury.status}
+            actualReturnDate={injury.actual_return_date}
+            variant="bottom"
+          />
           {player && (
             <Link
               href={`/players/${player.id}`}

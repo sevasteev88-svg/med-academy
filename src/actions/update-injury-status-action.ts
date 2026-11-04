@@ -16,10 +16,12 @@ export async function updateInjuryStatusAction(
 
   const update: Record<string, any> = { status: newStatus };
 
-  // Якщо закриваємо — ставимо дату повернення
+  // Якщо закриваємо — ставимо дату повернення, якщо відкриваємо — скидаємо
   if (newStatus === "closed") {
     update.actual_return_date =
       actualReturnDate || new Date().toISOString().split("T")[0];
+  } else {
+    update.actual_return_date = null;
   }
 
   const { error } = await supabase

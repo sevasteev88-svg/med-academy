@@ -14,16 +14,16 @@ type StatusOption = "active" | "rehabilitation" | "closed";
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-2 mb-2">
-      <span className="text-[9px] uppercase tracking-widest text-slate-600 whitespace-nowrap">
+      <span className="text-[10px] uppercase tracking-wider font-bold text-sky-400 whitespace-nowrap">
         {children}
       </span>
-      <div className="flex-1 h-px bg-blue-900/20" />
+      <div className="flex-1 h-px bg-sky-500/15" />
     </div>
   );
 }
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
-  return <div className="text-[10px] text-slate-500 mb-1">{children}</div>;
+  return <div className="text-[11px] font-medium text-slate-400 mb-1.5">{children}</div>;
 }
 
 function Select({
@@ -39,10 +39,10 @@ function Select({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="w-full bg-slate-900/85 border border-blue-900/22 rounded-lg px-3 py-2 text-[12px] text-slate-300 outline-none cursor-pointer"
+      className="w-full bg-slate-950/80 border border-sky-500/20 rounded-xl px-3 py-2 text-xs text-slate-200 outline-none cursor-pointer focus:border-sky-500/50 transition-colors"
     >
       {options.map((o) => (
-        <option key={o.value} value={o.value}>
+        <option key={o.value} value={o.value} className="bg-slate-900 text-slate-200">
           {o.label}
         </option>
       ))}
@@ -66,10 +66,10 @@ function ChipGroup<T extends string>({
           key={o.value}
           type="button"
           onClick={() => onChange(o.value)}
-          className={`px-3 py-1.5 rounded-lg text-[11px] font-medium border transition-all ${
+          className={`px-3 py-2 rounded-xl text-xs font-semibold border transition-all ${
             value === o.value
               ? o.activeClass
-              : "bg-slate-900/80 text-slate-500 border-blue-900/18 hover:border-blue-500/30 hover:text-slate-300"
+              : "bg-slate-950/60 text-slate-400 border-slate-800 hover:border-sky-500/30 hover:text-slate-200"
           }`}
         >
           {o.label}
@@ -82,10 +82,10 @@ function ChipGroup<T extends string>({
 function VasSlider({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   const color = value >= 7 ? "#EF4444" : value >= 4 ? "#F59E0B" : "#22C55E";
   return (
-    <div className="bg-slate-900/80 border border-blue-900/18 rounded-lg p-3">
+    <div className="bg-slate-950/60 border border-sky-500/15 rounded-xl p-3.5">
       <div className="flex items-center justify-between mb-2">
-        <span className="text-[11px] text-slate-400">Оцініть біль зараз</span>
-        <span className="text-[20px] font-medium" style={{ color }}>{value}</span>
+        <span className="text-xs text-slate-400">Оцініть біль зараз</span>
+        <span className="text-xl font-bold font-mono" style={{ color }}>{value}</span>
       </div>
       <input
         type="range"
@@ -93,10 +93,10 @@ function VasSlider({ value, onChange }: { value: number; onChange: (v: number) =
         max={10}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full"
+        className="w-full cursor-pointer"
         style={{ accentColor: color }}
       />
-      <div className="flex justify-between text-[9px] text-slate-600 mt-1">
+      <div className="flex justify-between text-[10px] text-slate-500 mt-1 font-mono">
         <span>0 — без болю</span>
         <span>10 — нестерпний</span>
       </div>
@@ -197,201 +197,199 @@ export default function ExamFormClient({
   }
 
   return (
-    <div
-      className="relative min-h-screen"
-      style={{
-        background: "repeating-linear-gradient(90deg,#060C1E 0px,#060C1E 60px,#0D2550 60px,#0D2550 120px)",
-      }}
-    >
-      <div className="absolute inset-0 bg-[rgba(4,6,14,0.72)] pointer-events-none" />
-
-      <div className="relative z-10 max-w-xl mx-auto px-4 pb-10">
+    <div className="min-h-screen bg-transparent text-slate-100 p-4 sm:p-6 md:p-8">
+      <div className="max-w-xl mx-auto space-y-5">
 
         {/* Topbar */}
-        <div className="flex items-center gap-3 py-3 border-b border-blue-900/15 mb-0">
+        <div className="flex items-center gap-3 pb-3 border-b border-sky-500/15">
           <button
             onClick={() => router.push(`/injuries/${injuryId}`)}
-            className="w-8 h-8 rounded-lg bg-blue-500/12 border border-blue-500/25 flex items-center justify-center text-blue-400 hover:bg-blue-500/20 transition-colors flex-shrink-0"
+            className="w-9 h-9 rounded-xl bg-slate-900/80 border border-sky-500/20 flex items-center justify-center text-sky-400 hover:bg-sky-500/20 hover:text-white transition-all flex-shrink-0"
           >
             ←
           </button>
           <div>
-            <div className="text-[13px] font-medium text-slate-200">Новий огляд</div>
-            <div className="text-[10px] text-slate-600">Заповніть дані прийому</div>
+            <div className="text-sm font-bold text-white">Новий огляд</div>
+            <div className="text-[11px] text-slate-400">Заповніть дані прийому</div>
           </div>
-          <div className="ml-auto text-[10px] text-slate-600">
+          <div className="ml-auto text-[11px] text-slate-400 font-mono">
             {new Date().toLocaleDateString("uk-UA")}
           </div>
         </div>
 
         {/* Пацієнт */}
-        <div className="flex items-center gap-3 py-2.5 px-3 bg-red-500/5 border-b border-red-500/12 mb-4">
-          <div className="w-9 h-9 rounded-lg bg-red-500/14 text-red-400 flex items-center justify-center text-[12px] font-medium flex-shrink-0">
+        <div className="flex items-center gap-3.5 p-3.5 rounded-2xl bg-slate-900/60 backdrop-blur-md border border-sky-500/15 shadow-[0_4px_20px_rgba(0,0,0,0.3)]">
+          <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-rose-500/20 to-sky-600/30 border border-sky-500/30 text-sky-300 flex items-center justify-center text-xs font-black flex-shrink-0">
             {playerName.split(" ").map((w) => w[0]).join("").slice(0, 2)}
           </div>
           <div>
-            <div className="text-[13px] font-medium text-slate-200">{playerName}</div>
-            <div className="text-[10px] text-slate-600">{injuryInfo}</div>
+            <div className="text-sm font-black text-white">{playerName}</div>
+            <div className="text-xs text-slate-400 mt-0.5">{injuryInfo}</div>
           </div>
         </div>
 
-        {/* VAS */}
-        <div className="mb-4">
-          <SectionLabel>Шкала болю ВАШ</SectionLabel>
-          <VasSlider value={vas} onChange={setVas} />
-        </div>
+        {/* Основна форма в єдиному стилі */}
+        <div className="p-5 rounded-2xl bg-slate-900/60 backdrop-blur-md border border-sky-500/15 shadow-[0_4px_25px_rgba(0,0,0,0.35)] space-y-5">
 
-        {/* Клінічний огляд — структуровані поля */}
-        <div className="mb-4">
-          <SectionLabel>Клінічний огляд</SectionLabel>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <FieldLabel>Набряк</FieldLabel>
-              <Select value={edema} onChange={setEdema} options={GRADE_OPTIONS} />
-            </div>
-            <div>
-              <FieldLabel>Гематома</FieldLabel>
-              <Select value={hematoma} onChange={setHematoma} options={GRADE_OPTIONS} />
-            </div>
-            <div>
-              <FieldLabel>Об'єм рухів (ROM)</FieldLabel>
-              <Select value={rom} onChange={setRom} options={ROM_OPTIONS} />
-            </div>
-            <div>
-              <FieldLabel>Біль при пальпації</FieldLabel>
-              <Select value={palpationPain} onChange={setPalpationPain} options={GRADE_OPTIONS} />
-            </div>
-            <div className="col-span-2">
-              <FieldLabel>М'язовий тонус</FieldLabel>
-              <Select value={muscleTone} onChange={setMuscleTone} options={TONE_OPTIONS} />
-            </div>
+          {/* VAS */}
+          <div>
+            <SectionLabel>Шкала болю ВАШ</SectionLabel>
+            <VasSlider value={vas} onChange={setVas} />
           </div>
-        </div>
 
-        {/* Гоніометрія (опц.) */}
-        <div className="mb-4">
-          <SectionLabel>Гоніометрія</SectionLabel>
-          <button
-            type="button"
-            onClick={() => setShowGonio(!showGonio)}
-            className="text-[11px] text-blue-400 border border-blue-500/28 bg-blue-500/10 rounded-lg px-3 py-2 hover:bg-blue-500/18 transition-colors"
-          >
-            📐 {showGonio ? "Сховати гоніометр" : "Відкрити гоніометр"}
-          </button>
-          {showGonio && (
-            <div className="mt-2 grid grid-cols-2 gap-2">
+          {/* Клінічний огляд — структуровані поля */}
+          <div>
+            <SectionLabel>Клінічний огляд</SectionLabel>
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <FieldLabel>Згинання (°)</FieldLabel>
-                <input
-                  type="number"
-                  value={gonioFlex}
-                  onChange={(e) => setGonioFlex(e.target.value)}
-                  placeholder="напр. 120"
-                  className="w-full bg-slate-900/85 border border-blue-900/22 rounded-lg px-3 py-2 text-[12px] text-slate-300 outline-none"
-                />
+                <FieldLabel>Набряк</FieldLabel>
+                <Select value={edema} onChange={setEdema} options={GRADE_OPTIONS} />
               </div>
               <div>
-                <FieldLabel>Розгинання (°)</FieldLabel>
-                <input
-                  type="number"
-                  value={gonioExt}
-                  onChange={(e) => setGonioExt(e.target.value)}
-                  placeholder="напр. 0"
-                  className="w-full bg-slate-900/85 border border-blue-900/22 rounded-lg px-3 py-2 text-[12px] text-slate-300 outline-none"
-                />
+                <FieldLabel>Гематома</FieldLabel>
+                <Select value={hematoma} onChange={setHematoma} options={GRADE_OPTIONS} />
+              </div>
+              <div>
+                <FieldLabel>Об'єм рухів (ROM)</FieldLabel>
+                <Select value={rom} onChange={setRom} options={ROM_OPTIONS} />
+              </div>
+              <div>
+                <FieldLabel>Біль при пальпації</FieldLabel>
+                <Select value={palpationPain} onChange={setPalpationPain} options={GRADE_OPTIONS} />
+              </div>
+              <div className="col-span-2">
+                <FieldLabel>М'язовий тонус</FieldLabel>
+                <Select value={muscleTone} onChange={setMuscleTone} options={TONE_OPTIONS} />
+              </div>
+            </div>
+          </div>
+
+          {/* Гоніометрія (опц.) */}
+          <div>
+            <SectionLabel>Гоніометрія</SectionLabel>
+            <button
+              type="button"
+              onClick={() => setShowGonio(!showGonio)}
+              className="text-xs text-sky-400 border border-sky-500/25 bg-sky-500/10 rounded-xl px-3 py-2 hover:bg-sky-500/20 transition-colors"
+            >
+              📐 {showGonio ? "Сховати гоніометр" : "Відкрити гоніометр"}
+            </button>
+            {showGonio && (
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <div>
+                  <FieldLabel>Згинання (°)</FieldLabel>
+                  <input
+                    type="number"
+                    value={gonioFlex}
+                    onChange={(e) => setGonioFlex(e.target.value)}
+                    placeholder="напр. 120"
+                    className="w-full bg-slate-950/80 border border-sky-500/20 rounded-xl px-3 py-2 text-xs text-slate-200 outline-none focus:border-sky-500/50"
+                  />
+                </div>
+                <div>
+                  <FieldLabel>Розгинання (°)</FieldLabel>
+                  <input
+                    type="number"
+                    value={gonioExt}
+                    onChange={(e) => setGonioExt(e.target.value)}
+                    placeholder="напр. 0"
+                    className="w-full bg-slate-950/80 border border-sky-500/20 rounded-xl px-3 py-2 text-xs text-slate-200 outline-none focus:border-sky-500/50"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Об'єктивні нотатки з підтримкою голосу uk-UA */}
+          <div>
+            <VoiceNoteTextarea
+              id="objectiveNote"
+              label="Об'єктивні нотатки (лікар)"
+              value={objectiveNote}
+              onChange={setObjectiveNote}
+              placeholder="Що бачить лікар: пальпація, тести, спостереження... (диктуйте або друкуйте)"
+              rows={3}
+            />
+          </div>
+
+          {/* Суб'єктивні нотатки */}
+          <div>
+            <SectionLabel>Суб'єктивні нотатки (гравець)</SectionLabel>
+            <textarea
+              value={subjectiveNote}
+              onChange={(e) => setSubjectiveNote(e.target.value)}
+              placeholder="Що відчуває гравець: скарги, відчуття..."
+              rows={2}
+              className="w-full bg-slate-950/80 border border-sky-500/20 rounded-xl px-3 py-2 text-xs text-slate-200 outline-none resize-none leading-relaxed focus:border-sky-500/50"
+            />
+          </div>
+
+          {/* Призначення */}
+          <div>
+            <SectionLabel>Призначення</SectionLabel>
+            <div className="mb-3">
+              <FieldLabel>Статус після огляду</FieldLabel>
+              <ChipGroup
+                value={newStatus}
+                onChange={setNewStatus}
+                options={[
+                  { value: "active", label: "Не готовий", activeClass: "bg-rose-500/15 text-rose-300 border-rose-500/35" },
+                  { value: "rehabilitation", label: "Реабілітація", activeClass: "bg-amber-500/15 text-amber-300 border-amber-500/35" },
+                  { value: "closed", label: "Допущений (Закрити травму)", activeClass: "bg-emerald-500/15 text-emerald-300 border-emerald-500/35 shadow-[0_0_12px_rgba(16,185,129,0.2)]" },
+                ]}
+              />
+            </div>
+            <div>
+              <FieldLabel>Наступний огляд / очік. повернення</FieldLabel>
+              <input
+                type="date"
+                value={nextExam}
+                onChange={(e) => setNextExam(e.target.value)}
+                className="w-full bg-slate-950/80 border border-sky-500/20 rounded-xl px-3 py-2 text-xs text-slate-200 outline-none focus:border-sky-500/50"
+              />
+            </div>
+          </div>
+
+          {/* Попередні огляди */}
+          {prevLogs.length > 0 && (
+            <div>
+              <SectionLabel>Попередні огляди</SectionLabel>
+              <div className="flex flex-col gap-2">
+                {prevLogs.slice(0, 3).map((log, i) => (
+                  <div key={i} className="bg-slate-950/50 border border-sky-500/10 rounded-xl px-3.5 py-2.5 flex gap-3">
+                    <span className="text-[10px] text-slate-500 font-mono flex-shrink-0 w-20">{log.date}</span>
+                    <span className="text-xs text-slate-300 leading-relaxed">{log.note}</span>
+                  </div>
+                ))}
               </div>
             </div>
           )}
-        </div>
 
-        {/* Об'єктивні нотатки з підтримкою голосу uk-UA */}
-        <div className="mb-4">
-          <VoiceNoteTextarea
-            id="objectiveNote"
-            label="Об'єктивні нотатки (лікар)"
-            value={objectiveNote}
-            onChange={setObjectiveNote}
-            placeholder="Що бачить лікар: пальпація, тести, спостереження... (диктуйте або друкуйте)"
-            rows={3}
-          />
-        </div>
-
-        {/* Суб'єктивні нотатки */}
-        <div className="mb-4">
-          <SectionLabel>Суб'єктивні нотатки (гравець)</SectionLabel>
-          <textarea
-            value={subjectiveNote}
-            onChange={(e) => setSubjectiveNote(e.target.value)}
-            placeholder="Що відчуває гравець: скарги, відчуття..."
-            rows={2}
-            className="w-full bg-slate-900/82 border border-blue-900/20 rounded-lg px-3 py-2 text-[12px] text-slate-300 outline-none resize-none leading-relaxed"
-          />
-        </div>
-
-        {/* Призначення */}
-        <div className="mb-4">
-          <SectionLabel>Призначення</SectionLabel>
-          <div className="mb-3">
-            <FieldLabel>Статус після огляду</FieldLabel>
-            <ChipGroup
-              value={newStatus}
-              onChange={setNewStatus}
-              options={[
-                { value: "active", label: "Не готовий", activeClass: "bg-red-500/15 text-red-400 border-red-500/35" },
-                { value: "rehabilitation", label: "Реабілітація", activeClass: "bg-amber-500/15 text-amber-400 border-amber-500/35" },
-                { value: "closed", label: "Допущений", activeClass: "bg-green-500/15 text-green-400 border-green-500/35" },
-              ]}
-            />
-          </div>
-          <div>
-            <FieldLabel>Наступний огляд / очік. повернення</FieldLabel>
-            <input
-              type="date"
-              value={nextExam}
-              onChange={(e) => setNextExam(e.target.value)}
-              className="w-full bg-slate-900/85 border border-blue-900/22 rounded-lg px-3 py-2 text-[12px] text-slate-300 outline-none"
-            />
-          </div>
-        </div>
-
-        {/* Попередні огляди */}
-        {prevLogs.length > 0 && (
-          <div className="mb-4">
-            <SectionLabel>Попередні огляди</SectionLabel>
-            <div className="flex flex-col gap-1.5">
-              {prevLogs.slice(0, 3).map((log, i) => (
-                <div key={i} className="bg-slate-900/60 border border-blue-900/12 rounded-lg px-3 py-2 flex gap-3">
-                  <span className="text-[9px] text-slate-600 flex-shrink-0 w-16">{log.date}</span>
-                  <span className="text-[11px] text-slate-500 leading-relaxed">{log.note}</span>
-                </div>
-              ))}
+          {error && (
+            <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl px-3.5 py-2.5 text-xs text-rose-400">
+              {error}
             </div>
-          </div>
-        )}
+          )}
 
-        {error && (
-          <div className="mb-3 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2 text-[11px] text-red-400">
-            {error}
+          {/* Кнопки дій */}
+          <div className="flex gap-3 pt-3 border-t border-sky-500/15">
+            <button
+              type="button"
+              onClick={() => router.push(`/injuries/${injuryId}`)}
+              className="flex-1 py-3 rounded-xl text-xs font-semibold text-slate-300 border border-slate-700/60 bg-slate-800/50 hover:bg-slate-800 transition-colors"
+            >
+              Скасувати
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={isPending}
+              className="flex-1 py-3 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 transition-all shadow-[0_0_15px_rgba(14,165,233,0.3)] disabled:opacity-50"
+            >
+              {isPending ? "Збереження..." : "Зберегти огляд"}
+            </button>
           </div>
-        )}
 
-        {/* Кнопки */}
-        <div className="flex gap-2 pt-2 border-t border-blue-900/12">
-          <button
-            type="button"
-            onClick={() => router.push(`/injuries/${injuryId}`)}
-            className="flex-1 py-2.5 rounded-lg text-[12px] font-medium text-blue-400 border border-blue-500/28 bg-blue-500/8 hover:bg-blue-500/15 transition-colors"
-          >
-            Скасувати
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={isPending}
-            className="flex-1 py-2.5 rounded-lg text-[12px] font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors disabled:opacity-50"
-          >
-            {isPending ? "Збереження..." : "Зберегти огляд"}
-          </button>
         </div>
       </div>
     </div>
