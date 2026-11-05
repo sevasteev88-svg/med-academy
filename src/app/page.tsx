@@ -126,6 +126,7 @@ export default async function Home() {
   const user = await getCurrentUser();
   const todayStr = new Date().toISOString().split("T")[0];
   const weekAgoStr = new Date(Date.now() - 7 * 86400000).toISOString().split("T")[0];
+  const weekAheadStr = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0];
 
   let clubName = "Академія";
   if (user?.clubId) {
@@ -137,7 +138,8 @@ export default async function Home() {
   const [
     { count: activeInjuries },
     { count: onRehab },
-    { count: examsThisWeek },
+    { count: scheduledExamsCount },
+    { count: examsPastWeekCount },
     alerts,
     availability,
     { data: allInjuriesForExposure },
@@ -145,6 +147,12 @@ export default async function Home() {
   ] = await Promise.all([
     supabase.from("injuries").select("*", { count: "exact", head: true }).eq("status", "active"),
     supabase.from("injuries").select("*", { count: "exact", head: true }).eq("status", "rehabilitation"),
+    supabase
+      .from("injuries")
+      .select("*", { count: "exact", head: true })
+      .in("status", ["active", "rehabilitation"])
+      .not("next_exam_date", "is", null)
+      .lte("next_exam_date", weekAheadStr),
     supabase.from("injury_examinations").select("*", { count: "exact", head: true }).gte("date", weekAgoStr),
     getRiskAlerts(),
     getPlayerAvailability(),
@@ -177,7 +185,13 @@ export default async function Home() {
         { icon: <Bandage size={14} />, value: activeInjuries ?? 0, label: "Активні травми", accent: "red", href: "/injuries" },
         { icon: <Activity size={14} />, value: onRehab ?? 0, label: "На реабілітації", accent: "amber", href: "/rtp" },
         { icon: <CheckCircle size={14} />, value: readyCount, label: "Готові до матчу", accent: "green", href: "/availability" },
-        { icon: <Calendar size={14} />, value: examsThisWeek ?? 0, label: "Огляди на тижні", accent: "blue", href: "/exams/upcoming" },
+        {
+          icon: <Calendar size={14} />,
+          value: scheduledExamsCount ?? 0,
+          label: (examsPastWeekCount ?? 0) > 0 ? `Заплановано (${examsPastWeekCount} пров.)` : "Заплановані огляди",
+          accent: (scheduledExamsCount ?? 0) > 0 ? "amber" : "blue",
+          href: (scheduledExamsCount ?? 0) === 0 && (examsPastWeekCount ?? 0) > 0 ? "/exams/upcoming?tab=past" : "/exams/upcoming",
+        },
       ];
 
   const displayAlerts = isCoach ? alerts.filter((a: any) => a.type !== "pharmacy") : alerts;
