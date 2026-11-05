@@ -2,7 +2,7 @@
 
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
-import { assertDoctor } from "@/lib/auth";
+import { assertTeamStaff, isDoctor } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import type {
   InjuryLocation,
@@ -38,10 +38,24 @@ type CreateInjuryInput = {
 };
 
 async function insertInjury(input: CreateInjuryInput) {
-  const auth = await assertDoctor();
+  const supabase = await createClient();
+
+  // Отримуємо команду гравця для перевірки прав тренера
+  const { data: player } = await supabase
+    .from("players")
+    .select("team_id")
+    .eq("id", input.playerId)
+    .single();
+
+  const auth = await assertTeamStaff(player?.team_id || undefined);
   if ("error" in auth) return { error: auth.error };
 
-  const supabase = await createClient();
+  // Якщо створює тренер, фіксуємо це в описі або метаданих
+  const isCoachAuthor = auth.user.role === "coach";
+  let finalDescription = input.description?.trim() || "";
+  if (isCoachAuthor && !finalDescription.includes("[ЗВІТ ТРЕНЕРА]")) {
+    finalDescription = `[ЗВІТ ТРЕНЕРА - ${auth.user.fullName || "Тренер"}]: ${finalDescription || "Первинна фіксація на полі/виїзді"}`;
+  }
 
   const { data, error } = await supabase
     .from("injuries")
@@ -56,7 +70,7 @@ async function insertInjury(input: CreateInjuryInput) {
       date_of_injury: input.dateOfInjury,
       vas_score: input.vasScore ?? null,
       expected_return_date: input.expectedReturnDate ?? null,
-      description: input.description ?? null,
+      description: finalDescription || null,
       osiics_code: input.osiicsCode?.trim() || null,
       onset: input.onset || "acute",
       occurrence: input.occurrence || "new",

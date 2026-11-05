@@ -83,8 +83,8 @@ export default function InjuryStatusActions({
               <CheckCircle2 className="w-6 h-6" />
             </div>
             <div>
-              <h3 className="font-bold text-base text-white">Закриття травми</h3>
-              <p className="text-[11px] text-slate-400">Допуск гравця до повноцінних тренувань</p>
+              <h3 className="font-bold text-base text-white">Повернення до тренувань</h3>
+              <p className="text-[11px] text-slate-400">Допуск футболіста до загальної групи (Return to Play)</p>
             </div>
           </div>
 
@@ -202,7 +202,7 @@ export default function InjuryStatusActions({
         className="px-3.5 py-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-xs text-emerald-300 font-semibold transition-all flex items-center gap-1.5 shadow-sm"
       >
         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-        <span>Закрити травму</span>
+        <span>Повернувся до тренувань</span>
       </button>
       {modalContent}
     </>

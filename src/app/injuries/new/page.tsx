@@ -4,7 +4,9 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
+import { getCurrentUser } from "@/lib/auth";
 import InjuryForm, { type InjuryFormInitialValues } from "@/components/injuries/InjuryForm";
+import PlayerSelectionGrid, { type PlayerSelectionItem, type TeamOption } from "@/components/injuries/PlayerSelectionGrid";
 import Link from "next/link";
 import type {
   InjuryLocation,
@@ -29,6 +31,7 @@ type Props = {
     mechanism?: string;
     osiics?: string;
     isIllness?: string;
+    teamId?: string;
   }>;
 };
 
@@ -45,7 +48,10 @@ export default async function NewInjuryPage({ searchParams }: Props) {
     mechanism,
     osiics,
     isIllness,
+    teamId,
   } = await searchParams;
+
+  const user = await getCurrentUser();
   const supabase = await createClient();
 
   const isIllnessBool = isIllness === "true" || (type === "other" && location === "other");
@@ -64,50 +70,77 @@ export default async function NewInjuryPage({ searchParams }: Props) {
   };
 
   if (!playerId) {
-    const { data: players } = await supabase
-      .from("players")
-      .select("id, first_name, last_name, team_id, teams(name)")
-      .is("archived_at", null)
-      .order("last_name");
+    const isCoach = user?.role === "coach";
+    const coachTeams = isCoach
+      ? (user.teamIds && user.teamIds.length > 0 ? user.teamIds : (user.teamId ? [user.teamId] : []))
+      : [];
+
+    const [teamsRes, playersRes] = await Promise.all([
+      supabase
+        .from("teams")
+        .select("id, name, sort_order")
+        .order("sort_order", { ascending: true }),
+      supabase
+        .from("players")
+        .select(`
+          id, first_name, last_name, position, date_of_birth, team_id,
+          teams ( id, name ),
+          injuries ( id, status, date_of_injury, injury_type )
+        `)
+        .is("archived_at", null)
+        .order("last_name"),
+    ]);
+
+    const teamsList: TeamOption[] = (teamsRes.data ?? [])
+      .filter((t: any) => !isCoach || coachTeams.length === 0 || coachTeams.includes(t.id));
+
+    const playersList: PlayerSelectionItem[] = (playersRes.data ?? [])
+      .filter((p: any) => !isCoach || coachTeams.length === 0 || (p.team_id && coachTeams.includes(p.team_id)))
+      .map((p: any) => {
+        const activeInjuries = (p.injuries ?? []).filter(
+          (inj: any) => inj.status === "active" || inj.status === "rehabilitation"
+        );
+        const latestInjury = activeInjuries[0];
+
+        return {
+          id: p.id,
+          first_name: p.first_name,
+          last_name: p.last_name,
+          position: p.position,
+          date_of_birth: p.date_of_birth,
+          team_id: p.team_id,
+          team_name: p.teams?.name || null,
+          active_injuries_count: activeInjuries.length,
+          latest_injury_date: latestInjury?.date_of_injury || null,
+          latest_injury_type: latestInjury?.injury_type || null,
+        };
+      });
+
+    const extraParams: Record<string, string> = {};
+    if (location) extraParams.location = location;
+    if (side) extraParams.side = side;
+    if (type) extraParams.type = type;
+    if (vas) extraParams.vas = vas;
+    if (date) extraParams.date = date;
+    if (desc) extraParams.desc = desc;
 
     return (
-      <div className="min-h-screen bg-background text-gray-100 p-6">
-        <div className="max-w-2xl mx-auto space-y-6">
-          <div className="flex items-center gap-4 border-b border-gray-800 pb-4">
-            <Link href="/" className="text-gray-500 hover:text-white transition-colors text-sm">
-              ← Назад
-            </Link>
-            <h1 className="text-xl font-bold text-white">
-              {isIllnessBool ? "Оформлення лікарняного / захворювання" : "Фіксація травми"}
-            </h1>
-          </div>
-          <p className="text-gray-400 text-sm">Оберіть гравця:</p>
-          <div className="space-y-2">
-            {(players ?? []).map((p: any) => (
-              <Link
-                key={p.id}
-                href={`/injuries/new?playerId=${p.id}${isIllnessBool ? "&isIllness=true" : ""}`}
-                className="flex items-center justify-between bg-surface border border-gray-800 hover:border-gray-600 rounded-xl p-4 transition-colors"
-              >
-                <div>
-                  <p className="font-medium text-white">{p.last_name} {p.first_name}</p>
-                  {p.teams?.name && <p className="text-xs text-gray-500 mt-0.5">{p.teams.name}</p>}
-                </div>
-                <span className="text-gray-600 text-sm">→</span>
-              </Link>
-            ))}
-            {(players ?? []).length === 0 && (
-              <p className="text-gray-600 text-sm">Гравців не знайдено</p>
-            )}
-          </div>
-        </div>
+      <div className="min-h-screen bg-background text-gray-100">
+        <PlayerSelectionGrid
+          players={playersList}
+          teams={teamsList}
+          isIllness={isIllnessBool}
+          userRole={user?.role}
+          initialTeamId={teamId}
+          extraParams={extraParams}
+        />
       </div>
     );
   }
 
   const { data: player } = await supabase
     .from("players")
-    .select("id, first_name, last_name")
+    .select("id, first_name, last_name, position, teams(name)")
     .eq("id", playerId)
     .single();
 
@@ -116,26 +149,41 @@ export default async function NewInjuryPage({ searchParams }: Props) {
   const playerName = `${player.last_name} ${player.first_name}`;
 
   return (
-    <div className="min-h-screen bg-background text-gray-100 p-6">
-      <div className="max-w-2xl mx-auto space-y-6">
-        <div className="flex items-center gap-4 border-b border-gray-800 pb-4">
-          <Link
-            href={`/players/${playerId}`}
-            className="text-gray-500 hover:text-white transition-colors text-sm"
-          >
-            ← {playerName}
-          </Link>
-          <h1 className="text-xl font-bold text-white">
-            {isIllnessBool ? "Оформлення лікарняного / захворювання" : "Фіксація травми"}
+    <div className="min-h-screen bg-background text-gray-100 p-4 sm:p-6 lg:p-8">
+      <div className="max-w-5xl mx-auto space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gray-800 pb-4">
+          <div className="flex items-center gap-3">
+            <Link
+              href="/injuries/new"
+              className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-900 border border-slate-800 hover:border-slate-700 text-gray-400 hover:text-white transition-all flex items-center gap-1.5"
+            >
+              <span>←</span>
+              <span>Обрати іншого гравця</span>
+            </Link>
+            <div className="h-4 w-px bg-gray-800" />
+            <Link
+              href={`/players/${playerId}`}
+              className="text-xs text-sky-400 hover:underline font-medium"
+            >
+              Профіль: {playerName}
+            </Link>
+          </div>
+
+          <h1 className="text-lg font-black text-white flex items-center gap-2">
+            <span>{isIllnessBool ? "🤒" : "⚡"}</span>
+            <span>{isIllnessBool ? "Оформлення лікарняного" : "Фіксація травми"}</span>
+            <span className="text-xs font-normal text-gray-400 font-mono">
+              ({(player as any)?.teams?.name || "Команда"})
+            </span>
           </h1>
         </div>
 
-        {/* onSuccess — без redirectOnSuccess, редирект всередині InjuryForm через useRouter */}
         <InjuryForm
           playerId={playerId}
           playerName={playerName}
           successRedirectUrl={`/players/${playerId}`}
           initialValues={initialValues}
+          userRole={user?.role}
         />
       </div>
     </div>

@@ -2,17 +2,25 @@
 
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
-import { assertDoctor } from "@/lib/auth";
+import { assertTeamStaff } from "@/lib/auth";
 
 export async function updateInjuryStatusAction(
   injuryId: string,
   newStatus: string,
   actualReturnDate?: string
 ) {
-  const auth = await assertDoctor();
-  if ("error" in auth) return { error: auth.error };
-
   const supabase = await createClient();
+
+  // Отримуємо травму та гравця для перевірки доступу тренера
+  const { data: injury } = await supabase
+    .from("injuries")
+    .select("id, player_id, players(team_id)")
+    .eq("id", injuryId)
+    .single();
+
+  const playerTeamId = (injury?.players as any)?.team_id || undefined;
+  const auth = await assertTeamStaff(playerTeamId);
+  if ("error" in auth) return { error: auth.error };
 
   const update: Record<string, any> = { status: newStatus };
 
