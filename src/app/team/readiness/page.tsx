@@ -50,6 +50,7 @@ export default async function TeamReadinessPage({
               teamName={
                 result.teams?.find((t: any) => t.id === result.currentTeamId)?.name || "Команда"
               }
+              date={result.currentDate}
             />
             <Link
               href="/how-to-use"

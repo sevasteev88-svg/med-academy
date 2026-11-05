@@ -12,7 +12,7 @@ export default async function NewPlayerPage() {
 
   return (
     <div className="min-h-screen bg-background text-slate-200 p-5 md:p-8">
-      <div className="max-w-lg mx-auto space-y-6">
+      <div className="max-w-xl mx-auto space-y-6">
         <Link href="/players" className="text-slate-500 hover:text-slate-300 text-sm transition-colors">
           ← Реєстр гравців
         </Link>

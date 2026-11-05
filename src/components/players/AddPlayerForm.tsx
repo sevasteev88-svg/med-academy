@@ -3,8 +3,9 @@
 import { useState, useEffect } from "react";
 import { useActionState } from "react";
 import { createPlayerAction, type CreatePlayerState } from "@/actions/create-player-action";
-import Card, { Button, Input, Select } from "@/components/ui/Card";
+import Card, { Button, Input, Select, Textarea } from "@/components/ui/Card";
 import { CANONICAL_POSITIONS, POSITION_FULL_UA, TEAM_CATEGORY_UA } from "@/lib/constants";
+import { BLOOD_TYPES } from "@/types/player-anamnesis";
 import OneTimePinModal from "@/components/portal/OneTimePinModal";
 
 type Team = { id: string; name: string; category: string };
@@ -91,6 +92,79 @@ export default function AddPlayerForm({ teams }: { teams: Team[] }) {
                 <option key={s.value} value={s.value}>{s.label}</option>
               ))}
             </Select>
+          </div>
+
+          {/* Спортивні дані та зв'язок (опціонально) */}
+          <div className="pt-3 border-t border-slate-800/80 space-y-3.5">
+            <div className="flex items-center gap-2 text-xs font-bold text-sky-400 uppercase tracking-wider">
+              <span>📋</span> Спортивні дані та зв'язок (опціонально)
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                label="Ігровий номер"
+                name="jerseyNumber"
+                type="number"
+                min={1}
+                max={99}
+                placeholder="напр. 10"
+              />
+              <Input
+                label="Контактний телефон"
+                name="phone"
+                type="tel"
+                placeholder="+380..."
+              />
+            </div>
+          </div>
+
+          {/* Первинний медичний анамнез при вступі (опціонально) */}
+          <div className="pt-3 border-t border-slate-800/80 space-y-3.5">
+            <div className="flex items-center gap-2 text-xs font-bold text-emerald-400 uppercase tracking-wider">
+              <span>🩺</span> Первинний медичний анамнез при вступі (опціонально)
+            </div>
+
+            {/* Зріст / Вага */}
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                label="Зріст при вступі (см)"
+                name="height"
+                type="number"
+                step="0.1"
+                placeholder="напр. 178"
+              />
+              <Input
+                label="Вага при вступі (кг)"
+                name="weight"
+                type="number"
+                step="0.1"
+                placeholder="напр. 68.5"
+              />
+            </div>
+
+            {/* Група крові */}
+            <Select label="Група крові та Rh-фактор" name="bloodType" defaultValue="">
+              {BLOOD_TYPES.map((bt) => (
+                <option key={bt.value} value={bt.value}>
+                  {bt.label}
+                </option>
+              ))}
+            </Select>
+
+            {/* Алергії */}
+            <Input
+              label="Алергії та протипоказання до препаратів"
+              name="allergies"
+              placeholder="напр. Пеніцилін, НПЗЗ, цитрусові, сезонна алергія"
+            />
+
+            {/* Анамнез травм */}
+            <Textarea
+              label="Анамнез минулих травм та операцій"
+              name="pastInjuries"
+              rows={3}
+              placeholder="Опишіть перенесені операції або важкі травми до клубу (напр. 2023 — пластика ПКС правого коліна, 2024 — перелом ключиці)"
+            />
           </div>
 
           {/* Помилка */}

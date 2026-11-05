@@ -3,6 +3,7 @@
 import QRCode from "qrcode";
 import { createAdminClient } from "@/utils/supabase/admin";
 import { assertTeamStaff, assertAuth, DEFAULT_CLUB_ID } from "@/lib/auth";
+import { getClubDate, getClubTimezone } from "@/lib/club-timezone";
 import { getPlayerConsentSummary } from "@/lib/consents";
 import { logAudit } from "@/lib/audit";
 import { sendClubMessage } from "@/lib/messaging-adapter";
@@ -766,17 +767,30 @@ export async function sendMorningWellnessRemindersAction(options?: {
       }
     }
 
-    // 4. Отримуємо список тих, хто вже заповнив сьогодні анкету (і з таблиці, і з JSON-store)
+    // 4. Отримуємо список тих, хто вже заповнив сьогодні анкету (і з таблиць, і з JSON-store)
     const filledPlayerIds = new Set<string>();
 
-    const { data: todayEntries } = await supabase
-      .from("wellness_entries")
-      .select("player_id")
-      .eq("date", today);
+    try {
+      const { data: todayEntries } = await supabase
+        .from("wellness_entries")
+        .select("player_id")
+        .eq("date", today);
 
-    for (const e of todayEntries || []) {
-      if (e.player_id) filledPlayerIds.add(e.player_id);
-    }
+      for (const e of todayEntries || []) {
+        if (e.player_id) filledPlayerIds.add(e.player_id);
+      }
+    } catch {}
+
+    try {
+      const { data: todaySurveys } = await supabase
+        .from("wellness_surveys")
+        .select("player_id")
+        .eq("date", today);
+
+      for (const s of todaySurveys || []) {
+        if (s.player_id) filledPlayerIds.add(s.player_id);
+      }
+    } catch {}
 
     for (const [k, v] of Object.entries(store)) {
       if (k.endsWith(`_${today}`)) {
@@ -894,6 +908,7 @@ export async function generateCoachWeeklyTelegramReportAction(
   options?: {
     sendToTelegram?: boolean;
     customCoachChatId?: string;
+    date?: string;
   }
 ) {
   try {
@@ -903,12 +918,15 @@ export async function generateCoachWeeklyTelegramReportAction(
     }
 
     const supabase = createAdminClient();
-    const now = new Date();
-    const weekAgo = new Date(now);
+    const clubId = (auth as any).user?.clubId || DEFAULT_CLUB_ID;
+    const timezone = await getClubTimezone(clubId);
+    const anchorDate = options?.date || getClubDate(timezone);
+    const anchorDateObj = new Date(anchorDate);
+    const weekAgo = new Date(anchorDateObj);
     weekAgo.setDate(weekAgo.getDate() - 7);
 
     const weekStartStr = weekAgo.toISOString().split("T")[0];
-    const weekEndStr = now.toISOString().split("T")[0];
+    const weekEndStr = anchorDate;
 
     // Отримуємо команду та гравців
     const { data: team } = await supabase
@@ -921,17 +939,124 @@ export async function generateCoachWeeklyTelegramReportAction(
     const teamPlayerIds = (team?.players || []).map((p: any) => p.id);
     const totalPlayers = teamPlayerIds.length || 18;
 
-    // Отримуємо анкети за 7 днів
-    const { data: weekEntries } = await supabase
-      .from("wellness_entries")
-      .select("player_id, date, fatigue, soreness, pain, pain_vas, illness")
-      .gte("date", weekStartStr)
-      .lte("date", weekEndStr);
+    // Збираємо анкети за 7 днів з усіх підтримуваних сховищ
+    const entriesMap = new Map<
+      string,
+      {
+        player_id: string;
+        date: string;
+        fatigue: number;
+        soreness: number;
+        pain_vas: number;
+        illness: boolean;
+        readiness_status?: string;
+      }
+    >();
 
-    const relevantEntries = (weekEntries || []).filter((e: any) =>
-      teamPlayerIds.length > 0 ? teamPlayerIds.includes(e.player_id) : true
-    );
+    // 1. Спершу пробуємо таблицю wellness_entries (якщо наявна у базі)
+    try {
+      let weQuery = supabase
+        .from("wellness_entries")
+        .select("player_id, date, fatigue, soreness, pain, pain_vas, illness, readiness_status")
+        .gte("date", weekStartStr)
+        .lte("date", weekEndStr);
 
+      if (teamPlayerIds.length > 0) {
+        weQuery = weQuery.in("player_id", teamPlayerIds);
+      }
+
+      const { data: weData, error: weErr } = await weQuery;
+      if (!weErr && weData) {
+        for (const e of weData) {
+          if (e.player_id && e.date) {
+            entriesMap.set(`${e.player_id}_${e.date}`, {
+              player_id: e.player_id,
+              date: e.date,
+              fatigue: e.fatigue || 3,
+              soreness: e.soreness || 3,
+              pain_vas: e.pain_vas || (e.pain ? 4 : 0),
+              illness: Boolean(e.illness),
+              readiness_status: e.readiness_status,
+            });
+          }
+        }
+      }
+    } catch {}
+
+    // 2. Основна діюча таблиця велнес-анкет wellness_surveys у Supabase
+    try {
+      let wsQuery = supabase
+        .from("wellness_surveys")
+        .select("player_id, date, fatigue_level, muscle_soreness, readiness_status, notes")
+        .gte("date", weekStartStr)
+        .lte("date", weekEndStr);
+
+      if (teamPlayerIds.length > 0) {
+        wsQuery = wsQuery.in("player_id", teamPlayerIds);
+      }
+
+      const { data: wsData, error: wsErr } = await wsQuery;
+      if (!wsErr && wsData) {
+        for (const s of wsData) {
+          if (!s.player_id || !s.date) continue;
+          const key = `${s.player_id}_${s.date}`;
+          if (!entriesMap.has(key)) {
+            let extra: any = {};
+            if (s.notes && typeof s.notes === "string" && s.notes.startsWith("{")) {
+              try {
+                extra = JSON.parse(s.notes);
+              } catch {}
+            }
+            entriesMap.set(key, {
+              player_id: s.player_id,
+              date: s.date,
+              fatigue: s.fatigue_level || 3,
+              soreness: s.muscle_soreness || 3,
+              pain_vas: extra.pain_vas ?? (extra.pain ? 4 : 0),
+              illness: Boolean(extra.illness),
+              readiness_status: s.readiness_status,
+            });
+          }
+        }
+      }
+    } catch {}
+
+    // 3. Fallback: налаштування клубу clubs.settings.wellness_entries_store
+    try {
+      const { data: clubData } = await supabase
+        .from("clubs")
+        .select("settings")
+        .eq("id", clubId)
+        .maybeSingle();
+
+      const store = (clubData as any)?.settings?.wellness_entries_store || {};
+      for (const [k, v] of Object.entries(store)) {
+        const val = v as any;
+        if (
+          val &&
+          val.player_id &&
+          val.date &&
+          (teamPlayerIds.length === 0 || teamPlayerIds.includes(val.player_id))
+        ) {
+          if (val.date >= weekStartStr && val.date <= weekEndStr) {
+            const key = `${val.player_id}_${val.date}`;
+            if (!entriesMap.has(key)) {
+              entriesMap.set(key, {
+                player_id: val.player_id,
+                date: val.date,
+                fatigue: val.fatigue || 3,
+                soreness: val.soreness || 3,
+                pain_vas: val.pain_vas ?? (val.pain ? 4 : 0),
+                illness: Boolean(val.illness),
+                readiness_status: val.readiness_status,
+              });
+            }
+          }
+        }
+      }
+    } catch {}
+
+    const relevantEntries = Array.from(entriesMap.values());
     const totalSurveysExpected = totalPlayers * 7;
     const completedSurveysCount = relevantEntries.length;
     const compliancePct =
@@ -949,23 +1074,50 @@ export async function generateCoachWeeklyTelegramReportAction(
       sumFatigue += e.fatigue || 3;
       sumSoreness += e.soreness || 3;
 
-      if (e.pain_vas >= 7 || e.illness) {
+      if (e.readiness_status === "risk" || (e.pain_vas && e.pain_vas >= 7) || e.illness) {
         redFlagsCount++;
-      } else if (e.pain_vas >= 4 || e.fatigue <= 2 || e.soreness <= 2) {
+      } else if (
+        e.readiness_status === "warning" ||
+        (e.pain_vas && e.pain_vas >= 4) ||
+        e.fatigue <= 2 ||
+        e.soreness <= 2
+      ) {
         yellowFlagsCount++;
       }
     }
 
-    const count = relevantEntries.length || 1;
-    const averageFatigueScore = sumFatigue / count;
-    const averageSorenessScore = sumSoreness / count;
+    const count = relevantEntries.length;
+    const averageFatigueScore = count > 0 ? sumFatigue / count : 0;
+    const averageSorenessScore = count > 0 ? sumSoreness / count : 0;
 
     let overallWorkloadDescription = "Оптимальне навантаження";
-    if (averageFatigueScore < 2.5 || averageSorenessScore < 2.5) {
+    if (count === 0) {
+      overallWorkloadDescription = "Немає даних заповнення анкет";
+    } else if (averageFatigueScore < 2.5 || averageSorenessScore < 2.5) {
       overallWorkloadDescription = "Підвищене навантаження (висока втома команди)";
     } else if (averageFatigueScore > 4.0 && averageSorenessScore > 4.0) {
       overallWorkloadDescription = "Відновлювальний стан / свіжість";
     }
+
+    // Розрахунок гравців, що потребують уваги на дату звіту (сьогодні)
+    const todayEntries = relevantEntries.filter((e) => e.date === weekEndStr);
+    const todayAttentionPlayers = new Set(
+      todayEntries
+        .filter(
+          (e) =>
+            e.readiness_status === "risk" ||
+            e.readiness_status === "warning" ||
+            e.illness ||
+            (e.pain_vas && e.pain_vas >= 4) ||
+            e.fatigue <= 2 ||
+            e.soreness <= 2
+        )
+        .map((e) => e.player_id)
+    );
+    const requiresAttentionCount =
+      todayAttentionPlayers.size > 0
+        ? todayAttentionPlayers.size
+        : Math.ceil((yellowFlagsCount + redFlagsCount) / 7);
 
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://med.fc-chornomorets.com";
     const appReadinessUrl = `${baseUrl}/team/readiness?teamId=${teamId}`;
@@ -983,7 +1135,7 @@ export async function generateCoachWeeklyTelegramReportAction(
       averageFatigueScore,
       averageSorenessScore,
       overallWorkloadDescription,
-      requiresAttentionCount: Math.ceil((yellowFlagsCount + redFlagsCount) / 7),
+      requiresAttentionCount,
       appReadinessUrl,
     };
 

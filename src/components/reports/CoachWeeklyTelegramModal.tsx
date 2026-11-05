@@ -8,9 +8,10 @@ import type { CoachWeeklyTelegramSummary } from "@/types/telegram";
 type Props = {
   teamId: string;
   teamName: string;
+  date?: string;
 };
 
-export default function CoachWeeklyTelegramModal({ teamId, teamName }: Props) {
+export default function CoachWeeklyTelegramModal({ teamId, teamName, date }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const [summary, setSummary] = useState<CoachWeeklyTelegramSummary | null>(null);
   const [messagePreview, setMessagePreview] = useState<string>("");
@@ -21,7 +22,7 @@ export default function CoachWeeklyTelegramModal({ teamId, teamName }: Props) {
     setIsOpen(true);
     setStatus(null);
     startTransition(async () => {
-      const res = await generateCoachWeeklyTelegramReportAction(teamId, { sendToTelegram: false });
+      const res = await generateCoachWeeklyTelegramReportAction(teamId, { sendToTelegram: false, date });
       if (res.success && res.summary) {
         setSummary(res.summary);
         setMessagePreview(res.messageText || "");
@@ -34,7 +35,7 @@ export default function CoachWeeklyTelegramModal({ teamId, teamName }: Props) {
   const handleSendTelegram = () => {
     startTransition(async () => {
       setStatus(null);
-      const res = await generateCoachWeeklyTelegramReportAction(teamId, { sendToTelegram: true });
+      const res = await generateCoachWeeklyTelegramReportAction(teamId, { sendToTelegram: true, date });
       if (res.success) {
         setStatus({
           type: "success",

@@ -6,6 +6,7 @@ import { assertDoctor } from "@/lib/auth";
 import { generateRandom6DigitPin, generatePortalToken, hashPin } from "@/lib/player-auth";
 import { logAudit } from "@/lib/audit";
 import { normalizePosition } from "@/lib/dictionaries";
+import type { PlayerMedicalAnamnesis } from "@/types/player-anamnesis";
 
 export type CreatePlayerState = {
   error?: string;
@@ -15,6 +16,73 @@ export type CreatePlayerState = {
   playerName?: string;
   playerId?: string;
 };
+
+async function savePlayerInitialAnamnesisAndAnthro(
+  supabase: any,
+  clubId: string,
+  playerId: string,
+  formData: FormData
+) {
+  const jerseyNumber = formData.get("jerseyNumber") as string | null;
+  const phone = formData.get("phone") as string | null;
+  const bloodType = formData.get("bloodType") as string | null;
+  const allergies = formData.get("allergies") as string | null;
+  const pastInjuries = formData.get("pastInjuries") as string | null;
+  const heightRaw = formData.get("height") as string | null;
+  const weightRaw = formData.get("weight") as string | null;
+
+  const height = heightRaw && !isNaN(parseFloat(heightRaw)) ? parseFloat(heightRaw) : null;
+  const weight = weightRaw && !isNaN(parseFloat(weightRaw)) ? parseFloat(weightRaw) : null;
+
+  if (height && weight) {
+    try {
+      await supabase.from("anthropometry_logs").insert({
+        club_id: clubId,
+        player_id: playerId,
+        date: new Date().toISOString().split("T")[0],
+        height,
+        weight,
+        body_fat_pct: null,
+      });
+    } catch (err) {
+      console.warn("Помилка збереження первинної антропометрії:", err);
+    }
+  }
+
+  const hasAnamnesis =
+    Boolean(jerseyNumber?.trim()) ||
+    Boolean(phone?.trim()) ||
+    Boolean(bloodType?.trim()) ||
+    Boolean(allergies?.trim()) ||
+    Boolean(pastInjuries?.trim()) ||
+    Boolean(height) ||
+    Boolean(weight);
+
+  if (hasAnamnesis) {
+    const anamnesisPayload: PlayerMedicalAnamnesis = {
+      player_id: playerId,
+      jersey_number: jerseyNumber?.trim() || null,
+      phone: phone?.trim() || null,
+      blood_type: bloodType?.trim() || null,
+      allergies: allergies?.trim() || null,
+      past_injuries: pastInjuries?.trim() || null,
+      initial_height: height,
+      initial_weight: weight,
+      created_at: new Date().toISOString(),
+    };
+
+    try {
+      await supabase.from("injury_logs").insert({
+        club_id: clubId,
+        category: "note",
+        date: new Date().toISOString().split("T")[0],
+        note: `[INITIAL_ANAMNESIS] ${JSON.stringify(anamnesisPayload)}`,
+      });
+    } catch (err) {
+      console.warn("Помилка збереження первинного анамнезу:", err);
+    }
+  }
+}
 
 export async function createPlayerAction(
   _prev: CreatePlayerState,
@@ -91,6 +159,9 @@ export async function createPlayerAction(
 
     const playerId = fallbackPlayer.id;
 
+    // Зберігаємо первинний анамнез та антропометрію, якщо заповнені
+    await savePlayerInitialAnamnesisAndAnthro(supabase, auth.user.clubId, playerId, formData);
+
     // Зберігаємо portal_token та захешований pin_hash в logs
     await supabase.from("injury_logs").insert({
       club_id: auth.user.clubId,
@@ -119,6 +190,9 @@ export async function createPlayerAction(
   }
 
   const playerId = newPlayer.id;
+
+  // Зберігаємо первинний анамнез та антропометрію, якщо заповнені
+  await savePlayerInitialAnamnesisAndAnthro(supabase, auth.user.clubId, playerId, formData);
 
   // Дублюємо portal_token та pin_hash у логи для надійності
   await supabase.from("injury_logs").insert({

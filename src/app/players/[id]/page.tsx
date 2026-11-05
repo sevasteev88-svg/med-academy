@@ -36,6 +36,8 @@ import { canUserAccessTeam } from "@/lib/team-access";
 import { POSITION_LABELS, POSITION_FULL, DOMINANT_UA, LOCATION_UA, SEVERITY_UA, INJURY_TYPE_UA, STATUS_UA } from "@/lib/constants";
 import PlayerConsentsCard from "@/components/consents/PlayerConsentsCard";
 import PlayerTreatmentsCard from "@/components/players/PlayerTreatmentsCard";
+import PlayerAnamnesisCard from "@/components/players/PlayerAnamnesisCard";
+import type { PlayerMedicalAnamnesis } from "@/types/player-anamnesis";
 import PlayerProfileTabs from "@/components/players/PlayerProfileTabs";
 import type { MedicalTreatmentEntry } from "@/types/pharmacy";
 import { calculateAcwr } from "@/types/workload";
@@ -66,7 +68,7 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
   if (from) injuryQuery = injuryQuery.gte("date_of_injury", from);
   if (to) injuryQuery = injuryQuery.lte("date_of_injury", to);
 
-  const [playerRes, injuriesRes, anthroRes, matRes, screeningLogsRes, nutritionLogsRes, photoLogsRes, wearableLogsRes, rehabLogsRes, pinLogsRes, lsiLogsRes, planLogsRes, workloadRes, wellnessRes, workloadLogsRes, wellnessLogsRes, treatmentLogsRes] = await Promise.all([
+  const [playerRes, injuriesRes, anthroRes, matRes, screeningLogsRes, nutritionLogsRes, photoLogsRes, wearableLogsRes, rehabLogsRes, pinLogsRes, lsiLogsRes, planLogsRes, workloadRes, wellnessRes, workloadLogsRes, wellnessLogsRes, treatmentLogsRes, anamnesisLogsRes] = await Promise.all([
     supabase.from("players").select("*, teams ( name, category )").eq("id", id).single(),
     injuryQuery,
     supabase.from("anthropometry_logs").select("*").eq("player_id", id).order("date", { ascending: false }),
@@ -148,6 +150,12 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
       .like("note", "[TREATMENT]%")
       .order("date", { ascending: false })
       .limit(100),
+    supabase
+      .from("injury_logs")
+      .select("id, date, note, created_at")
+      .like("note", "[INITIAL_ANAMNESIS]%")
+      .order("created_at", { ascending: false })
+      .limit(20),
   ]);
 
   const { data: player, error } = playerRes;
@@ -182,6 +190,18 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
     .filter(Boolean) as NutritionProfile[];
 
   const latestNutrition: NutritionProfile | null = nutritionLogs[0] || null;
+
+  const anamnesisRecord: PlayerMedicalAnamnesis | null = (anamnesisLogsRes.data || [])
+    .map((l) => {
+      try {
+        const rawJson = l.note.replace("[INITIAL_ANAMNESIS] ", "").replace("[INITIAL_ANAMNESIS]", "").trim();
+        const parsed = JSON.parse(rawJson) as PlayerMedicalAnamnesis;
+        return parsed.player_id === id ? parsed : null;
+      } catch {
+        return null;
+      }
+    })
+    .find(Boolean) || null;
 
   const photoLogs = (photoLogsRes.data || [])
     .map((l) => {
@@ -435,9 +455,29 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
                   <h1 className="text-xl md:text-2xl font-black text-white tracking-tight">
                     {player.last_name} {player.first_name}
                   </h1>
+                  {anamnesisRecord?.jersey_number && (
+                    <span className="px-2 py-0.5 rounded-lg bg-sky-500/20 border border-sky-400/40 text-sky-300 font-mono text-xs font-black shadow-sm">
+                      #{anamnesisRecord.jersey_number}
+                    </span>
+                  )}
                   <span className="px-2 py-0.5 rounded-lg bg-sky-500/15 border border-sky-500/30 text-sky-400 font-mono text-xs font-bold">
                     {POSITION_LABELS[player.position] ?? player.position}
                   </span>
+                  {anamnesisRecord?.blood_type && (
+                    <span className="px-2 py-0.5 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-300 font-mono text-xs font-bold flex items-center gap-1 shadow-sm">
+                      <span>🩸</span>
+                      <span>{anamnesisRecord.blood_type}</span>
+                    </span>
+                  )}
+                  {anamnesisRecord?.allergies && (
+                    <span
+                      className="px-2 py-0.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-semibold flex items-center gap-1 shadow-sm"
+                      title={anamnesisRecord.allergies}
+                    >
+                      <span>⚠️</span>
+                      <span className="max-w-[140px] truncate">Алергія: {anamnesisRecord.allergies}</span>
+                    </span>
+                  )}
                 </div>
 
                 <div className="text-xs text-slate-400 mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -448,6 +488,12 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
                   <span>{calcAge(player.date_of_birth)} років ({new Date(player.date_of_birth).toLocaleDateString("uk-UA")})</span>
                   <span>·</span>
                   <span>Нога: <strong className="text-slate-200">{DOMINANT_UA[player.dominant_leg]}</strong></span>
+                  {anamnesisRecord?.phone && (
+                    <>
+                      <span>·</span>
+                      <span>Тел: <strong className="text-slate-200 font-mono">{anamnesisRecord.phone}</strong></span>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -914,6 +960,13 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
           }
           passport={
             <>
+              {/* Первинний медичний анамнез та особливості */}
+              <PlayerAnamnesisCard
+                playerId={id}
+                playerName={`${player.last_name} ${player.first_name}`}
+                anamnesis={anamnesisRecord}
+              />
+
               {/* Передсезонний медичний скринінг */}
               <PreSeasonScreeningCard playerId={id} playerName={`${player.last_name} ${player.first_name}`} initialScreenings={screenings} />
               

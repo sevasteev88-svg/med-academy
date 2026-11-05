@@ -49,6 +49,43 @@ export async function updatePlayerAction(
 
   if (error) return { error: error.message };
 
+  // Оновлюємо / додаємо первинний анамнез, якщо заповнено
+  const jerseyNumber = formData.get("jerseyNumber") as string | null;
+  const phone = formData.get("phone") as string | null;
+  const bloodType = formData.get("bloodType") as string | null;
+  const allergies = formData.get("allergies") as string | null;
+  const pastInjuries = formData.get("pastInjuries") as string | null;
+
+  const hasAnamnesis =
+    Boolean(jerseyNumber?.trim()) ||
+    Boolean(phone?.trim()) ||
+    Boolean(bloodType?.trim()) ||
+    Boolean(allergies?.trim()) ||
+    Boolean(pastInjuries?.trim());
+
+  if (hasAnamnesis) {
+    const anamnesisPayload = {
+      player_id: playerId,
+      jersey_number: jerseyNumber?.trim() || null,
+      phone: phone?.trim() || null,
+      blood_type: bloodType?.trim() || null,
+      allergies: allergies?.trim() || null,
+      past_injuries: pastInjuries?.trim() || null,
+      updated_at: new Date().toISOString(),
+    };
+
+    try {
+      await supabase.from("injury_logs").insert({
+        club_id: auth.user.clubId,
+        category: "note",
+        date: new Date().toISOString().split("T")[0],
+        note: `[INITIAL_ANAMNESIS] ${JSON.stringify(anamnesisPayload)}`,
+      });
+    } catch (e) {
+      console.warn("Помилка оновлення анамнезу:", e);
+    }
+  }
+
   revalidatePath("/players");
   revalidatePath(`/players/${playerId}`);
   redirect(`/players/${playerId}`);
