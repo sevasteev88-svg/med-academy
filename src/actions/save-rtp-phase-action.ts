@@ -2,6 +2,7 @@
 
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
+import { assertTeamStaff, DEFAULT_CLUB_ID } from "@/lib/auth";
 import type { RtpPhaseLog, RtpPhaseNumber } from "@/types/rtp";
 
 export async function saveRtpPhaseAction({
@@ -23,13 +24,24 @@ export async function saveRtpPhaseAction({
 }) {
   const supabase = await createClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // 1. Отримуємо інформацію про травму та команду гравця для перевірки прав
+  const { data: injury, error: injErr } = await supabase
+    .from("injuries")
+    .select("id, club_id, player_id, description, status, players(team_id)")
+    .eq("id", injuryId)
+    .single();
 
-  if (!user) {
-    return { error: "Не авторизовано" };
+  if (injErr || !injury) {
+    return { error: "Травму не знайдено або доступ обмежено" };
   }
+
+  const playerTeamId = (injury?.players as any)?.team_id || undefined;
+  const auth = await assertTeamStaff(playerTeamId);
+  if ("error" in auth) {
+    return { error: auth.error };
+  }
+
+  const clubId = injury.club_id || auth.user.clubId || DEFAULT_CLUB_ID;
 
   const payload: RtpPhaseLog = {
     injury_id: injuryId,
@@ -40,8 +52,9 @@ export async function saveRtpPhaseAction({
     updated_at: new Date().toISOString(),
   };
 
-  // 1. Зберігаємо у журнал injury_logs
+  // 2. Зберігаємо у журнал injury_logs (з явним зазначенням club_id)
   const { error: logErr } = await supabase.from("injury_logs").insert({
+    club_id: clubId,
     injury_id: injuryId,
     category: "procedure",
     date: new Date().toISOString().split("T")[0],
@@ -49,33 +62,38 @@ export async function saveRtpPhaseAction({
   });
 
   if (logErr) {
-    return { error: `Помилка збереження RTP етапу: ${logErr.message}` };
+    console.warn("Could not insert into injury_logs:", logErr.message);
   }
 
-  // 2. Якщо перейшли на Фазу 4 чи 5, оновлюємо статус самої травми
+  // 3. Оновлюємо статус самої травми та зберігаємо тег фази в description
   const updates: Record<string, any> = {};
   if (targetDate) {
     updates.expected_return_date = targetDate;
   }
+
+  // Оновлюємо тег [RTP_PHASE:X] у description для 100% гарантованого збереження
+  let desc = injury.description || "";
+  desc = desc.replace(/\[RTP_PHASE:\d\]\s*/g, "").trim();
+  updates.description = `[RTP_PHASE:${phase}] ${desc}`.trim();
 
   if (phase === 4) {
     updates.status = "rehabilitation";
   } else if (phase === 5 && closeInjury) {
     updates.status = "closed";
     updates.actual_return_date = new Date().toISOString().split("T")[0];
+  } else if (phase === 5) {
+    updates.status = "rehabilitation";
   } else if (phase < 4) {
     updates.status = "active";
   }
 
-  if (Object.keys(updates).length > 0) {
-    const { error: updateErr } = await supabase
-      .from("injuries")
-      .update(updates)
-      .eq("id", injuryId);
+  const { error: updateErr } = await supabase
+    .from("injuries")
+    .update(updates)
+    .eq("id", injuryId);
 
-    if (updateErr) {
-      console.warn("Could not update injury status directly:", updateErr.message);
-    }
+  if (updateErr && logErr) {
+    return { error: `Помилка збереження RTP етапу: ${updateErr.message}` };
   }
 
   // Revalidate relevant pages

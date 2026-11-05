@@ -53,22 +53,27 @@ export default async function RtpPage() {
       .from("injury_logs")
       .select("*")
       .like("note", "[RTP_PHASE]%")
-      .order("date", { ascending: false }),
+      .order("created_at", { ascending: false }),
     supabase
       .from("injury_logs")
       .select("*")
       .like("note", "[PLAYER_PHOTO]%")
-      .order("date", { ascending: false }),
+      .order("created_at", { ascending: false }),
   ]);
 
-  // Словник останніх RTP етапів по injury_id
+  // Словник останніх RTP етапів по injury_id (вибираємо найновіший за міткою часу)
   const latestRtpByInjury: Record<string, RtpPhaseLog> = {};
   for (const log of rtpLogsRes.data || []) {
     try {
       const raw = log.note.replace("[RTP_PHASE] ", "");
       const parsed: RtpPhaseLog = JSON.parse(raw);
-      if (parsed.injury_id && !latestRtpByInjury[parsed.injury_id]) {
-        latestRtpByInjury[parsed.injury_id] = parsed;
+      if (parsed.injury_id) {
+        const existing = latestRtpByInjury[parsed.injury_id];
+        const logTime = new Date(parsed.updated_at || log.created_at || log.date).getTime();
+        const existingTime = existing ? new Date(existing.updated_at || 0).getTime() : 0;
+        if (!existing || logTime > existingTime) {
+          latestRtpByInjury[parsed.injury_id] = parsed;
+        }
       }
     } catch {}
   }
@@ -90,13 +95,20 @@ export default async function RtpPage() {
     const rtpLog = latestRtpByInjury[inj.id];
     const player = inj.players;
 
-    // Default phase based on status if no explicit RTP log
+    // Спершу перевіряємо лог RTP, потім тег [RTP_PHASE:X] у описі травми, потім статус
+    const descMatch = inj.description?.match(/\[RTP_PHASE:(\d)\]/);
+    const phaseFromDesc = descMatch ? (Number(descMatch[1]) as RtpPhaseNumber) : null;
+
     let defaultPhase: RtpPhaseNumber = inj.status === "rehabilitation" ? 4 : 1;
-    const currentPhase = rtpLog?.phase || defaultPhase;
+    const currentPhase = rtpLog?.phase || phaseFromDesc || defaultPhase;
 
     const daysMissed = Math.floor(
       (Date.now() - new Date(inj.date_of_injury).getTime()) / 86400000
     );
+
+    const cleanDiagnosis = (inj.description || inj.injury_type || "Діагноз не вказано")
+      .replace(/\[RTP_PHASE:\d\]\s*/g, "")
+      .trim();
 
     return {
       injuryId: inj.id,
@@ -106,7 +118,7 @@ export default async function RtpPage() {
       teamId: player.team_id,
       teamName: player.teams?.name || "Команда",
       photoUrl: photoByPlayer[player.id] || null,
-      diagnosis: inj.description || inj.injury_type || "Діагноз не вказано",
+      diagnosis: cleanDiagnosis,
       location: inj.location,
       dateOfInjury: inj.date_of_injury,
       expectedReturnDate: inj.expected_return_date || null,

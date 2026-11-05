@@ -2,6 +2,7 @@
 
 import React, { useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { RTP_PHASES, type RtpPhaseNumber, type RtpPhaseLog } from "@/types/rtp";
 import { saveRtpPhaseAction } from "@/actions/save-rtp-phase-action";
 import { LOCATION_UA, POSITION_LABELS } from "@/lib/constants";
@@ -33,6 +34,7 @@ export default function RtpPipelineBoard({
   initialInjuries: RtpPlayerInjury[];
   teams: { id: string; name: string }[];
 }) {
+  const router = useRouter();
   const [injuries, setInjuries] = useState<RtpPlayerInjury[]>(initialInjuries);
   const [selectedTeam, setSelectedTeam] = useState<string>("all");
   const [activeModalInjury, setActiveModalInjury] = useState<RtpPlayerInjury | null>(null);
@@ -44,6 +46,7 @@ export default function RtpPipelineBoard({
   const [editDoctorNote, setEditDoctorNote] = useState<string>("");
   const [editCriteria, setEditCriteria] = useState<string[]>([]);
   const [closeInjuryCheck, setCloseInjuryCheck] = useState<boolean>(false);
+  const [modalError, setModalError] = useState<string | null>(null);
 
   const filtered = injuries.filter((inj) => {
     if (selectedTeam !== "all" && inj.teamId !== selectedTeam) return false;
@@ -57,10 +60,12 @@ export default function RtpPipelineBoard({
     setEditDoctorNote(inj.doctorNote || "");
     setEditCriteria(inj.criteriaMet || []);
     setCloseInjuryCheck(false);
+    setModalError(null);
   };
 
   const handleSaveModal = () => {
     if (!activeModalInjury) return;
+    setModalError(null);
 
     startTransition(async () => {
       const res = await saveRtpPhaseAction({
@@ -94,8 +99,9 @@ export default function RtpPipelineBoard({
             .filter(Boolean) as RtpPlayerInjury[]
         );
         setActiveModalInjury(null);
+        router.refresh();
       } else {
-        alert(res.error);
+        setModalError(res.error);
       }
     });
   };
@@ -402,6 +408,14 @@ export default function RtpPipelineBoard({
                   Закрити травму (зняти футболіста з лікарняного та перевести у 100% готові)
                 </span>
               </label>
+            )}
+
+            {/* Modal Error */}
+            {modalError && (
+              <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+                <span>⚠️</span>
+                <span>{modalError}</span>
+              </div>
             )}
 
             {/* Modal Actions */}
