@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useMemo } from "react";
+import { useState, useTransition, useMemo, useEffect } from "react";
 import type { PharmacyItem, PharmacyCategory, WadaStatus, MedicalTreatmentEntry } from "@/types/pharmacy";
 import { PHARMACY_CATEGORY_LABELS, WADA_META, TREATMENT_CATEGORY_META, getExpiryStatus } from "@/types/pharmacy";
 import {
@@ -8,6 +8,7 @@ import {
   updatePharmacyItemAction,
   prescribeTreatmentWithStockAction,
   deleteTreatmentAndRollbackStockAction,
+  lookupDrugAutofillAction,
 } from "@/actions/pharmacy-actions";
 
 type PlayerOption = {
@@ -50,6 +51,9 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
   const [prescribeModalOpen, setPrescribeModalOpen] = useState(false);
   const [selectedItemForPrescription, setSelectedItemForPrescription] = useState<PharmacyItem | null>(null);
   const [selectedPlayerId, setSelectedPlayerId] = useState<string>(players[0]?.id || "");
+  const [playerTeamFilter, setPlayerTeamFilter] = useState<string>("all");
+  const [playerSearchQuery, setPlayerSearchQuery] = useState<string>("");
+  const [modalError, setModalError] = useState<string | null>(null);
   const [prescriptionDate, setPrescriptionDate] = useState<string>(new Date().toISOString().split("T")[0]);
   const [quantityToDeduct, setQuantityToDeduct] = useState<number>(1);
   const [treatmentNotes, setTreatmentNotes] = useState<string>("");
@@ -69,6 +73,7 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
   // Edit/Add Item Modal State
   const [itemModalOpen, setItemModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<PharmacyItem | null>(null);
+  const [isAutofilling, setIsAutofilling] = useState(false);
 
   const [isPending, startTransition] = useTransition();
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -129,6 +134,28 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
     });
   }, [stock, selectedCategory, wadaFilter, lowStockOnly, expiryFilter, searchQuery]);
 
+  // Available teams from players list for team filtering
+  const availableTeams = useMemo(() => {
+    const set = new Set<string>();
+    players.forEach((p) => {
+      if (p.team_name) set.add(p.team_name);
+    });
+    return Array.from(set).sort();
+  }, [players]);
+
+  // Filtered players list for prescription modal
+  const filteredPlayers = useMemo(() => {
+    return players.filter((p) => {
+      if (playerTeamFilter !== "all" && p.team_name !== playerTeamFilter) return false;
+      if (playerSearchQuery.trim()) {
+        const q = playerSearchQuery.toLowerCase();
+        const fullName = `${p.last_name} ${p.first_name}`.toLowerCase();
+        if (!fullName.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [players, playerTeamFilter, playerSearchQuery]);
+
   // Selected player details for prescription modal
   const selectedPlayer = useMemo(() => {
     return players.find((p) => p.id === selectedPlayerId) || null;
@@ -137,6 +164,18 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
   const selectedPlayerAge = useMemo(() => {
     return calcAge(selectedPlayer?.date_of_birth);
   }, [selectedPlayer]);
+
+  // Close modals on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (prescribeModalOpen) setPrescribeModalOpen(false);
+        if (itemModalOpen) setItemModalOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [prescribeModalOpen, itemModalOpen]);
 
   // Is selected item an S-drug requiring doctor confirmation?
   const isSelectedDrugProhibited = useMemo(() => {
@@ -164,13 +203,17 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
   // Open prescribe modal
   const handleOpenPrescribe = (item: PharmacyItem) => {
     setSelectedItemForPrescription(item);
-    setTreatmentDosage(item.notes || `1 ${item.unit}`);
+    // Дозування за замовчуванням - 1 одиниця, а не весь опис препарату
+    setTreatmentDosage(`1 ${item.unit}`);
     setDoctorWadaConfirmed(false);
     setDoctorWadaNote("");
     setTreatmentDurationDays(5);
     setTreatmentDurationNote("5 днів");
     setQuantityToDeduct(1);
     setTreatmentNotes("");
+    setModalError(null);
+    setPlayerTeamFilter("all");
+    setPlayerSearchQuery("");
 
     // default to player's primary injury if available
     const curPlayer = players.find((p) => p.id === selectedPlayerId) || players[0];
@@ -191,9 +234,11 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
     if (!player) return;
 
     if (isSelectedDrugProhibited && (!doctorWadaConfirmed || !doctorWadaNote.trim())) {
-      alert("Для S-препаратів WADA обов'язкове підтвердження лікаря та внесення обґрунтування / TUE!");
+      setModalError("Для S-препаратів WADA обов'язкове підтвердження лікаря та внесення обґрунтування / TUE!");
       return;
     }
+
+    setModalError(null);
 
     let treatCat: any = "medication";
     if (selectedItemForPrescription.category === "injections") treatCat = "injection";
@@ -237,8 +282,10 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
         setPrescribeModalOpen(false);
         setSelectedItemForPrescription(null);
         setTreatmentNotes("");
+        setModalError(null);
         showToast(`Призначено гравцю ${player.last_name}! Списано ${quantityToDeduct} ${selectedItemForPrescription.unit}`);
       } else if (res.error) {
+        setModalError(res.error);
         showToast(`Помилка: ${res.error}`);
       }
     });
@@ -272,6 +319,50 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
         showToast(`Помилка: ${res.error}`);
       }
     });
+  };
+
+  // Autofill drug details from presets or AI (Gemini / WADA)
+  const handleAutofillDrug = async (overrideQuery?: string) => {
+    const q = (overrideQuery || editingItem?.name || editingItem?.active_substance || "").trim();
+    if (!q || q.length < 2) {
+      showToast("Введіть назву препарату або діючу речовину для пошуку");
+      return;
+    }
+
+    setIsAutofilling(true);
+    try {
+      const res = await lookupDrugAutofillAction(q);
+      if (res.success && res.drug && editingItem) {
+        setEditingItem((prev) => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            name: res.drug!.name || prev.name,
+            active_substance: res.drug!.active_substance || prev.active_substance,
+            category: res.drug!.category || prev.category,
+            wada_status: res.drug!.wada_status || prev.wada_status,
+            wada_source_note: res.drug!.wada_source_note || "",
+            washout_note: res.drug!.washout_note || "",
+            indications: res.drug!.indications || "",
+            min_age: res.drug!.min_age !== undefined ? res.drug!.min_age : prev.min_age,
+            age_note: res.drug!.age_note || "",
+            requires_review: res.drug!.requires_review !== undefined ? res.drug!.requires_review : prev.requires_review,
+            storage_location: res.drug!.storage_location || prev.storage_location,
+            unit: res.drug!.unit || prev.unit,
+            min_alert_threshold: res.drug!.min_alert_threshold || prev.min_alert_threshold,
+          };
+        });
+
+        const badge = res.source === "preset" ? "бази клубу" : "ШІ Gemini / WADA 2026";
+        showToast(`✨ Поля успішно заповнено з ${badge}!`);
+      } else {
+        showToast(res.error || "Не вдалося автоматично знайти дані для цього засобу");
+      }
+    } catch (err: any) {
+      showToast("Помилка автозаповнення: " + (err?.message || "невідома помилка"));
+    } finally {
+      setIsAutofilling(false);
+    }
   };
 
   // Save new / edited item
@@ -308,7 +399,7 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
     <div className="space-y-6">
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-sky-600 text-white px-4 py-3 rounded-2xl shadow-2xl border border-sky-400 flex items-center gap-3 animate-fade-in">
+        <div className="fixed bottom-6 right-6 z-[9999] bg-sky-600 text-white px-4 py-3 rounded-2xl shadow-2xl border border-sky-400 flex items-center gap-3 animate-fade-in pointer-events-auto">
           <span>🔔</span>
           <span className="text-sm font-semibold">{toastMessage}</span>
         </div>
@@ -472,8 +563,8 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
       {/* TAB 1: STOCK & INVENTORY */}
       {activeTab === "stock" && (
         <div className="space-y-4">
-          {/* Controls Bar */}
-          <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800/80 flex flex-wrap items-center justify-between gap-3">
+          {/* Controls Bar (Sticky for effortless search & filtering during scroll) */}
+          <div className="sticky top-2 z-20 p-3.5 rounded-2xl bg-slate-900/95 backdrop-blur-xl border border-slate-800/90 shadow-xl shadow-black/40 flex flex-wrap items-center justify-between gap-3">
             <div className="flex-1 min-w-[240px]">
               <input
                 type="text"
@@ -916,40 +1007,137 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
 
       {/* MODAL: PRESCRIBE ITEM TO PLAYER */}
       {prescribeModalOpen && selectedItemForPrescription && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
-          <div className="w-full max-w-lg rounded-2xl bg-slate-900 border border-sky-500/30 p-6 shadow-2xl relative my-8">
-            <h3 className="text-lg font-bold text-white flex items-center gap-2">
-              <span>📋</span> Призначити препарат та списати зі складу
-            </h3>
-            <p className="text-xs text-slate-400 mt-1">
-              Обрано: <strong className="text-white">{selectedItemForPrescription.name}</strong> (Доступний залишок:{" "}
-              {selectedItemForPrescription.stock_count} {selectedItemForPrescription.unit})
-            </p>
-
-            <form onSubmit={handleSubmitPrescription} className="mt-4 space-y-4">
-              {/* Player selection & Age warning */}
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-sm"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setPrescribeModalOpen(false);
+          }}
+        >
+          <div
+            className="w-full max-w-2xl max-h-[92vh] flex flex-col rounded-2xl bg-slate-900 border border-sky-500/30 shadow-2xl overflow-hidden relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header (Fixed at top) */}
+            <div className="p-4 sm:p-5 pb-3 border-b border-slate-800 flex items-start justify-between gap-3 shrink-0 bg-slate-900 rounded-t-2xl">
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Оберіть футболіста:</label>
-                <select
-                  value={selectedPlayerId}
-                  onChange={(e) => {
-                    const pid = e.target.value;
-                    setSelectedPlayerId(pid);
-                    const pl = players.find((p) => p.id === pid);
-                    if (pl) setSelectedInjuryId(pl.active_injury_id || "");
-                  }}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500"
-                >
-                  {players.map((p) => {
-                    const pAge = calcAge(p.date_of_birth);
-                    return (
-                      <option key={p.id} value={p.id}>
-                        {p.last_name} {p.first_name} {pAge !== null ? `(${pAge} р.)` : ""} — {p.team_name}{" "}
-                        {p.active_injury_id ? "— 🩹 Є травма" : ""}
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <span>📋</span> Призначити препарат та списати зі складу
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Обрано: <strong className="text-white">{selectedItemForPrescription.name}</strong> (Доступний залишок:{" "}
+                  {selectedItemForPrescription.stock_count} {selectedItemForPrescription.unit})
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPrescribeModalOpen(false)}
+                className="w-8 h-8 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 flex items-center justify-center text-sm transition-colors shrink-0"
+                title="Закрити (Esc)"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Form: Scrollable Body + Fixed Footer */}
+            <form onSubmit={handleSubmitPrescription} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <div className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1">
+                {/* Player selection with Team Filter & Surname Search */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                    <span>👤</span> Оберіть футболіста:
+                  </label>
+                  <span className="text-[11px] text-slate-400 font-mono">
+                    Знайдено: {filteredPlayers.length} з {players.length}
+                  </span>
+                </div>
+
+                {/* Team Filter & Surname Search */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <select
+                    value={playerTeamFilter}
+                    onChange={(e) => {
+                      const t = e.target.value;
+                      setPlayerTeamFilter(t);
+                      const list = players.filter((p) => (t === "all" ? true : p.team_name === t));
+                      if (list.length > 0 && !list.some((p) => p.id === selectedPlayerId)) {
+                        setSelectedPlayerId(list[0].id);
+                        setSelectedInjuryId(list[0].active_injury_id || "");
+                      }
+                    }}
+                    aria-label="Фільтр за командою"
+                    className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-sky-500"
+                  >
+                    <option value="all">Усі команди ({players.length})</option>
+                    {availableTeams.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
                       </option>
-                    );
-                  })}
-                </select>
+                    ))}
+                  </select>
+
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={playerSearchQuery}
+                      onChange={(e) => {
+                        const q = e.target.value;
+                        setPlayerSearchQuery(q);
+                        const list = players.filter((p) => {
+                          if (playerTeamFilter !== "all" && p.team_name !== playerTeamFilter) return false;
+                          if (q.trim()) {
+                            const fullName = `${p.last_name} ${p.first_name}`.toLowerCase();
+                            if (!fullName.includes(q.toLowerCase())) return false;
+                          }
+                          return true;
+                        });
+                        if (list.length > 0 && !list.some((p) => p.id === selectedPlayerId)) {
+                          setSelectedPlayerId(list[0].id);
+                          setSelectedInjuryId(list[0].active_injury_id || "");
+                        }
+                      }}
+                      placeholder="🔍 Пошук за прізвищем чи ім'ям..."
+                      className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500"
+                    />
+                    {playerSearchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setPlayerSearchQuery("")}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white text-xs"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {filteredPlayers.length === 0 ? (
+                  <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 text-xs text-slate-400 text-center">
+                    Гравців за цим фільтром не знайдено. Спробуйте очистити пошук.
+                  </div>
+                ) : (
+                  <select
+                    value={selectedPlayerId}
+                    onChange={(e) => {
+                      const pid = e.target.value;
+                      setSelectedPlayerId(pid);
+                      const pl = players.find((p) => p.id === pid);
+                      if (pl) setSelectedInjuryId(pl.active_injury_id || "");
+                    }}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500"
+                  >
+                    {filteredPlayers.map((p) => {
+                      const pAge = calcAge(p.date_of_birth);
+                      const hasInjury = Boolean(p.active_injury_id || (p.active_injuries && p.active_injuries.length > 0));
+                      return (
+                        <option key={p.id} value={p.id}>
+                          {p.last_name} {p.first_name} {pAge !== null ? `(${pAge} р.)` : ""} — {p.team_name}{" "}
+                          {hasInjury ? "— 🩹 Є травма" : ""}
+                        </option>
+                      );
+                    })}
+                  </select>
+                )}
 
                 {/* 2. REAL-TIME AGE VERIFICATION WARNING */}
                 {selectedItemForPrescription.min_age !== null &&
@@ -986,7 +1174,7 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
               </div>
 
               {/* Date & Quantity */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-slate-400 mb-1">Дата призначення:</label>
                   <input
@@ -1012,50 +1200,68 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
               </div>
 
               {/* Dosage & Duration */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Дозування / схема:</label>
-                  <input
-                    type="text"
-                    required
-                    value={treatmentDosage}
-                    onChange={(e) => setTreatmentDosage(e.target.value)}
-                    placeholder="Напр., 100 мг 2 р/добу"
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500"
-                  />
+              <div className="space-y-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Дозування / схема:</label>
+                    <input
+                      type="text"
+                      required
+                      value={treatmentDosage}
+                      onChange={(e) => setTreatmentDosage(e.target.value)}
+                      placeholder="Напр., 1 табл. 2 р/добу або 500 мг"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Тривалість курсу:</label>
+                    <input
+                      type="text"
+                      required
+                      value={treatmentDurationNote}
+                      onChange={(e) => {
+                        setTreatmentDurationNote(e.target.value);
+                        const parsed = parseInt(e.target.value);
+                        if (!isNaN(parsed)) setTreatmentDurationDays(parsed);
+                      }}
+                      placeholder="Напр., 5 днів"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Тривалість курсу:</label>
-                  <input
-                    type="text"
-                    required
-                    value={treatmentDurationNote}
-                    onChange={(e) => {
-                      setTreatmentDurationNote(e.target.value);
-                      const parsed = parseInt(e.target.value);
-                      if (!isNaN(parsed)) setTreatmentDurationDays(parsed);
-                    }}
-                    placeholder="Напр., 5 днів"
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500"
-                  />
-                </div>
+
+                {/* Helpful clinical reference badge */}
+                {selectedItemForPrescription.notes && (
+                  <div className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800 text-xs text-slate-400 flex items-start gap-2">
+                    <span className="text-sky-400 shrink-0">💡</span>
+                    <div>
+                      <span className="font-semibold text-slate-300">Рекомендація з довідника: </span>
+                      <span>{selectedItemForPrescription.notes}</span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Reason / Related Injury */}
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Причина / пов&apos;язана травма:</label>
+              <div className="space-y-2">
+                <label className="block text-xs font-medium text-slate-400">Причина / пов&apos;язана травма:</label>
                 {selectedPlayer?.active_injuries && selectedPlayer.active_injuries.length > 0 ? (
                   <select
                     value={selectedInjuryId}
                     onChange={(e) => setSelectedInjuryId(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-500 mb-2"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-500 truncate"
                   >
-                    <option value="">Без прив&apos;язки до травми (планова терапія)</option>
-                    {selectedPlayer.active_injuries.map((inj) => (
-                      <option key={inj.id} value={inj.id}>
-                        Травма: {inj.injury_type} {inj.description ? `(${inj.description})` : ""}
-                      </option>
-                    ))}
+                    <option value="">Без прив&apos;язки до травми (планова терапія / профілактика)</option>
+                    {selectedPlayer.active_injuries.map((inj) => {
+                      const desc = inj.description
+                        ? ` — ${inj.description.replace(/\s+/g, " ").substring(0, 50)}${inj.description.length > 50 ? "..." : ""}`
+                        : "";
+                      return (
+                        <option key={inj.id} value={inj.id}>
+                          🩹 {inj.injury_type}{desc}
+                        </option>
+                      );
+                    })}
                   </select>
                 ) : null}
 
@@ -1063,8 +1269,8 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
                   type="text"
                   value={customReason}
                   onChange={(e) => setCustomReason(e.target.value)}
-                  placeholder="Вкажіть клінічний діагноз або причину призначення (напр., міозит, артралгія)..."
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500"
+                  placeholder="Вкажіть клінічний діагноз або мету призначення (напр., міозит, артралгія, купірування болю)..."
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-sky-500"
                 />
               </div>
 
@@ -1126,7 +1332,21 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+              {/* In-Modal Error Alert Banner */}
+              {modalError && (
+                <div className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/40 text-xs text-rose-200 flex items-start gap-2 animate-fade-in">
+                  <span className="text-base shrink-0">🛑</span>
+                  <div>
+                    <div className="font-bold text-rose-300">Помилка фіксації призначення:</div>
+                    <div className="mt-0.5 text-slate-200">{modalError}</div>
+                  </div>
+                </div>
+              )}
+
+              </div>
+
+              {/* Fixed Modal Footer */}
+              <div className="p-4 border-t border-slate-800 flex items-center justify-end gap-3 shrink-0 bg-slate-900/95 rounded-b-2xl">
                 <button
                   type="button"
                   onClick={() => setPrescribeModalOpen(false)}
@@ -1152,29 +1372,111 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
 
       {/* MODAL: ADD / EDIT PHARMACY ITEM */}
       {itemModalOpen && editingItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
-          <div className="w-full max-w-xl rounded-2xl bg-slate-900 border border-sky-500/30 p-6 shadow-2xl relative my-8">
-            <h3 className="text-lg font-bold text-white flex items-center gap-2">
-              <span>{editingItem.id ? "✏️ Редагувати засіб" : "➕ Нова позиція складу"}</span>
-            </h3>
-            <p className="text-xs text-slate-400 mt-1">
-              Заповнюється лікарем клубу. Усі медичні дані мають бути об&apos;єктивними, без рекламних формулювань.
-            </p>
-
-            <form onSubmit={handleSaveItem} className="mt-4 space-y-3.5">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-sm"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setItemModalOpen(false);
+          }}
+        >
+          <div
+            className="w-full max-w-xl max-h-[92vh] flex flex-col rounded-2xl bg-slate-900 border border-sky-500/30 shadow-2xl overflow-hidden relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header (Fixed at top) */}
+            <div className="p-4 sm:p-5 pb-3 border-b border-slate-800 flex items-start justify-between gap-3 shrink-0 bg-slate-900 rounded-t-2xl">
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">
-                  Торгова назва препарату / виробу: <span className="text-rose-400">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={editingItem.name}
-                  onChange={(e) => setEditingItem({ ...editingItem, name: e.target.value })}
-                  placeholder="Напр., Німесулід 100 мг або Кінезіотейп K-Active"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500"
-                />
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <span>{editingItem.id ? "✏️ Редагувати засіб" : "➕ Нова позиція складу"}</span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Заповнюється лікарем клубу. Усі медичні дані мають бути об&apos;єктивними, без рекламних формулювань.
+                </p>
               </div>
+              <button
+                type="button"
+                onClick={() => setItemModalOpen(false)}
+                className="w-8 h-8 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 flex items-center justify-center text-sm transition-colors shrink-0"
+                title="Закрити (Esc)"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Form: Scrollable Body + Fixed Footer */}
+            <form onSubmit={handleSaveItem} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <div className="p-4 sm:p-5 space-y-3.5 overflow-y-auto flex-1">
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <label className="block text-xs font-semibold text-slate-300">
+                      Торгова назва препарату / виробу: <span className="text-rose-400">*</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => handleAutofillDrug()}
+                      disabled={isAutofilling || (!editingItem.name?.trim() && !editingItem.active_substance?.trim())}
+                      className="px-3 py-1 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all shrink-0 cursor-pointer"
+                      title="Автоматично знайти INN, статус WADA, період виведення, вікові застереження та показання"
+                    >
+                      {isAutofilling ? (
+                        <>
+                          <span className="inline-block animate-spin">⏳</span>
+                          <span>Пошук у WADA & ШІ...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>✨</span>
+                          <span>Автозаповнити за WADA / ШІ</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    required
+                    value={editingItem.name}
+                    onChange={(e) => setEditingItem({ ...editingItem, name: e.target.value })}
+                    placeholder="Напр., Німесил, Дексаметазон, Дипроспан, Вентолін, Дексалгін..."
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500"
+                  />
+
+                  {/* Швидкі популярні пресети медикаментів клубу */}
+                  <div className="mt-2.5 p-2.5 rounded-xl bg-slate-950/70 border border-slate-800">
+                    <div className="text-[11px] text-slate-400 font-semibold mb-1.5 flex items-center justify-between">
+                      <span className="flex items-center gap-1 text-emerald-400">
+                        <span>⚡</span> Швидкий вибір (готові картки з нормами WADA та дозуванням):
+                      </span>
+                      <span className="text-[10px] text-slate-500">1 клік</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        { label: "Німесил", q: "Німесулід (Німесил)" },
+                        { label: "Ібупрофен", q: "Ібупрофен 400 мг" },
+                        { label: "Парацетамол", q: "Парацетамол 500 мг" },
+                        { label: "Дексалгін", q: "Декскетопрофен (Дексалгін)" },
+                        { label: "Дексаметазон (S9)", q: "Дексаметазон 4 мг/мл" },
+                        { label: "Дипроспан (S9)", q: "Бетаметазон (Дипроспан)" },
+                        { label: "Кеналог (S9)", q: "Тріамцинолон (Кеналог 40)" },
+                        { label: "Остеніл (Гіалурон)", q: "Гіалуронова кислота 2.0%" },
+                        { label: "PRP Набір", q: "PRP Набори для плазмоліфтингу" },
+                        { label: "Кінезіотейп", q: "Кінезіотейп K-Active Pro" },
+                        { label: "Кріоспрей", q: "Охолоджувальний аерозоль" },
+                        { label: "Вентолін (S3)", q: "Сальбутамол (Вентолін)" },
+                        { label: "Мідокалм", q: "Тольперизон (Мідокалм)" },
+                        { label: "Детралекс", q: "Діосмін + Гесперидин (Детралекс)" },
+                      ].map((pill) => (
+                        <button
+                          key={pill.label}
+                          type="button"
+                          onClick={() => handleAutofillDrug(pill.q)}
+                          disabled={isAutofilling}
+                          className="px-2 py-0.5 rounded-lg bg-slate-900 hover:bg-emerald-600/30 hover:border-emerald-500/50 border border-slate-700/80 text-[11px] text-slate-300 hover:text-white transition-all disabled:opacity-50 cursor-pointer"
+                        >
+                          + {pill.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
 
               <div>
                 <label className="block text-xs font-medium text-slate-400 mb-1">Діюча речовина (INN):</label>
@@ -1393,7 +1695,10 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+              </div>
+
+              {/* Fixed Modal Footer */}
+              <div className="p-4 border-t border-slate-800 flex items-center justify-end gap-3 shrink-0 bg-slate-900/95 rounded-b-2xl">
                 <button
                   type="button"
                   onClick={() => setItemModalOpen(false)}
@@ -1404,7 +1709,7 @@ export default function ClubPharmacyClient({ initialStock, allTreatments, player
                 <button
                   type="submit"
                   disabled={isPending}
-                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold text-xs shadow-lg shadow-sky-500/20"
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold text-xs shadow-lg shadow-sky-500/20 disabled:opacity-50"
                 >
                   {isPending ? "Збереження..." : "Зберегти препарат"}
                 </button>

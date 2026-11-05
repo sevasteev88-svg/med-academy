@@ -22,10 +22,15 @@ export async function saveMedicalTreatmentAction(
 
   const payload = `[TREATMENT] ${JSON.stringify(entry)}`;
 
+  const dbCategory: "prescription" | "procedure" =
+    input.category === "injection" || input.category === "taping" || input.category === "physiotherapy"
+      ? "procedure"
+      : "prescription";
+
   const { error } = await supabase.from("injury_logs").insert({
     injury_id: input.injury_id || (null as any),
     date: input.date,
-    category: "treatment",
+    category: dbCategory,
     note: payload,
   } as any);
 

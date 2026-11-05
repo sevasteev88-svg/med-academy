@@ -6,6 +6,69 @@ import { assertDoctor } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import type { PharmacyItem, MedicalTreatmentEntry } from "@/types/pharmacy";
 import { DEFAULT_PHARMACY_ITEMS } from "@/lib/default-pharmacy-stock";
+import { findClinicalDrugPreset, lookupDrugWithAI, type ClinicalDrugInfo } from "@/lib/clinical-drug-directory";
+
+/**
+ * Знаходить або безпечно створює дійсний injury_id для прив'язки в injury_logs (в БД діє NOT NULL)
+ */
+async function getOrCreateSystemInjuryId(
+  supabase: any,
+  clubId: string,
+  preferredPlayerId?: string
+): Promise<string> {
+  // 1. Якщо вказано гравця, шукаємо його травму
+  if (preferredPlayerId) {
+    const { data: playerInj } = await supabase
+      .from("injuries")
+      .select("id")
+      .eq("player_id", preferredPlayerId)
+      .limit(1)
+      .maybeSingle();
+
+    if (playerInj?.id) return playerInj.id;
+  }
+
+  // 2. Спробуємо знайти будь-яку травму цього клубу
+  const { data: existingClubInj } = await supabase
+    .from("injuries")
+    .select("id")
+    .eq("club_id", clubId)
+    .limit(1)
+    .maybeSingle();
+
+  if (existingClubInj?.id) return existingClubInj.id;
+
+  // 3. Якщо у клубі взагалі ще немає травм, беремо будь-якого гравця клубу
+  const { data: anyPlayer } = await supabase
+    .from("players")
+    .select("id")
+    .eq("club_id", clubId)
+    .limit(1)
+    .maybeSingle();
+
+  const playerId = preferredPlayerId || anyPlayer?.id;
+  if (playerId) {
+    const { data: newInj } = await supabase
+      .from("injuries")
+      .insert({
+        club_id: clubId,
+        player_id: playerId,
+        injury_type: "Планова фармакотерапія / Медсклад",
+        body_part: "Загальний стан",
+        status: "closed",
+        date_of_injury: new Date().toISOString().split("T")[0],
+        diagnosis: "Службовий запис аптечного обліку клубу",
+      } as any)
+      .select("id")
+      .single();
+
+    if (newInj?.id) return newInj.id;
+  }
+
+  // 4. Глобальний фолбек на будь-яку травму в БД
+  const { data: anyInj } = await supabase.from("injuries").select("id").limit(1).maybeSingle();
+  return anyInj?.id || "00000000-0000-0000-0000-000000000000";
+}
 
 /**
  * Отримує актуальний стан складу аптеки з Supabase injury_logs або повертає дефолтний склад
@@ -53,12 +116,13 @@ export async function updatePharmacyItemAction(updatedItem: PharmacyItem) {
   }
 
   const payload = `[PHARMACY_STOCK_UPDATE] ${JSON.stringify(newStock)}`;
+  const sysInjuryId = await getOrCreateSystemInjuryId(supabase, auth.user.clubId);
 
   const { error } = await supabase.from("injury_logs").insert({
     club_id: auth.user.clubId,
-    injury_id: null as any,
+    injury_id: sysInjuryId,
     date: new Date().toISOString().split("T")[0],
-    category: "treatment",
+    category: "note",
     note: payload,
   } as any);
 
@@ -93,12 +157,13 @@ export async function adjustPharmacyStockCountAction(
 
   const newStock = currentStock.map((i) => (i.id === itemId ? updatedItem : i));
   const payload = `[PHARMACY_STOCK_UPDATE] ${JSON.stringify(newStock)}`;
+  const sysInjuryId = await getOrCreateSystemInjuryId(supabase, auth.user.clubId);
 
   const { error } = await supabase.from("injury_logs").insert({
     club_id: auth.user.clubId,
-    injury_id: null as any,
+    injury_id: sysInjuryId,
     date: new Date().toISOString().split("T")[0],
-    category: "treatment",
+    category: "note",
     note: payload,
   } as any);
 
@@ -131,17 +196,24 @@ export async function prescribeTreatmentWithStockAction(
       const updatedItem = { ...item, stock_count: updatedCount };
       const newStock = currentStock.map((i) => (i.id === pharmacyItemId ? updatedItem : i));
 
+      const sysInjuryId = await getOrCreateSystemInjuryId(supabase, auth.user.clubId);
       await supabase.from("injury_logs").insert({
         club_id: auth.user.clubId,
-        injury_id: null as any,
+        injury_id: sysInjuryId,
         date: treatmentData.date,
-        category: "treatment",
+        category: "note",
         note: `[PHARMACY_STOCK_UPDATE] ${JSON.stringify(newStock)}`,
       } as any);
     }
   }
 
-  // 2. Створюємо запис лікування гравця
+  // 2. Визначаємо валідний targetInjuryId для збереження в injury_logs
+  let targetInjuryId = treatmentData.injury_id;
+  if (!targetInjuryId) {
+    targetInjuryId = await getOrCreateSystemInjuryId(supabase, auth.user.clubId, treatmentData.player_id);
+  }
+
+  // 3. Створюємо запис лікування гравця
   const generatedId = `rx_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const entry: MedicalTreatmentEntry = {
     ...treatmentData,
@@ -153,13 +225,27 @@ export async function prescribeTreatmentWithStockAction(
 
   const payload = `[TREATMENT] ${JSON.stringify(entry)}`;
 
-  const { data: insertedLog, error: treatmentError } = await supabase.from("injury_logs").insert({
-    club_id: auth.user.clubId,
-    injury_id: treatmentData.injury_id || (null as any),
-    date: treatmentData.date,
-    category: "treatment",
-    note: payload,
-  } as any).select("id").single();
+  // Визначаємо валідну категорію log_category (prescription, procedure)
+  let dbCategory: "prescription" | "procedure" = "prescription";
+  if (
+    treatmentData.category === "injection" ||
+    treatmentData.category === "taping" ||
+    treatmentData.category === "physiotherapy"
+  ) {
+    dbCategory = "procedure";
+  }
+
+  const { data: insertedLog, error: treatmentError } = await supabase
+    .from("injury_logs")
+    .insert({
+      club_id: auth.user.clubId,
+      injury_id: targetInjuryId,
+      date: treatmentData.date,
+      category: dbCategory,
+      note: payload,
+    } as any)
+    .select("id")
+    .single();
 
   if (treatmentError) return { error: treatmentError.message };
 
@@ -239,11 +325,12 @@ export async function deleteTreatmentAndRollbackStockAction(treatmentId: string)
       const updatedItem = { ...item, stock_count: restoredCount };
       newStockList = currentStock.map((i) => (i.id === item.id ? updatedItem : i));
 
+      const sysInjuryId = await getOrCreateSystemInjuryId(supabase, auth.user.clubId);
       await supabase.from("injury_logs").insert({
         club_id: auth.user.clubId,
-        injury_id: null as any,
+        injury_id: sysInjuryId,
         date: new Date().toISOString().split("T")[0],
-        category: "treatment",
+        category: "note",
         note: `[PHARMACY_STOCK_UPDATE] ${JSON.stringify(newStockList)}`,
       } as any);
     }
@@ -278,4 +365,40 @@ export async function deleteTreatmentAndRollbackStockAction(treatmentId: string)
   revalidatePath("/pharmacy");
 
   return { success: true, rolledBackUnits, newStock: newStockList };
+}
+
+/**
+ * Автозаповнення клінічних та WADA даних препарату за назвою чи діючою речовиною
+ */
+export async function lookupDrugAutofillAction(query: string): Promise<{
+  success: boolean;
+  drug?: ClinicalDrugInfo;
+  source?: "preset" | "ai";
+  error?: string;
+}> {
+  if (!query || query.trim().length < 2) {
+    return { success: false, error: "Введіть хоча б 2 символи назви для пошуку" };
+  }
+
+  try {
+    // 1. Пошук у локальній еталонній базі спортивної фармакології (0 мс)
+    const preset = findClinicalDrugPreset(query);
+    if (preset) {
+      return { success: true, drug: preset, source: "preset" };
+    }
+
+    // 2. Якщо не знайдено — інтелектуальний пошук через ШІ (Gemini / WADA)
+    const aiResult = await lookupDrugWithAI(query);
+    if (aiResult) {
+      return { success: true, drug: aiResult, source: "ai" };
+    }
+
+    return {
+      success: false,
+      error: "Препарат не знайдено в автоматичному каталозі. Будь ласка, заповніть поля вручну.",
+    };
+  } catch (err: any) {
+    console.error("lookupDrugAutofillAction error:", err);
+    return { success: false, error: err?.message || "Помилка при пошуку даних препарату" };
+  }
 }
