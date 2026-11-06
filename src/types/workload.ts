@@ -155,9 +155,10 @@ export const BORG_CR10_SCALE: Record<RpeScore, { label: string; desc: string; co
 };
 
 export const ABSENCE_REASONS = [
+  { id: "rest_day", label: "Вихідний день" },
+  { id: "recovery", label: "Планове відновлення" },
   { id: "injury", label: "Травма / реабілітація" },
   { id: "illness", label: "Хвороба / застуда" },
-  { id: "recovery", label: "Планове відновлення" },
   { id: "personal", label: "Сімейні / особисті причини" },
   { id: "school", label: "Навчання / іспити" },
   { id: "unspecified", label: "Без пояснення" },

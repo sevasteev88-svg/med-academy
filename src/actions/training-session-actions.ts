@@ -219,12 +219,17 @@ export async function getTeamTrainingDataAction(params?: {
     const selfRpe = playerSelfRpeMap.get(p.id) ?? (existing?.player_rpe ?? null);
 
     if (existing) {
+      let mappedReason = existing.absence_reason || "";
+      if (mappedReason === "Без пояснення") mappedReason = "unspecified";
+      else if (mappedReason === "Вихідний день") mappedReason = "rest_day";
+      else if (mappedReason === "Планове відновлення") mappedReason = "recovery";
+
       return {
         playerId: p.id,
         playerName: `${p.first_name} ${p.last_name}`,
         position: p.position || "—",
         isPresent: existing.attendance_status !== "absent",
-        absenceReason: existing.absence_reason || "",
+        absenceReason: mappedReason,
         minutes: existing.duration_minutes ?? 75,
         rpeScore: (existing.coach_rpe ?? existing.rpe_score ?? 6) as RpeScore,
         playerRpe: selfRpe !== null && selfRpe !== undefined ? (selfRpe as RpeScore) : null,
@@ -343,7 +348,7 @@ export async function saveTeamTrainingAction(input: SaveTeamTrainingInput) {
       coach_rpe: rpe,
       player_rpe: (playerRpe as RpeScore) ?? null,
       attendance_status: isPresent ? "present" : "absent",
-      absence_reason: !isPresent ? (item.absenceReason?.trim() || "Без пояснення") : null,
+      absence_reason: !isPresent ? (item.absenceReason?.trim() || "unspecified") : null,
       workload_au: workloadAu,
       notes: item.notes?.trim() || input.sessionNotes?.trim() || null,
       created_at: nowIso,

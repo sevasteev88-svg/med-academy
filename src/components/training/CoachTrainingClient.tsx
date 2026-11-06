@@ -179,12 +179,16 @@ export default function CoachTrainingClient({
     setPlayers((prev) =>
       prev.map((p) => {
         if (p.playerId !== playerId) return p;
+        const defaultAbsence =
+          sessionType === "recovery" || sessionNotes.toLowerCase().includes("вихідн")
+            ? "rest_day"
+            : "unspecified";
         return {
           ...p,
           isPresent,
           minutes: isPresent ? teamMinutes : 0,
           rpeScore: isPresent ? teamRpe : 0,
-          absenceReason: isPresent ? "" : p.absenceReason || "unspecified",
+          absenceReason: isPresent ? "" : p.absenceReason || defaultAbsence,
         };
       })
     );
@@ -825,7 +829,13 @@ export default function CoachTrainingClient({
                       <td className="py-3 px-4">
                         {!p.isPresent ? (
                           <select
-                            value={p.absenceReason || "unspecified"}
+                            value={
+                              p.absenceReason === "Без пояснення"
+                                ? "unspecified"
+                                : p.absenceReason === "Вихідний день" || p.absenceReason === "rest_day"
+                                ? "rest_day"
+                                : p.absenceReason || "rest_day"
+                            }
                             onChange={(e) =>
                               updatePlayerAbsenceReason(p.playerId, e.target.value)
                             }
