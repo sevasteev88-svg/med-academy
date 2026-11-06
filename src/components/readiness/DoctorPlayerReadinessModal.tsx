@@ -698,11 +698,11 @@ export function DoctorPlayerReadinessModal({
                 </div>
               </div>
 
-              {/* Загальний коментар для лікаря */}
+              {/* Загальний коментар гравця */}
               {details.comment && (
                 <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
                   <span className="text-[10px] font-bold text-sky-400 uppercase tracking-wider block">
-                    💬 Особистий коментар гравця для лікаря (приховано для тренера):
+                    💬 {isDoctorOrAdmin ? "Особистий коментар гравця для лікаря:" : "Коментар гравця до ранкового звіту:"}
                   </span>
                   <p className="text-xs text-white leading-relaxed italic">
                     «{details.comment}»

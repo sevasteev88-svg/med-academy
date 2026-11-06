@@ -341,7 +341,7 @@ describe("8.4 Світлофор готовності для тренера (Rea
 
   // 6. Захист чутливих даних (Маскування для тренера)
   describe("6. Захист чутливих даних та ролі (Coach vs Doctor)", () => {
-    it("тренер НЕ отримує стрес, коментарі, локалізацію та ВАШ болю", () => {
+    it("тренер НЕ отримує стрес, але бачить відповіді анкети (сон, втома, крепатура, коментар)", () => {
       const history = generateHistoricalEntries(TODAY, 16);
       const todayEntry = createMockEntry(TODAY, {
         pain: true,
@@ -360,10 +360,13 @@ describe("8.4 Світлофор готовності для тренера (Rea
         forRole: "coach", // Роль тренера
       });
 
-      // Для тренера doctorDetails повинен бути null
-      assert.equal(res.doctorDetails, null);
+      // Тренер бачить відповіді, але стрес замасковано (null)
+      assert.notEqual(res.doctorDetails, null);
+      assert.equal(res.doctorDetails?.stress, null);
+      assert.equal(res.doctorDetails?.comment, "Конфлікт у школі та сімейні негаразди");
+      assert.equal(res.doctorDetails?.fatigue, 2);
 
-      // Видимі лише узагальнені категорії
+      // Видимі узагальнені категорії
       assert(res.flagCategories.includes("біль"));
       assert(res.flagCategories.includes("втома"));
       // Стрес не є категорією фізичного прапорця
@@ -395,7 +398,7 @@ describe("8.4 Світлофор готовності для тренера (Rea
       assert.equal(res.doctorDetails?.comment, "Турбує коліно при присіданнях");
     });
 
-    it("sanitizeReadinessForCoach надійно обнуляє doctorDetails перед передачею клієнту", () => {
+    it("sanitizeReadinessForCoach маскує стрес і пристрої, зберігаючи спортивні дані та коментар", () => {
       const rawResult: PlayerReadinessResult = {
         playerId: "p1",
         date: TODAY,
@@ -426,7 +429,10 @@ describe("8.4 Світлофор готовності для тренера (Rea
       };
 
       const sanitized = sanitizeReadinessForCoach(rawResult);
-      assert.equal(sanitized.doctorDetails, null);
+      assert.notEqual(sanitized.doctorDetails, null);
+      assert.equal(sanitized.doctorDetails?.stress, null);
+      assert.equal(sanitized.doctorDetails?.comment, "Секретний коментар");
+      assert.equal(sanitized.doctorDetails?.painVas, 8);
     });
   });
 

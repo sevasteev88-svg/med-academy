@@ -11,6 +11,7 @@ import {
   SESSION_TYPE_UA,
   BORG_CR10_SCALE,
   ABSENCE_REASONS,
+  SORENESS_LOCATIONS,
 } from "@/types/workload";
 import { saveTeamTrainingAction } from "@/actions/training-session-actions";
 
@@ -694,8 +695,8 @@ export default function CoachTrainingClient({
                       {/* Оцінка самого гравця та розбіжність */}
                       <td className="py-3 px-3 text-center">
                         {p.playerRpe !== null && p.playerRpe !== undefined ? (
-                          <div className="flex flex-col items-center gap-0.5">
-                            <span className="font-mono text-xs font-bold text-slate-300">
+                          <div className="flex flex-col items-center gap-1">
+                            <span className="font-mono text-xs font-bold text-slate-200 bg-slate-900 px-2 py-0.5 rounded border border-slate-700">
                               {p.playerRpe}/10
                             </span>
                             {hasDiscrepancy && (
@@ -704,6 +705,44 @@ export default function CoachTrainingClient({
                                 title={`Розбіжність: Тренер ${p.rpeScore}, Гравець ${p.playerRpe}`}
                               >
                                 ⚠️ Δ {Math.abs(p.playerRpe - p.rpeScore)}
+                              </span>
+                            )}
+                            {/* Скарги гравця після сесії */}
+                            {p.playerFeedback?.hasContusion && (
+                              <span
+                                className="px-1.5 py-0.5 rounded text-[9px] font-bold border flex items-center gap-0.5 bg-rose-500/20 border-rose-500/40 text-rose-300"
+                                title="Гравець повідомив про контактний забій/удар під час гри чи тренування"
+                              >
+                                🩹 Забій
+                              </span>
+                            )}
+                            {p.playerFeedback?.sorenessLocations && p.playerFeedback.sorenessLocations.length > 0 && (
+                              <div className="flex flex-wrap gap-0.5 justify-center max-w-[120px]">
+                                {p.playerFeedback.sorenessLocations.slice(0, 2).map((locId) => {
+                                  const locItem = SORENESS_LOCATIONS.find((l) => l.id === locId);
+                                  return (
+                                    <span
+                                      key={locId}
+                                      className="px-1 py-0.2 rounded text-[8px] bg-orange-950/60 text-orange-300 border border-orange-500/30"
+                                      title={locItem?.label || locId}
+                                    >
+                                      {locItem?.icon || "🦵"} {locItem?.label?.split(" ")[0] || locId}
+                                    </span>
+                                  );
+                                })}
+                                {p.playerFeedback.sorenessLocations.length > 2 && (
+                                  <span className="text-[8px] text-orange-400 font-mono">
+                                    +{p.playerFeedback.sorenessLocations.length - 2}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                            {p.playerFeedback?.notes && (
+                              <span
+                                className="text-[9px] text-slate-400 italic max-w-[110px] truncate"
+                                title={p.playerFeedback.notes}
+                              >
+                                💬 {p.playerFeedback.notes}
                               </span>
                             )}
                           </div>

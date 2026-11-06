@@ -22,6 +22,7 @@ import {
 import PwaInstallPromptModal from "@/components/portal/PwaInstallPromptModal";
 import PlayerWellnessQuiz from "@/components/wellness/PlayerWellnessQuiz";
 import SubscriptionPaywall from "@/components/portal/SubscriptionPaywall";
+import PlayerPostSessionCard from "@/components/portal/PlayerPostSessionCard";
 
 interface Props {
   initialSessionData?: any;
@@ -731,6 +732,14 @@ export default function RehabPortalClient({
               </div>
             </div>
           </div>
+        )}
+
+        {/* Віджет оцінки реакції на навантаження (Матч / Тренування) */}
+        {authenticatedPlayer && (
+          <PlayerPostSessionCard
+            playerId={authenticatedPlayer.id}
+            initialTodaySession={authenticatedPlayer.todaySession}
+          />
         )}
 
         {/* Tabs: збережено оригінальну структуру вкладок */}

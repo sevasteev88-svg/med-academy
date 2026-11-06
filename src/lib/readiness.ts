@@ -330,7 +330,7 @@ export function evaluatePlayerReadiness(
   baseResult.isBaselineReady = totalDaysFilled >= thresholds.baselineRequiredDays;
 
   // Формуємо 7-денний тренд
-  baseResult.trendLast7Days = generate7DayTrend(todayDate, dateMap);
+  baseResult.trendLast7Days = generate7DayTrend(todayDate, dateMap, isDoctorRole);
 
   // 8.5 Розрахунок дисципліни заповнення (Compliance) та серій заповнення (Streaks)
   const { compliance7, compliance28 } = calculateComplianceRates(todayDate, dateMap);
@@ -368,8 +368,8 @@ export function evaluatePlayerReadiness(
   const todayComposite = calculatePhysicalComposite(todayEntry);
   baseResult.todayComposite = todayComposite;
 
-  // Заповнюємо деталі анкети (сон, втома, крепатура, біль, ГРВІ) - доступно виключно лікарю
-  if (todayEntry && isDoctorRole) {
+  // Заповнюємо деталі анкети (сон, втома, крепатура, біль, ГРВІ, коментарі)
+  if (todayEntry) {
     baseResult.doctorDetails = {
       pain: todayEntry.pain,
       painVas: todayEntry.pain_vas,
@@ -380,14 +380,14 @@ export function evaluatePlayerReadiness(
       temperature: todayEntry.body_temperature || (todayEntry as any).temperature || null,
       illnessSymptoms: todayEntry.illness_symptoms || (todayEntry as any).illnessSymptoms || [],
       illnessComment: todayEntry.illness_comment || (todayEntry as any).illnessComment || null,
-      stress: todayEntry.stress,
+      stress: isDoctorRole ? todayEntry.stress : null,
       comment: todayEntry.comment,
       sleepHours: todayEntry.sleep_hours,
       sleepQuality: todayEntry.sleep_quality,
       fatigue: todayEntry.fatigue,
       soreness: todayEntry.soreness,
       doctorRecommendation: todayEntry.doctor_recommendation || (todayEntry as any).doctorRecommendation || null,
-      wearables: options.wearablesReport?.todayEntry
+      wearables: isDoctorRole && options.wearablesReport?.todayEntry
         ? {
             deviceType: options.wearablesReport.deviceType,
             hrvMetric: options.wearablesReport.hrvMetric,
@@ -536,7 +536,8 @@ export function evaluatePlayerReadiness(
  */
 function generate7DayTrend(
   todayDate: string,
-  dateMap: Map<string, WellnessEntry>
+  dateMap: Map<string, WellnessEntry>,
+  isDoctorRole: boolean = true
 ): ReadinessTrendPoint[] {
   const points: ReadinessTrendPoint[] = [];
   const baseDate = new Date(todayDate);
@@ -585,7 +586,7 @@ function generate7DayTrend(
         temperature: entry.body_temperature || (entry as any).temperature || null,
         illnessSymptoms: entry.illness_symptoms || (entry as any).illnessSymptoms || [],
         illnessComment: entry.illness_comment || (entry as any).illnessComment || null,
-        stress: entry.stress,
+        stress: isDoctorRole ? entry.stress : null,
         comment: entry.comment,
         sleepHours: entry.sleep_hours,
         sleepQuality: entry.sleep_quality,
@@ -721,18 +722,27 @@ export function detectMonotonousAnswers(
 }
 
 /**
- * Фільтрація для тренера: видаляє будь-які приватні та клінічні дані, якщо випадково передані.
- * ВИМОГА 8.5: Тренер бачить відсоток заповнення, але НЕ бачить метку монотонності (видно тільки doctor/admin)!
+ * Фільтрація для тренера: приховує психологічний стрес (stress) та біометрію годинників (wearables).
+ * Спортивні показники (сон, втома, крепатура), біль, статус здоров'я та коментарі гравця залишаються доступними.
+ * ВИМОГА 8.5: Тренер бачить відсоток заповнення, але НЕ бачить мітку монотонності (видно тільки doctor/admin)!
  */
 export function sanitizeReadinessForCoach(
   result: PlayerReadinessResult
 ): PlayerReadinessResult {
+  const coachDetails = result.doctorDetails
+    ? {
+        ...result.doctorDetails,
+        stress: null, // Приховано від тренера (тільки лікар)
+        wearables: null, // Біометрія з носимих пристроїв тільки для медштабу
+      }
+    : null;
+
   return {
     ...result,
     hasMonotony: false,
     monotonyDays: 0,
     monotonyPrompt: null,
-    doctorDetails: null,
+    doctorDetails: coachDetails,
     trendLast7Days: result.trendLast7Days.map((pt) => ({
       date: pt.date,
       compositeScore: pt.compositeScore,
@@ -741,7 +751,12 @@ export function sanitizeReadinessForCoach(
       isAcknowledged: pt.isAcknowledged,
       reviewedByRole: pt.reviewedByRole,
       reviewedAt: pt.reviewedAt,
-      details: null,
+      details: pt.details
+        ? {
+            ...pt.details,
+            stress: null, // Приховано від тренера (тільки лікар)
+          }
+        : null,
     })),
   };
 }

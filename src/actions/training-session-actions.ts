@@ -11,13 +11,18 @@ import {
 } from "@/lib/auth";
 import { hasConsent } from "@/lib/consents";
 import { logAudit } from "@/lib/audit";
+import { getPlayerSession } from "@/lib/player-auth";
 import type {
   TrainingSessionType,
   RpeScore,
   SaveTeamTrainingInput,
   TeamTrainingPlayerItem,
   SessionRpeEntry,
+  PlayerSessionFeedback,
+  PlayerSessionFeedbackInput,
+  PlayerTodaySession,
 } from "@/types/workload";
+import { SORENESS_LOCATIONS } from "@/types/workload";
 
 export type TeamTrainingScreenData = {
   success: boolean;
@@ -160,12 +165,13 @@ export async function getTeamTrainingDataAction(params?: {
           const merged = {
             ...s,
             coach_rpe: parsedNotes?.coach_rpe ?? s.rpe_score,
-            player_rpe: parsedNotes?.player_rpe ?? null,
+            player_rpe: parsedNotes?.player_rpe ?? s.player_rpe ?? null,
             attendance_status: parsedNotes?.attendance_status ?? (s.duration_minutes > 0 ? "present" : "absent"),
             absence_reason: parsedNotes?.absence_reason ?? null,
             team_session_id: parsedNotes?.team_session_id ?? null,
             session_type: parsedNotes?.session_type ?? s.session_type,
             cleanNotes: parsedNotes?.notes ?? (s.notes?.startsWith("[COACH_SESSION]") ? "" : s.notes),
+            player_feedback: parsedNotes?.player_feedback ?? null,
           };
 
           const prev = map.get(s.player_id);
@@ -221,6 +227,7 @@ export async function getTeamTrainingDataAction(params?: {
         minutes: existing.duration_minutes ?? 75,
         rpeScore: (existing.coach_rpe ?? existing.rpe_score ?? 6) as RpeScore,
         playerRpe: selfRpe !== null && selfRpe !== undefined ? (selfRpe as RpeScore) : null,
+        playerFeedback: existing.player_feedback || null,
         notes: (existing.cleanNotes ?? (existing.notes?.startsWith("[COACH_SESSION]") ? "" : existing.notes)) || "",
       };
     }
@@ -234,6 +241,7 @@ export async function getTeamTrainingDataAction(params?: {
       minutes: 75,
       rpeScore: 6,
       playerRpe: selfRpe !== null && selfRpe !== undefined ? (selfRpe as RpeScore) : null,
+      playerFeedback: null,
       notes: "",
     };
   });
@@ -459,11 +467,27 @@ export async function submitPlayerSelfRpeAction(input: {
   playerRpe: RpeScore;
   sessionMinutes?: number;
 }) {
-  const authRes = await assertAuth();
-  if ("error" in authRes) return { error: authRes.error };
+  const playerSession = await getPlayerSession();
+  let callerUserId = "player";
+  let callerClubId = DEFAULT_CLUB_ID;
+
+  if (playerSession && playerSession.playerId === input.playerId) {
+    callerUserId = `player:${input.playerId}`;
+  } else {
+    const authRes = await assertAuth();
+    if ("error" in authRes) return { error: authRes.error };
+    callerUserId = authRes.user.id;
+    callerClubId = authRes.user.clubId || DEFAULT_CLUB_ID;
+  }
 
   const supabase = createAdminClient();
-  const clubId = authRes.user.clubId || DEFAULT_CLUB_ID;
+  const { data: player } = await supabase
+    .from("players")
+    .select("club_id")
+    .eq("id", input.playerId)
+    .maybeSingle();
+
+  const clubId = player?.club_id || callerClubId;
 
   // Отримуємо поточний запис навантаження за цей день (якщо тренер уже створив тренування)
   let existingSession: any = null;
@@ -529,7 +553,7 @@ export async function submitPlayerSelfRpeAction(input: {
         action: "rpe_discrepancy_detected",
         entity: "workload_sessions",
         entityId: input.playerId,
-        userId: authRes.user.id,
+        userId: callerUserId,
         clubId,
         meta: {
           playerId: input.playerId,
@@ -551,6 +575,366 @@ export async function submitPlayerSelfRpeAction(input: {
     playerRpe: input.playerRpe,
     coachRpe,
     diff: coachRpe !== null ? Math.abs(Number(input.playerRpe) - Number(coachRpe)) : null,
+  };
+}
+
+/**
+ * Отримує дані про сьогоднішнє тренування або матч для футболіста.
+ * Перевіряє як заплановані тренером сесії в workload_sessions,
+ * так і матчі з match_rosters.
+ */
+export async function getPlayerTodaySessionAction(playerId: string, targetDate?: string): Promise<{
+  success: boolean;
+  todaySession: PlayerTodaySession | null;
+  error?: string;
+}> {
+  try {
+    const date = targetDate || new Date().toISOString().split("T")[0];
+    const supabase = createAdminClient();
+
+    // 1. Отримуємо дані гравця та його команду
+    const { data: player } = await supabase
+      .from("players")
+      .select("id, club_id, team_id, first_name, last_name, teams(name)")
+      .eq("id", playerId)
+      .maybeSingle();
+
+    if (!player) {
+      return { success: false, todaySession: null, error: "Гравця не знайдено" };
+    }
+
+    const teamId = player.team_id;
+    const teamName = (player as any).teams?.name || "";
+
+    // 2. Перевіряємо наявність сесії в workload_sessions за сьогодні
+    const { data: session } = await supabase
+      .from("workload_sessions")
+      .select("*")
+      .eq("player_id", playerId)
+      .eq("date", date)
+      .maybeSingle();
+
+    // 3. Перевіряємо чи є матч у заявках на сьогодні
+    let matchOpponent: string | null = null;
+    try {
+      let matchQuery = supabase
+        .from("match_rosters")
+        .select("opponent, starters, substitutes, team_name")
+        .eq("match_date", date);
+
+      if (teamId) {
+        matchQuery = matchQuery.eq("team_id", teamId);
+      } else if (teamName) {
+        matchQuery = matchQuery.eq("team_name", teamName);
+      }
+
+      const { data: matchRosters } = await matchQuery.limit(1);
+      if (matchRosters && matchRosters.length > 0) {
+        matchOpponent = matchRosters[0].opponent;
+      }
+    } catch {}
+
+    // Парсимо notes сесії якщо вона є
+    let parsedNotes: any = null;
+    if (session?.notes && typeof session.notes === "string") {
+      if (session.notes.startsWith("[COACH_SESSION]")) {
+        try {
+          parsedNotes = JSON.parse(session.notes.replace("[COACH_SESSION]", "").trim());
+        } catch {}
+      } else if (session.notes.startsWith("[PLAYER_FEEDBACK]")) {
+        try {
+          parsedNotes = JSON.parse(session.notes.replace("[PLAYER_FEEDBACK]", "").trim());
+        } catch {}
+      } else if (session.notes.startsWith("[WORKLOAD]")) {
+        try {
+          parsedNotes = JSON.parse(session.notes.replace("[WORKLOAD]", "").trim());
+        } catch {}
+      }
+    }
+
+    const coachRpe = parsedNotes?.coach_rpe ?? session?.coach_rpe ?? (session?.rpe_score != null ? session.rpe_score : null);
+    const playerRpe = parsedNotes?.player_rpe ?? session?.player_rpe ?? null;
+    const feedback: PlayerSessionFeedback | null = parsedNotes?.player_feedback ?? null;
+    const isCompleted = playerRpe !== null && playerRpe !== undefined;
+
+    const defaultDuration = matchOpponent ? 90 : (session?.duration_minutes || 75);
+    const sessionType: TrainingSessionType = (session?.session_type as TrainingSessionType) || (matchOpponent ? "match" : "training_team");
+
+    return {
+      success: true,
+      todaySession: {
+        hasSession: Boolean(session || matchOpponent),
+        teamSessionId: session?.team_session_id || parsedNotes?.team_session_id || null,
+        sessionType,
+        durationMinutes: session?.duration_minutes || defaultDuration,
+        coachRpe,
+        playerRpe,
+        isCompletedByPlayer: isCompleted,
+        feedback,
+        opponent: matchOpponent,
+        date,
+      },
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      todaySession: null,
+      error: err?.message || "Помилка завантаження сесії",
+    };
+  }
+}
+
+/**
+ * Зберігає відгук та реакцію футболіста на тренування або матч:
+ * - Інтенсивність зусилля за шкалою Borg CR10 (0-10)
+ * - Хвилини участі
+ * - М'язова реакція (забитість у задній поверхні стегна, паху, литках тощо)
+ * - Наявність контактного удару/забою
+ * - Довільний коментар футболіста
+ * - Автоматично оновлює workload_sessions, exposures, фіксує алерти розбіжності та симптоми в картці лікаря.
+ */
+export async function submitPlayerSessionFeedbackAction(input: PlayerSessionFeedbackInput) {
+  // 1. Авторизація: дозволяємо як гравцю з його власною сесією, так і тренеру/лікарю
+  const playerSession = await getPlayerSession();
+  let isAuthorized = false;
+  let callerClubId: string | null = null;
+  let callerUserId = "player";
+
+  if (playerSession && playerSession.playerId === input.playerId) {
+    isAuthorized = true;
+    callerUserId = `player:${input.playerId}`;
+  } else {
+    const authRes = await assertAuth();
+    if (!("error" in authRes)) {
+      isAuthorized = true;
+      callerClubId = authRes.user.clubId || DEFAULT_CLUB_ID;
+      callerUserId = authRes.user.id;
+    }
+  }
+
+  if (!isAuthorized) {
+    return { success: false, error: "Не авторизовано для запису відгуку на навантаження" };
+  }
+
+  const supabase = createAdminClient();
+  const targetDate = input.date || new Date().toISOString().split("T")[0];
+
+  // 2. Отримуємо дані гравця для club_id та team_id
+  const { data: player } = await supabase
+    .from("players")
+    .select("id, club_id, team_id, first_name, last_name")
+    .eq("id", input.playerId)
+    .maybeSingle();
+
+  const clubId = player?.club_id || callerClubId || DEFAULT_CLUB_ID;
+  const teamId = player?.team_id || null;
+
+  const duration = Math.max(1, Number(input.durationMinutes) || 75);
+  const rpe = Math.max(0, Math.min(10, Number(input.playerRpe) || 0)) as RpeScore;
+  const workloadAu = duration * rpe;
+
+  // 3. Формуємо об'єкт структурованого відгуку
+  const feedbackData: PlayerSessionFeedback = {
+    sorenessLocations: input.muscleSorenessLocations || [],
+    hasContusion: Boolean(input.hasContusion),
+    notes: input.notes?.trim() || undefined,
+    submittedAt: new Date().toISOString(),
+  };
+
+  // 4. Отримуємо існуючий запис workload_sessions за цей день
+  let existingSession: any = null;
+  try {
+    const { data } = await supabase
+      .from("workload_sessions")
+      .select("*")
+      .eq("player_id", input.playerId)
+      .eq("date", targetDate)
+      .maybeSingle();
+    existingSession = data;
+  } catch {}
+
+  const coachRpe = existingSession?.coach_rpe ?? null;
+
+  // Парсимо старі notes якщо були
+  let existingNotesObj: any = {};
+  if (existingSession?.notes && typeof existingSession.notes === "string") {
+    try {
+      const clean = existingSession.notes.replace(/^\[(COACH_SESSION|PLAYER_FEEDBACK|WORKLOAD)\]\s*/, "");
+      existingNotesObj = JSON.parse(clean);
+    } catch {}
+  }
+
+  const mergedSessionPayload = {
+    ...existingNotesObj,
+    id: existingSession?.id || `rpe_player_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+    club_id: clubId,
+    team_id: teamId,
+    player_id: input.playerId,
+    date: targetDate,
+    session_type: input.sessionType,
+    duration_minutes: duration,
+    rpe_score: rpe,
+    coach_rpe: coachRpe,
+    player_rpe: rpe,
+    attendance_status: "present",
+    workload_au: workloadAu,
+    player_feedback: feedbackData,
+    notes: input.notes?.trim() || existingNotesObj.notes || null,
+  };
+
+  const notesJsonString = `[COACH_SESSION] ${JSON.stringify(mergedSessionPayload)}`;
+
+  if (existingSession) {
+    try {
+      await supabase
+        .from("workload_sessions")
+        .update({
+          player_rpe: rpe,
+          duration_minutes: duration,
+          workload_au: workloadAu,
+          session_type: input.sessionType,
+          notes: notesJsonString,
+        } as any)
+        .eq("id", existingSession.id);
+    } catch (err) {
+      console.error("[submitPlayerSessionFeedbackAction] error updating workload_sessions:", err);
+    }
+  } else {
+    try {
+      await supabase.from("workload_sessions").insert({
+        id: mergedSessionPayload.id,
+        club_id: clubId,
+        team_id: teamId,
+        player_id: input.playerId,
+        date: targetDate,
+        session_type: input.sessionType,
+        duration_minutes: duration,
+        rpe_score: rpe,
+        coach_rpe: null,
+        player_rpe: rpe,
+        attendance_status: "present",
+        workload_au: workloadAu,
+        notes: notesJsonString,
+      } as any);
+    } catch (err) {
+      console.error("[submitPlayerSessionFeedbackAction] error inserting workload_sessions:", err);
+    }
+  }
+
+  // 5. Оновлення таблиці exposures (реєстр навантаження за 4.2)
+  try {
+    const exposureType = input.sessionType === "match" ? "match" : "training";
+    const { data: exp } = await supabase
+      .from("exposures")
+      .select("id")
+      .eq("player_id", input.playerId)
+      .eq("date", targetDate)
+      .maybeSingle();
+
+    if (exp) {
+      await supabase
+        .from("exposures")
+        .update({
+          minutes: duration,
+          exposure_type: exposureType,
+          notes: `RPE гравця: ${rpe}/10`,
+        })
+        .eq("id", exp.id);
+    } else {
+      await supabase.from("exposures").insert({
+        club_id: clubId,
+        player_id: input.playerId,
+        date: targetDate,
+        exposure_type: exposureType,
+        minutes: duration,
+        notes: `RPE гравця: ${rpe}/10`,
+      });
+    }
+  } catch {}
+
+  // 6. Якщо є скарги на забитість або контактний забій — створюємо симптомний запис у картці лікаря (injury_logs)
+  const hasSoreness = feedbackData.sorenessLocations && feedbackData.sorenessLocations.length > 0;
+  if (hasSoreness || feedbackData.hasContusion || feedbackData.notes) {
+    try {
+      const sorenessLabels = (feedbackData.sorenessLocations || []).map((id) => {
+        const item = SORENESS_LOCATIONS.find((loc) => loc.id === id);
+        return item ? item.label : id;
+      });
+
+      const parts: string[] = [];
+      if (sorenessLabels.length > 0) {
+        parts.push(`Забитість/дискомфорт: ${sorenessLabels.join(", ")}`);
+      }
+      if (feedbackData.hasContusion) {
+        parts.push("⚠️ Був контактний забій або сильний удар");
+      }
+      if (feedbackData.notes) {
+        parts.push(`Коментар: ${feedbackData.notes}`);
+      }
+
+      const noteText = `[POST_SESSION_REACTION] Реакція після ${input.sessionType === "match" ? "матчу" : "тренування"} (${duration} хв, RPE ${rpe}/10): ${parts.join(" · ")}`;
+
+      // Знаходимо або створюємо injury для прив'язки логу
+      let targetInjId: string | null = null;
+      const { data: activeInj } = await supabase
+        .from("injuries")
+        .select("id")
+        .eq("player_id", input.playerId)
+        .order("date_of_injury", { ascending: false })
+        .limit(1);
+
+      if (activeInj && activeInj.length > 0) {
+        targetInjId = activeInj[0].id;
+      }
+
+      await supabase.from("injury_logs").insert({
+        club_id: clubId,
+        injury_id: targetInjId as any,
+        date: targetDate,
+        category: "symptom",
+        note: noteText,
+      } as any);
+    } catch (e) {
+      console.warn("[submitPlayerSessionFeedbackAction] injury_logs insert warning:", e);
+    }
+  }
+
+  // 7. Перевірка розбіжності RPE тренера та гравця (diff >= 2)
+  if (coachRpe !== null && coachRpe !== undefined) {
+    const diff = Math.abs(Number(rpe) - Number(coachRpe));
+    if (diff >= 2) {
+      try {
+        await logAudit({
+          action: "rpe_discrepancy_detected",
+          entity: "workload_sessions",
+          entityId: input.playerId,
+          userId: callerUserId,
+          clubId,
+          meta: {
+            playerId: input.playerId,
+            date: targetDate,
+            coachRpe,
+            playerRpe: rpe,
+            diff,
+            sessionType: input.sessionType,
+          },
+        });
+      } catch {}
+    }
+  }
+
+  revalidatePath("/training");
+  revalidatePath("/workload");
+  revalidatePath("/team/readiness");
+  revalidatePath("/rehab-portal");
+  revalidatePath(`/players/${input.playerId}`);
+
+  return {
+    success: true,
+    playerRpe: rpe,
+    coachRpe,
+    diff: coachRpe !== null ? Math.abs(Number(rpe) - Number(coachRpe)) : null,
+    workloadAu,
   };
 }
 

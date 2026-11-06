@@ -58,6 +58,48 @@ export type PlayerWorkloadSummary = {
   } | null;
 };
 
+export type PlayerSessionFeedback = {
+  sorenessLocations?: string[];
+  hasContusion?: boolean;
+  notes?: string;
+  submittedAt?: string;
+};
+
+export type PlayerSessionFeedbackInput = {
+  playerId: string;
+  date?: string;
+  sessionType: TrainingSessionType;
+  durationMinutes: number;
+  playerRpe: RpeScore;
+  muscleSorenessLocations?: string[];
+  hasContusion?: boolean;
+  notes?: string;
+};
+
+export type PlayerTodaySession = {
+  hasSession: boolean;
+  teamSessionId?: string | null;
+  sessionType: TrainingSessionType;
+  durationMinutes: number;
+  coachRpe?: RpeScore | null;
+  playerRpe?: RpeScore | null;
+  isCompletedByPlayer: boolean;
+  feedback?: PlayerSessionFeedback | null;
+  opponent?: string | null;
+  date: string;
+};
+
+export const SORENESS_LOCATIONS: { id: string; label: string; icon: string }[] = [
+  { id: "hamstrings", label: "Задня поверхня стегна", icon: "🦵" },
+  { id: "groin", label: "Пах / Привідні м'язи", icon: "⚡" },
+  { id: "quadriceps", label: "Передня поверхня (квадріцепс)", icon: "🦵" },
+  { id: "calves", label: "Литки / Ахілл", icon: "🦶" },
+  { id: "glutes", label: "Сідничні м'язи", icon: "🍑" },
+  { id: "knee", label: "Коліно", icon: "🩹" },
+  { id: "ankle", label: "Гомілкостоп", icon: "🦶" },
+  { id: "lower_back", label: "Поперек / Спина", icon: "🦴" },
+];
+
 export type TeamTrainingPlayerItem = {
   playerId: string;
   playerName: string;
@@ -67,6 +109,7 @@ export type TeamTrainingPlayerItem = {
   minutes: number;
   rpeScore: RpeScore;
   playerRpe?: RpeScore | null;
+  playerFeedback?: PlayerSessionFeedback | null;
   notes?: string;
 };
 

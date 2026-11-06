@@ -22,7 +22,11 @@ import {
 import { assertDoctor, DEFAULT_CLUB_ID } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { getPlayerWeeklySummaryAction } from "@/actions/wellness-entry-actions";
-import { submitPlayerSelfRpeAction } from "./training-session-actions";
+import {
+  submitPlayerSelfRpeAction,
+  getPlayerTodaySessionAction,
+  submitPlayerSessionFeedbackAction,
+} from "./training-session-actions";
 import { isSubscriptionAccessGranted } from "@/lib/billing";
 
 /**
@@ -640,6 +644,15 @@ export async function getAuthorizedPlayerCabinetData() {
     isSubscriptionActive = true;
   }
 
+  // 10. Сьогоднішнє тренування або матч для швидкої реакції на навантаження
+  let todaySession: any = null;
+  try {
+    const todayRes = await getPlayerTodaySessionAction(player.id);
+    if (todayRes.success) {
+      todaySession = todayRes.todaySession;
+    }
+  } catch {}
+
   return {
     success: true,
     mustChangePin: session.mustChangePin,
@@ -657,6 +670,7 @@ export async function getAuthorizedPlayerCabinetData() {
       pastCheckins,
       prescribedSupplements,
       weeklySummary,
+      todaySession,
     },
   };
 }

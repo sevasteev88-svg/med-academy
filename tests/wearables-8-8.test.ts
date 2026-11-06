@@ -284,9 +284,11 @@ describe("8.8 Ручний ввід даних з носимих пристро�
       assert.equal(doctorResult.doctorDetails?.wearables?.deviceType, "whoop");
       assert.equal(doctorResult.doctorDetails?.wearables?.hrvMs, 80);
 
-      // Маскування для тренера
+      // Маскування для тренера: стрес та біометрія wearables приховані, але анкета доступна
       const coachResult = sanitizeReadinessForCoach(doctorResult);
-      assert.equal(coachResult.doctorDetails, null);
+      assert.notEqual(coachResult.doctorDetails, null);
+      assert.equal(coachResult.doctorDetails?.stress, null);
+      assert.equal(coachResult.doctorDetails?.wearables, null);
       assert.equal(coachResult.hasMonotony, false);
       assert.equal((coachResult as any).wearables, undefined);
     });
