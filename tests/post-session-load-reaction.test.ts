@@ -6,6 +6,7 @@ import {
   type RpeScore,
   type PlayerSessionFeedbackInput,
 } from "../src/types/workload.ts";
+import { formatPostSessionReminder } from "../src/lib/telegram-auth.ts";
 
 describe("Пост-тренувальна та післяматчева реакція на навантаження (sRPE & Soreness)", () => {
   it("1. Довідник зон м'язової забитості містить усі ключові футбольні групи", () => {
@@ -95,5 +96,24 @@ describe("Пост-тренувальна та післяматчева реак
     assert.ok(noteText.includes("Литки / Ахілл"));
     assert.ok(noteText.includes("Був контактний забій"));
     assert.ok(noteText.includes("Судоми на 85 хв"));
+  });
+
+  it("6. Форматування Telegram-сповіщення футболісту про внесене тренування", () => {
+    const text = formatPostSessionReminder({
+      playerName: "Тарас",
+      clubName: "Чорноморець",
+      sessionType: "Командне тренування",
+      durationMinutes: 75,
+      date: "2026-11-06",
+      portalUrl: "https://med.fc-chornomorets.com/rehab-portal",
+    });
+
+    assert.ok(text.includes("Привіт, Тарас!"));
+    assert.ok(text.includes("[Чорноморець]"));
+    assert.ok(text.includes("Командне тренування"));
+    assert.ok(text.includes("75 хв"));
+    assert.ok(text.includes("2026-11-06"));
+    assert.ok(text.includes("https://med.fc-chornomorets.com/rehab-portal"));
+    assert.ok(text.includes("Оцінити"));
   });
 });

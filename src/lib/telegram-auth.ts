@@ -6,6 +6,7 @@ import type {
   TelegramBindingEligibility,
   CoachWeeklyTelegramSummary,
   MorningReminderOptions,
+  PostSessionReminderOptions,
 } from "../types/telegram.ts";
 
 export const TELEGRAM_TOKEN_EXPIRATION_SECONDS = 48 * 60 * 60; // 48 годин
@@ -229,6 +230,25 @@ export function formatMorningWellnessReminder(options: MorningReminderOptions): 
     `Будь ласка, заповни коротку ранкову анкету самопочуття на сьогодні.\n` +
     `Це займе менше 1 хвилини та допоможе тренерському штабу запланувати тренувальне навантаження.\n\n` +
     `📲 Перейти до анкети:\n${options.wellnessUrl}`
+  );
+}
+
+/**
+ * Сповіщення футболісту після внесення навантаження тренером:
+ * Запрошення оцінити сприйняте навантаження (sRPE 0-10) та стан м'язів.
+ */
+export function formatPostSessionReminder(options: PostSessionReminderOptions): string {
+  const greeting = options.playerName ? `Привіт, ${options.playerName}!` : "Привіт!";
+  const clubPrefix = options.clubName ? ` [${options.clubName}]` : "";
+
+  return (
+    `⚽ ${greeting}${clubPrefix}\n\n` +
+    `Тренер щойно вніс дані про сьогоднішнє заняття:\n` +
+    `📌 *${options.sessionType}* (${options.durationMinutes} хв)\n` +
+    `📅 Дата: ${options.date}\n\n` +
+    `Будь ласка, оціни як ти відчув це навантаження та вкажи стан м'язів (15–20 секунд).\n` +
+    `Це необхідно для контролю відновлення та профілактики перевтоми.\n\n` +
+    `📲 Оцінити в особистому кабінеті:\n${options.portalUrl}`
   );
 }
 

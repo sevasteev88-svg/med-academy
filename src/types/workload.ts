@@ -120,6 +120,7 @@ export type SaveTeamTrainingInput = {
   defaultMinutes: number;
   defaultRpe: RpeScore;
   sessionNotes?: string;
+  notifyTelegram?: boolean;
   players: {
     playerId: string;
     isPresent: boolean;

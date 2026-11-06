@@ -16,6 +16,7 @@ import {
   unlinkPlayerTelegramInMemory,
   unlinkTelegramByChatIdInMemory,
   formatMorningWellnessReminder,
+  formatPostSessionReminder,
   formatCoachWeeklyReport,
   memoryTelegramTokens,
   memoryTelegramBindings,
@@ -894,6 +895,160 @@ export async function sendMorningWellnessRemindersAction(options?: {
     return {
       success: false,
       error: err?.message || "Помилка відправки нагадувань",
+    };
+  }
+}
+
+/**
+ * 2б. Відправка сповіщень футболістам у Telegram після збереження тренування або матчу:
+ * «Тренер заповнив тренування, оціни своє самопочуття»
+ */
+export async function sendPostSessionRemindersAction(options: {
+  teamId: string;
+  date?: string;
+  sessionType?: string;
+  defaultMinutes?: number;
+  playerIds?: string[];
+  baseUrl?: string;
+}) {
+  try {
+    const supabase = createAdminClient();
+    const today = options.date || new Date().toISOString().split("T")[0];
+    const baseUrl =
+      options.baseUrl ||
+      process.env.NEXT_PUBLIC_APP_URL ||
+      "https://med-academy-alpha.vercel.app";
+
+    // 1. Отримуємо клубні налаштування та прив'язки
+    const { data: club } = await supabase
+      .from("clubs")
+      .select("id, name, settings")
+      .eq("id", DEFAULT_CLUB_ID)
+      .maybeSingle();
+
+    const clubSettings = (club?.settings as any) || {};
+    const clubBindings = clubSettings.telegram_bindings || {};
+    const clubName = club?.name || "Академія";
+
+    // 2. Отримуємо активних гравців команди
+    let playersQuery = supabase
+      .from("players")
+      .select("id, first_name, last_name, team_id, portal_token")
+      .eq("team_id", options.teamId)
+      .is("archived_at", null);
+
+    if (options.playerIds && options.playerIds.length > 0) {
+      playersQuery = playersQuery.in("id", options.playerIds);
+    }
+
+    const { data: teamPlayers } = await playersQuery;
+    const playersList = teamPlayers || [];
+
+    // 3. Отримуємо активні записи з таблиці player_telegram_bindings
+    const { data: tableBindingsData } = await supabase
+      .from("player_telegram_bindings")
+      .select("player_id, telegram_chat_id, status")
+      .eq("status", "active");
+
+    const tableBindingsMap = new Map<string, string>();
+    for (const b of tableBindingsData || []) {
+      if (b.player_id && b.telegram_chat_id) {
+        tableBindingsMap.set(b.player_id, b.telegram_chat_id);
+      }
+    }
+
+    // 4. Отримуємо список тих, хто вже оцінив це тренування
+    const alreadyEvaluated = new Set<string>();
+    try {
+      const { data: wSessions } = await supabase
+        .from("workload_sessions")
+        .select("player_id, player_rpe")
+        .eq("date", today)
+        .in(
+          "player_id",
+          playersList.map((p) => p.id)
+        );
+
+      for (const w of wSessions || []) {
+        if (w.player_rpe !== null && w.player_rpe !== undefined) {
+          alreadyEvaluated.add(w.player_id);
+        }
+      }
+    } catch {}
+
+    let sentCount = 0;
+    let skippedCount = 0;
+    let unboundCount = 0;
+
+    const sessionTypeTitle = options.sessionType || "Командне тренування";
+    const duration = options.defaultMinutes || 75;
+
+    for (const p of playersList) {
+      // Якщо вже оцінив
+      if (alreadyEvaluated.has(p.id)) {
+        skippedCount++;
+        continue;
+      }
+
+      // Шукаємо telegram_chat_id
+      let chatId =
+        clubBindings[p.id]?.status === "active"
+          ? clubBindings[p.id].chatId
+          : null;
+      if (!chatId) {
+        chatId = tableBindingsMap.get(p.id) || null;
+      }
+      if (!chatId) {
+        const mem = memoryTelegramBindings.get(p.id);
+        if (mem && mem.status === "active") {
+          chatId = mem.telegram_chat_id;
+        }
+      }
+
+      if (!chatId) {
+        unboundCount++;
+        continue;
+      }
+
+      // Персональне посилання в кабінет гравця
+      const portalUrl = p.portal_token
+        ? `${baseUrl}/rehab-portal?token=${p.portal_token}`
+        : `${baseUrl}/rehab-portal`;
+
+      const msgText = formatPostSessionReminder({
+        playerName: p.first_name,
+        clubName,
+        sessionType: sessionTypeTitle,
+        durationMinutes: duration,
+        date: today,
+        portalUrl,
+      });
+
+      await sendClubMessage({
+        clubId: club?.id || DEFAULT_CLUB_ID,
+        channel: "telegram",
+        recipient: String(chatId),
+        text: msgText,
+      });
+
+      sentCount++;
+    }
+
+    return {
+      success: true,
+      sentCount,
+      skippedCount,
+      unboundCount,
+      totalPlayers: playersList.length,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      sentCount: 0,
+      skippedCount: 0,
+      unboundCount: 0,
+      totalPlayers: 0,
+      error: err?.message || "Помилка відправки Telegram-сповіщень",
     };
   }
 }

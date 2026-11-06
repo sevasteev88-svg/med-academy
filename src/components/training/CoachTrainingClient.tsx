@@ -14,6 +14,7 @@ import {
   SORENESS_LOCATIONS,
 } from "@/types/workload";
 import { saveTeamTrainingAction } from "@/actions/training-session-actions";
+import { sendPostSessionRemindersAction } from "@/actions/telegram-actions";
 
 type Props = {
   initialTeam: { id: string; name: string } | null;
@@ -90,6 +91,70 @@ export default function CoachTrainingClient({
     type: "success" | "error";
     message: string;
   } | null>(null);
+
+  // Telegram-сповіщення футболістам після збереження
+  const [notifyTelegram, setNotifyTelegram] = useState<boolean>(true);
+  const [isSendingTelegram, setIsSendingTelegram] = useState<boolean>(false);
+
+  // Ручна відправка нагадування в Telegram тим присутнім, хто ще не заповнив
+  async function handleManualTelegramReminder() {
+    if (!selectedTeamId) return;
+    setIsSendingTelegram(true);
+    try {
+      const pendingPlayerIds = players
+        .filter((p) => p.isPresent && (p.playerRpe === null || p.playerRpe === undefined))
+        .map((p) => p.playerId);
+
+      if (pendingPlayerIds.length === 0) {
+        setNotification({
+          type: "success",
+          message: "✓ Усі присутні гравці команди вже заповнили оцінку навантаження!",
+        });
+        setIsSendingTelegram(false);
+        return;
+      }
+
+      const sessionTypeName = SESSION_TYPE_UA[sessionType]?.label || "Командне тренування";
+      const res = await sendPostSessionRemindersAction({
+        teamId: selectedTeamId,
+        date,
+        sessionType: sessionTypeName,
+        defaultMinutes: teamMinutes,
+        playerIds: pendingPlayerIds,
+      });
+
+      if (res.success) {
+        if (res.sentCount > 0) {
+          setNotification({
+            type: "success",
+            message: `📲 Надіслано нагадування ${res.sentCount} гравцям у Telegram!`,
+          });
+        } else if (res.unboundCount > 0 && res.sentCount === 0) {
+          setNotification({
+            type: "error",
+            message: `⚠️ У ${res.unboundCount} гравців ще не підключено Telegram-бот клубу.`,
+          });
+        } else {
+          setNotification({
+            type: "success",
+            message: `✓ Усі присутні гравці вже заповнили оцінку або сповіщені!`,
+          });
+        }
+      } else {
+        setNotification({
+          type: "error",
+          message: res.error || "Не вдалося надіслати сповіщення",
+        });
+      }
+    } catch {
+      setNotification({
+        type: "error",
+        message: "Помилка зв'язку з Telegram-сервісом",
+      });
+    } finally {
+      setIsSendingTelegram(false);
+    }
+  }
 
   // Застосувати глобальні хвилини та RPE до всіх присутніх гравців
   function applyDefaultsToAll() {
@@ -189,6 +254,7 @@ export default function CoachTrainingClient({
         defaultMinutes: teamMinutes,
         defaultRpe: teamRpe,
         sessionNotes,
+        notifyTelegram,
         players: players.map((p) => ({
           playerId: p.playerId,
           isPresent: p.isPresent,
@@ -205,12 +271,16 @@ export default function CoachTrainingClient({
         setJustSaved(true);
         setTimeout(() => setJustSaved(false), 5000);
         const timeNow = new Date().toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" });
-        const successMsg = `Тренування успішно збережено о ${timeNow}! Присутніх: ${res.presentCount}, відсутніх: ${res.absentCount}.`;
+        const tgMsg =
+          res.telegramSentCount && res.telegramSentCount > 0
+            ? ` Надіслано ${res.telegramSentCount} сповіщень футболістам у Telegram.`
+            : "";
+        const successMsg = `Тренування успішно збережено о ${timeNow}! Присутніх: ${res.presentCount}, відсутніх: ${res.absentCount}.${tgMsg}`;
         setNotification({
           type: "success",
           message: successMsg,
         });
-        setLastSavedToast(`Збережено о ${timeNow} (${res.presentCount} гравців, ${totalAu} AU)`);
+        setLastSavedToast(`Збережено о ${timeNow} (${res.presentCount} гравців, ${totalAu} AU)${tgMsg}`);
         setTimeout(() => setLastSavedToast(null), 5000);
       }
     });
@@ -793,7 +863,33 @@ export default function CoachTrainingClient({
             алгоритмі <strong className="text-amber-400">ACWR</strong>.
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Чекбокс автоматичної відправки сповіщення в Telegram */}
+            <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-300 bg-slate-900 px-3 py-2.5 rounded-xl border border-slate-800 hover:border-slate-700 select-none transition-colors">
+              <input
+                type="checkbox"
+                checked={notifyTelegram}
+                onChange={(e) => setNotifyTelegram(e.target.checked)}
+                className="w-4 h-4 rounded accent-sky-500 cursor-pointer"
+              />
+              <span className="flex items-center gap-1.5">
+                <span>📲</span>
+                <span>Сповістити в Telegram</span>
+              </span>
+            </label>
+
+            {/* Кнопка ручного нагадування */}
+            <button
+              type="button"
+              onClick={handleManualTelegramReminder}
+              disabled={isSendingTelegram || players.length === 0}
+              className="px-3.5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-sky-500/30 text-sky-300 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5 active:scale-95 disabled:opacity-50 cursor-pointer"
+              title="Надіслати нагадування в Telegram тим гравцям, хто ще не оцінив навантаження"
+            >
+              <span>💬</span>
+              <span>{isSendingTelegram ? "Відправка..." : "Нагадати в Telegram"}</span>
+            </button>
+
             {lastSavedToast && (
               <div className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-950/70 border border-emerald-500/40 text-emerald-300 text-xs font-semibold animate-fadeIn">
                 <span>✅</span>

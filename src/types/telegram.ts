@@ -90,3 +90,12 @@ export interface MorningReminderOptions {
   clubName?: string;
   wellnessUrl: string;
 }
+
+export interface PostSessionReminderOptions {
+  playerName?: string;
+  clubName?: string;
+  sessionType: string;
+  durationMinutes: number;
+  date: string;
+  portalUrl: string;
+}

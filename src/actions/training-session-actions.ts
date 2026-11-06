@@ -12,6 +12,7 @@ import {
 import { hasConsent } from "@/lib/consents";
 import { logAudit } from "@/lib/audit";
 import { getPlayerSession } from "@/lib/player-auth";
+import { sendPostSessionRemindersAction } from "./telegram-actions";
 import type {
   TrainingSessionType,
   RpeScore,
@@ -22,7 +23,7 @@ import type {
   PlayerSessionFeedbackInput,
   PlayerTodaySession,
 } from "@/types/workload";
-import { SORENESS_LOCATIONS } from "@/types/workload";
+import { SORENESS_LOCATIONS, SESSION_TYPE_UA } from "@/types/workload";
 
 export type TeamTrainingScreenData = {
   success: boolean;
@@ -440,6 +441,31 @@ export async function saveTeamTrainingAction(input: SaveTeamTrainingInput) {
     },
   });
 
+  // 4. Автоматичні Telegram-сповіщення присутнім гравцям: «Тренер заповнив тренування, оціни самопочуття»
+  let telegramSentCount = 0;
+  if (input.notifyTelegram !== false && presentCount > 0) {
+    try {
+      const presentPlayerIds = input.players
+        .filter((p) => p.isPresent)
+        .map((p) => p.playerId);
+
+      const sessionTypeName = SESSION_TYPE_UA[input.sessionType]?.label || "Командне тренування";
+      const tgRes = await sendPostSessionRemindersAction({
+        teamId: input.teamId,
+        date: input.date,
+        sessionType: sessionTypeName,
+        defaultMinutes: input.defaultMinutes,
+        playerIds: presentPlayerIds,
+      });
+
+      if (tgRes.success) {
+        telegramSentCount = tgRes.sentCount;
+      }
+    } catch (tgErr) {
+      console.warn("[saveTeamTrainingAction] Telegram notification warning:", tgErr);
+    }
+  }
+
   revalidatePath("/training");
   revalidatePath("/workload");
   revalidatePath("/team/readiness");
@@ -454,6 +480,7 @@ export async function saveTeamTrainingAction(input: SaveTeamTrainingInput) {
     presentCount,
     absentCount,
     teamSessionId,
+    telegramSentCount,
   };
 }
 
