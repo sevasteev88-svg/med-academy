@@ -15,6 +15,7 @@ interface Props {
   isOpen: boolean;
   onClose: () => void;
   playerId: string;
+  portalToken?: string;
   initialSession?: PlayerTodaySession | null;
   onSaved?: (updatedSession: PlayerTodaySession) => void;
 }
@@ -23,10 +24,12 @@ export default function PostSessionFeedbackModal({
   isOpen,
   onClose,
   playerId,
+  portalToken,
   initialSession,
   onSaved,
 }: Props) {
   const [isPending, startTransition] = useTransition();
+  const [isSavedSuccessfully, setIsSavedSuccessfully] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
@@ -79,6 +82,7 @@ export default function PostSessionFeedbackModal({
       try {
         const res = await submitPlayerSessionFeedbackAction({
           playerId,
+          portalToken,
           date: initialSession?.date || new Date().toISOString().split("T")[0],
           sessionType,
           durationMinutes,
@@ -93,6 +97,7 @@ export default function PostSessionFeedbackModal({
           return;
         }
 
+        setIsSavedSuccessfully(true);
         setSuccessMsg("Відгук надіслано штабу! Дані оновлено.");
         if (onSaved) {
           onSaved({
@@ -116,7 +121,7 @@ export default function PostSessionFeedbackModal({
 
         setTimeout(() => {
           onClose();
-        }, 1200);
+        }, 1000);
       } catch (err: any) {
         setErrorMsg(err?.message || "Помилка зв'язку із сервером");
       }
@@ -448,33 +453,65 @@ export default function PostSessionFeedbackModal({
         </div>
 
         {/* Footer Actions */}
-        <div className="p-4 sm:p-5 border-t border-slate-800 bg-slate-950 flex items-center gap-2.5 justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={isPending}
-            className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition-colors"
-          >
-            Скасувати
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={isPending}
-            className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-xs uppercase tracking-wider shadow-lg shadow-amber-500/20 active:scale-95 transition-all flex items-center gap-2"
-          >
-            {isPending ? (
-              <>
-                <span className="w-3.5 h-3.5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
-                <span>Збереження...</span>
-              </>
-            ) : (
-              <>
-                <span>✓</span>
-                <span>Надіслати штабу</span>
-              </>
-            )}
-          </button>
+        <div className="p-4 sm:p-5 border-t border-slate-800 bg-slate-950 flex flex-col gap-3">
+          {errorMsg && (
+            <div className="w-full p-2.5 rounded-xl bg-rose-950/80 border border-rose-500/60 text-rose-200 text-xs flex items-center justify-between gap-2 animate-in fade-in">
+              <div className="flex items-center gap-2">
+                <span>⚠️</span>
+                <span>{errorMsg}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setErrorMsg(null)}
+                className="text-rose-400 hover:text-white text-xs px-1 font-bold"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+          {successMsg && (
+            <div className="w-full p-2.5 rounded-xl bg-emerald-950/80 border border-emerald-500/60 text-emerald-200 text-xs flex items-center gap-2 animate-in fade-in">
+              <span>✓</span>
+              <span>{successMsg}</span>
+            </div>
+          )}
+          <div className="flex items-center gap-2.5 justify-end">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={isPending || isSavedSuccessfully}
+              className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition-colors"
+            >
+              Скасувати
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={isPending || isSavedSuccessfully}
+              className={`px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider shadow-lg active:scale-95 transition-all flex items-center gap-2 ${
+                isSavedSuccessfully
+                  ? "bg-emerald-500 text-white shadow-emerald-500/20"
+                  : "bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 shadow-amber-500/20"
+              }`}
+            >
+              {isSavedSuccessfully ? (
+                <>
+                  <span className="text-sm">✓</span>
+                  <span>Збережено!</span>
+                </>
+              ) : isPending ? (
+                <>
+                  <span className="w-3.5 h-3.5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+                  <span>Збереження...</span>
+                </>
+              ) : (
+                <>
+                  <span>✓</span>
+                  <span>Надіслати штабу</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
     </div>

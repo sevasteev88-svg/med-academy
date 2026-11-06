@@ -11,11 +11,13 @@ import PostSessionFeedbackModal from "./PostSessionFeedbackModal";
 
 interface Props {
   playerId: string;
+  portalToken?: string;
   initialTodaySession?: PlayerTodaySession | null;
 }
 
 export default function PlayerPostSessionCard({
   playerId,
+  portalToken,
   initialTodaySession,
 }: Props) {
   const [todaySession, setTodaySession] = useState<PlayerTodaySession | null>(
@@ -173,6 +175,7 @@ export default function PlayerPostSessionCard({
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         playerId={playerId}
+        portalToken={portalToken}
         initialSession={todaySession}
         onSaved={(updated) => setTodaySession(updated)}
       />

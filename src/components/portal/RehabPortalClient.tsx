@@ -738,6 +738,13 @@ export default function RehabPortalClient({
         {authenticatedPlayer && (
           <PlayerPostSessionCard
             playerId={authenticatedPlayer.id}
+            portalToken={
+              authenticatedPlayer.portalToken ||
+              tokenInput ||
+              (typeof window !== "undefined"
+                ? localStorage.getItem("med_player_portal_token") || undefined
+                : undefined)
+            }
             initialTodaySession={authenticatedPlayer.todaySession}
           />
         )}

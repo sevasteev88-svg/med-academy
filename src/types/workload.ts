@@ -67,6 +67,7 @@ export type PlayerSessionFeedback = {
 
 export type PlayerSessionFeedbackInput = {
   playerId: string;
+  portalToken?: string;
   date?: string;
   sessionType: TrainingSessionType;
   durationMinutes: number;

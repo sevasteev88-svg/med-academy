@@ -663,6 +663,7 @@ export async function getAuthorizedPlayerCabinetData() {
       name: `${player.last_name} ${player.first_name}`,
       team: (player as any).teams?.name || "Академія",
       position: player.position,
+      portalToken: session.portalToken,
       injuries: injuries || [],
       currentRtpPhase,
       doctorInstruction,
