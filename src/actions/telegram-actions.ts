@@ -26,9 +26,19 @@ import {
   type TelegramWebhookUpdate,
   type CoachWeeklyTelegramSummary,
   type PlayerTelegramBinding,
+  type CoachTelegramBinding,
   DEFAULT_DOCTOR_PHONE,
   DEFAULT_DOCTOR_TG_URL,
 } from "@/types/telegram";
+import {
+  processCoachCallbackQuery,
+  processCoachTextMessage,
+  sendCoachMainMenu,
+} from "@/lib/coach-telegram-bot";
+import {
+  memoryCoachTokens,
+  memoryCoachBindings,
+} from "@/lib/coach-telegram-state";
 
 /**
  * 1. Генерація deep-link та QR-коду для прив'язки гравця до Telegram-бота (п. 8.7.1 & 8.7.5).
@@ -278,6 +288,43 @@ export async function processTelegramWebhookUpdateAction(
   update: TelegramWebhookUpdate
 ): Promise<{ success: boolean; replyText?: string; error?: string }> {
   try {
+    const supabase = createAdminClient();
+
+    // 0. ОБРОБКА НАЙНЛАЙН КНОПОК ТРЕНЕРА (callback_query)
+    if (update.callback_query) {
+      const cb = update.callback_query;
+      const cbChatId = String(cb.message?.chat.id || cb.from.id);
+      let coachBinding: CoachTelegramBinding | null = null;
+      try {
+        const { data } = await supabase
+          .from("coach_telegram_bindings")
+          .select("*")
+          .eq("telegram_chat_id", cbChatId)
+          .eq("status", "active")
+          .maybeSingle();
+        if (data) coachBinding = data as CoachTelegramBinding;
+      } catch {}
+
+      if (!coachBinding) {
+        for (const b of memoryCoachBindings.values()) {
+          if (b.telegram_chat_id === cbChatId && b.status === "active") {
+            coachBinding = b;
+            break;
+          }
+        }
+      }
+
+      if (coachBinding || (cb.data && (cb.data.startsWith("coach_") || cb.data.startsWith("cstep_")))) {
+        await processCoachCallbackQuery(
+          cb,
+          coachBinding || ({ coach_user_id: "", telegram_chat_id: cbChatId, status: "active" } as any)
+        );
+        return { success: true };
+      }
+
+      return { success: true };
+    }
+
     const message = update.message;
     if (!message) {
       return { success: true };
@@ -286,8 +333,8 @@ export async function processTelegramWebhookUpdateAction(
     const text = (
       message.text ||
       message.caption ||
-      (message.voice ? "🎙️ [Голосове повідомлення від гравця]" : "") ||
-      (message.photo ? "📷 [Фотографія від гравця]" : "")
+      (message.voice ? "🎙️ [Голосове повідомлення]" : "") ||
+      (message.photo ? "📷 [Фотографія]" : "")
     ).trim();
 
     if (!text) {
@@ -321,14 +368,113 @@ export async function processTelegramWebhookUpdateAction(
 
       if (!rawToken) {
         const helpMsg =
-          "👋 Вітаємо в системі медичного контролю та моніторингу навантаження!\n\n" +
-          "Для прив'язки вашого акаунту відскануйте персональний QR-код у медичній картці або перейдіть за посиланням, наданим лікарем.";
+          "👋 Вітаємо в системі спортивного та медичного моніторингу!\n\n" +
+          "Для прив'язки вашого акаунту відскануйте персональний QR-код або перейдіть за персональним посиланням.";
         await reply(helpMsg);
         return { success: true, replyText: helpMsg };
       }
 
+      // ПРИВ'ЯЗКА ТРЕНЕРА (/start coach_<token>)
+      if (rawToken.startsWith("coach_")) {
+        const actualCoachToken = rawToken.replace(/^coach_/, "");
+        const tokenHash = hashTokenSha256(actualCoachToken);
+        const nowIso = new Date().toISOString();
+
+        let coachUserId: string | null = null;
+        let clubId: string = DEFAULT_CLUB_ID;
+
+        // Шукаємо в coach_telegram_tokens
+        try {
+          const { data: tokRec } = await supabase
+            .from("coach_telegram_tokens")
+            .select("*")
+            .eq("token_hash", tokenHash)
+            .maybeSingle();
+
+          if (tokRec) {
+            if (tokRec.used_at) {
+              await reply("⚠️ Цей одноразовий токен прив'язки тренера вже був використаний.");
+              return { success: false, replyText: "Token already used" };
+            }
+            if (new Date() > new Date(tokRec.expires_at)) {
+              await reply("⏳ Термін дії токена минув. Зверніться до адміністратора клубу.");
+              return { success: false, replyText: "Token expired" };
+            }
+            coachUserId = tokRec.coach_user_id;
+            clubId = tokRec.club_id || DEFAULT_CLUB_ID;
+
+            await supabase
+              .from("coach_telegram_tokens")
+              .update({ used_at: nowIso })
+              .eq("id", tokRec.id);
+          }
+        } catch {}
+
+        if (!coachUserId) {
+          const mem = memoryCoachTokens.get(tokenHash);
+          if (mem) {
+            if (mem.used_at) {
+              await reply("⚠️ Цей одноразовий токен прив'язки тренера вже був використаний.");
+              return { success: false, replyText: "Token already used" };
+            }
+            coachUserId = mem.coach_user_id;
+            clubId = mem.club_id;
+            mem.used_at = nowIso;
+          }
+        }
+
+        if (!coachUserId) {
+          await reply("❌ Недійсний або прострочений токен тренера. Отримайте нове посилання в кабінеті клубу.");
+          return { success: false, replyText: "Invalid coach token" };
+        }
+
+        // Отримуємо профіль тренера
+        const { data: coachProf } = await supabase
+          .from("profiles")
+          .select("full_name")
+          .eq("id", coachUserId)
+          .maybeSingle();
+
+        const coachName = coachProf?.full_name || "Тренер";
+
+        // Записуємо активну прив'язку
+        const bindingRecord: CoachTelegramBinding = {
+          id: crypto.randomUUID(),
+          coach_user_id: coachUserId,
+          club_id: clubId,
+          telegram_chat_id: chatId,
+          telegram_username: username,
+          status: "active",
+          morning_report_time: "09:00",
+          receive_morning_report: true,
+          created_at: nowIso,
+          unlinked_at: null,
+        };
+
+        try {
+          await supabase.from("coach_telegram_bindings").upsert(
+            {
+              coach_user_id: coachUserId,
+              club_id: clubId,
+              telegram_chat_id: chatId,
+              telegram_username: username,
+              status: "active",
+              created_at: nowIso,
+              unlinked_at: null,
+            },
+            { onConflict: "coach_user_id,telegram_chat_id" }
+          );
+        } catch {}
+
+        memoryCoachBindings.set(chatId, bindingRecord);
+
+        // Вітаємо тренера та надсилаємо головне меню
+        await sendCoachMainMenu(chatId, undefined, coachName);
+        return { success: true };
+      }
+
+      // ПРИВ'ЯЗКА ФУТБОЛІСТА
       const tokenHash = hashTokenSha256(rawToken);
-      const supabase = createAdminClient();
       const nowIso = new Date().toISOString();
 
       // Шукаємо токен у БД
@@ -493,7 +639,6 @@ export async function processTelegramWebhookUpdateAction(
 
     // 2. Команда відписки: /stop або /unbind (Вимога 4)
     if (text === "/stop" || text === "/unbind") {
-      const supabase = createAdminClient();
       const nowIso = new Date().toISOString();
 
       await supabase
@@ -510,6 +655,32 @@ export async function processTelegramWebhookUpdateAction(
 
       await reply(unlinkedMsg);
       return { success: true, replyText: unlinkedMsg };
+    }
+
+    // 2.5. Перевірка чи повідомлення від підключеного ТРЕНЕРА
+    let coachBinding: CoachTelegramBinding | null = null;
+    try {
+      const { data } = await supabase
+        .from("coach_telegram_bindings")
+        .select("*")
+        .eq("telegram_chat_id", chatId)
+        .eq("status", "active")
+        .maybeSingle();
+      if (data) coachBinding = data as CoachTelegramBinding;
+    } catch {}
+
+    if (!coachBinding) {
+      for (const b of memoryCoachBindings.values()) {
+        if (b.telegram_chat_id === chatId && b.status === "active") {
+          coachBinding = b;
+          break;
+        }
+      }
+    }
+
+    if (coachBinding) {
+      await processCoachTextMessage(message, coachBinding);
+      return { success: true };
     }
 
     // 3. Команда статусу: /status
@@ -529,7 +700,6 @@ export async function processTelegramWebhookUpdateAction(
     }
 
     // 4. Вільне повідомлення / відповідь гравця лікарю (симптоми, самопочуття, коментар)
-    const supabase = createAdminClient();
     const nowIso = new Date().toISOString();
     const today = nowIso.split("T")[0];
 

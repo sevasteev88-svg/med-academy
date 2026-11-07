@@ -66,6 +66,49 @@ export interface TelegramWebhookUpdate {
     photo?: any[];
     voice?: any;
   };
+  callback_query?: {
+    id: string;
+    from: {
+      id: number;
+      is_bot?: boolean;
+      first_name?: string;
+      last_name?: string;
+      username?: string;
+    };
+    message?: {
+      message_id: number;
+      chat: {
+        id: number | string;
+      };
+      text?: string;
+    };
+    data?: string;
+  };
+}
+
+export interface CoachTelegramBinding {
+  id: string;
+  coach_user_id: string;
+  club_id: string;
+  telegram_chat_id: string;
+  telegram_username?: string | null;
+  status: "active" | "unlinked";
+  morning_report_time: string;
+  receive_morning_report: boolean;
+  created_at: string;
+  unlinked_at?: string | null;
+}
+
+export interface CoachTelegramSessionDraft {
+  team_id?: string;
+  team_name?: string;
+  date?: string;
+  session_type?: "training_team" | "match" | "gym_strength" | "recovery" | "individual_rehab";
+  duration_minutes?: number;
+  rpe_score?: number;
+  surface?: "natural" | "artificial" | "indoor" | "gym";
+  incident?: "none" | "injury";
+  notes?: string;
 }
 
 export interface CoachWeeklyTelegramSummary {

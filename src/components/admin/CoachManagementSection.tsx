@@ -11,6 +11,12 @@ import {
   type ClubCoachItem,
   type CoachTeamInfo,
 } from "@/actions/coach-assignment-actions";
+import {
+  createCoachTelegramBindingLinkAction,
+  getCoachTelegramStatusAction,
+  unlinkCoachTelegramAction,
+  sendCoachMorningDigestAction,
+} from "@/actions/coach-telegram-actions";
 
 export default function CoachManagementSection() {
   const [coaches, setCoaches] = useState<ClubCoachItem[]>([]);
@@ -25,6 +31,20 @@ export default function CoachManagementSection() {
 
   // Режим видалення
   const [deletingCoach, setDeletingCoach] = useState<ClubCoachItem | null>(null);
+
+  // Режим Telegram-бота для тренера
+  const [telegramCoach, setTelegramCoach] = useState<ClubCoachItem | null>(null);
+  const [telegramLinkData, setTelegramLinkData] = useState<{
+    deepLink: string;
+    qrDataUrl: string;
+    expiresAt: string;
+  } | null>(null);
+  const [telegramStatus, setTelegramStatus] = useState<{
+    isLinked: boolean;
+    binding: any;
+  } | null>(null);
+  const [loadingTelegram, setLoadingTelegram] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   // Режим додавання нового тренера
   const [isAddingCoach, setIsAddingCoach] = useState(false);
@@ -144,6 +164,66 @@ export default function CoachManagementSection() {
     setNewCoachTeamIds((prev) =>
       prev.includes(teamId) ? prev.filter((id) => id !== teamId) : [...prev, teamId]
     );
+  }
+
+  async function handleOpenTelegramModal(coach: ClubCoachItem) {
+    setTelegramCoach(coach);
+    setLoadingTelegram(true);
+    setTelegramLinkData(null);
+    setCopiedLink(false);
+
+    try {
+      const [statusRes, linkRes] = await Promise.all([
+        getCoachTelegramStatusAction(coach.userId),
+        createCoachTelegramBindingLinkAction(coach.userId),
+      ]);
+
+      if (statusRes.success) {
+        setTelegramStatus(statusRes);
+      }
+      if (linkRes.success && linkRes.deepLink && linkRes.qrDataUrl) {
+        setTelegramLinkData({
+          deepLink: linkRes.deepLink,
+          qrDataUrl: linkRes.qrDataUrl,
+          expiresAt: linkRes.expiresAt || "",
+        });
+      }
+    } catch {
+      showToast("Помилка генерації Telegram-посилання", "error");
+    } finally {
+      setLoadingTelegram(false);
+    }
+  }
+
+  function handleCopyTelegramLink() {
+    if (!telegramLinkData?.deepLink) return;
+    navigator.clipboard.writeText(telegramLinkData.deepLink);
+    setCopiedLink(true);
+    showToast("Посилання скопійовано в буфер обміну!", "success");
+    setTimeout(() => setCopiedLink(false), 3000);
+  }
+
+  function handleUnlinkCoachTelegram(coachUserId: string) {
+    startTransition(async () => {
+      const res = await unlinkCoachTelegramAction(coachUserId);
+      if (res.success) {
+        showToast("Прив'язку до Telegram скасовано", "success");
+        setTelegramStatus({ isLinked: false, binding: null });
+      } else {
+        showToast(res.error || "Помилка відв'язки", "error");
+      }
+    });
+  }
+
+  function handleSendTestDigest(coachUserId: string) {
+    startTransition(async () => {
+      const res = await sendCoachMorningDigestAction({ coachUserId });
+      if (res.success) {
+        showToast("Ранковий звіт надіслано в Telegram тренера!", "success");
+      } else {
+        showToast(res.error || "Не вдалося надіслати звіт", "error");
+      }
+    });
   }
 
   const filteredCoaches = coaches.filter(
@@ -406,6 +486,16 @@ export default function CoachManagementSection() {
                 <div className="flex items-center gap-2 self-start sm:self-center flex-wrap">
                   <button
                     type="button"
+                    onClick={() => handleOpenTelegramModal(coach)}
+                    className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 hover:text-sky-200 border border-sky-500/30 transition-all flex items-center gap-1.5 min-h-[38px]"
+                    title="Підключити Telegram-бота"
+                  >
+                    <span>📲</span>
+                    <span>Telegram-бот</span>
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => handleStartEdit(coach)}
                     className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 min-h-[38px] ${
                       isSelected
@@ -548,6 +638,150 @@ export default function CoachManagementSection() {
                 className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-600/30 disabled:opacity-50"
               >
                 {isPending ? "Видалення..." : "Так, видалити"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Модальне вікно підключення тренера до Telegram-бота */}
+      {telegramCoach && (
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-sky-500/30 rounded-2xl p-6 max-w-lg w-full space-y-5 shadow-2xl animate-in zoom-in-95">
+            {/* Заголовок */}
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <span className="text-2xl">📲</span>
+                <div>
+                  <h4 className="text-sm font-bold text-white">
+                    Telegram-бот для тренера
+                  </h4>
+                  <p className="text-[11px] text-slate-400">
+                    {telegramCoach.fullName} ({telegramCoach.email})
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setTelegramCoach(null);
+                  setTelegramLinkData(null);
+                }}
+                className="text-slate-400 hover:text-white text-base p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            {loadingTelegram ? (
+              <div className="py-12 text-center text-xs text-slate-400 animate-pulse">
+                Генерація персонального токена та QR-коду...
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Статус підключення */}
+                <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">
+                      {telegramStatus?.isLinked ? "🟢" : "⚪"}
+                    </span>
+                    <div>
+                      <span className="text-xs font-bold text-white block">
+                        {telegramStatus?.isLinked
+                          ? "Telegram підключено"
+                          : "Telegram не підключено"}
+                      </span>
+                      <span className="text-[10px] text-slate-400">
+                        {telegramStatus?.isLinked
+                          ? `Акаунт: @${telegramStatus.binding?.telegram_username || "тренер"}`
+                          : "Тренер ще не активував бота зі свого телефону"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {telegramStatus?.isLinked && (
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleSendTestDigest(telegramCoach.userId)}
+                        disabled={isPending}
+                        className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-sky-500/20 text-sky-300 hover:bg-sky-500/30 transition-colors"
+                      >
+                        Тестовий звіт
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleUnlinkCoachTelegram(telegramCoach.userId)}
+                        disabled={isPending}
+                        className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 transition-colors"
+                      >
+                        Відв&apos;язати
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* QR-код та посилання для швидкої передачі тренеру */}
+                {telegramLinkData && (
+                  <div className="space-y-3.5">
+                    <div className="flex flex-col items-center justify-center p-4 bg-white rounded-xl shadow-inner max-w-[240px] mx-auto">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={telegramLinkData.qrDataUrl}
+                        alt="QR-код для Telegram-бота тренера"
+                        className="w-48 h-48 block"
+                      />
+                      <span className="text-[10px] text-slate-600 font-semibold mt-1">
+                        Відскануйте камерою телефону
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-[11px] font-semibold text-slate-300">
+                        Пряме посилання (для відправки тренеру у WhatsApp / Viber / SMS):
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          readOnly
+                          value={telegramLinkData.deepLink}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-sky-400 font-mono truncate focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleCopyTelegramLink}
+                          className={`px-3 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
+                            copiedLink
+                              ? "bg-emerald-500 text-slate-950"
+                              : "bg-sky-500 hover:bg-sky-400 text-slate-950 shadow-sm"
+                          }`}
+                        >
+                          {copiedLink ? "✓ Скопійовано!" : "📋 Скопіювати"}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-sky-950/30 border border-sky-500/20 text-[11px] text-slate-300 leading-relaxed">
+                      💡 <strong>Як це працює для тренера:</strong>
+                      <br />
+                      Тренер просто переходить за посиланням або сканує QR-код та натискає <strong>«Start»</strong> у Telegram.
+                      Після цього бот автоматично прив&apos;язується до його команди — тренеру не потрібні жодні логіни чи комп&apos;ютер.
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex items-center justify-end border-t border-slate-800 pt-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setTelegramCoach(null);
+                  setTelegramLinkData(null);
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-800 text-slate-300 hover:text-white"
+              >
+                Закрити
               </button>
             </div>
           </div>
