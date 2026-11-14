@@ -6,6 +6,7 @@ import {
   resetCoachSession,
   finalizeCoachTrainingSession,
 } from "@/actions/coach-telegram-actions";
+import { sendMorningWellnessRemindersAction } from "@/actions/telegram-actions";
 import type { CoachTelegramBinding } from "@/types/telegram";
 import type { TrainingSessionType, RpeScore } from "@/types/workload";
 
@@ -111,6 +112,7 @@ export async function sendCoachMainMenu(
 
   inlineKeyboard.push(
     [{ text: "📋 Стан команди (у чаті)", callback_data: "coach_action_digest" }],
+    [{ text: "📣 Нагадати гравцям про анкету", callback_data: "coach_remind_wellness:all" }],
     [{ text: "⏱️ Записати тренування (у чаті)", callback_data: "coach_action_start_training" }],
     [{ text: "⚠️ Травма / Біль на полі", callback_data: "coach_action_report_injury" }],
     [
@@ -378,6 +380,77 @@ export async function processCoachCallbackQuery(
     await sendCoachMorningDigestAction({
       coachUserId,
       chatId,
+    });
+    return;
+  }
+
+  if (data.startsWith("coach_remind_wellness:")) {
+    const targetParam = data.split(":")[1] || "all";
+    const supabase = createAdminClient();
+
+    const [assignmentsRes, memberRes, profileRes] = await Promise.all([
+      supabase.from("coach_team_assignments").select("team_id").eq("coach_user_id", coachUserId),
+      supabase.from("club_members").select("team_id").eq("user_id", coachUserId).limit(1).maybeSingle(),
+      supabase.from("profiles").select("team_id").eq("id", coachUserId).maybeSingle(),
+    ]);
+
+    const coachTeamIds = Array.from(
+      new Set(
+        [
+          ...(assignmentsRes.data || []).map((a: any) => a.team_id),
+          memberRes.data?.team_id,
+          profileRes.data?.team_id,
+        ].filter(Boolean)
+      )
+    ) as string[];
+
+    const targetTeamIds =
+      targetParam !== "all" && (coachTeamIds.length === 0 || coachTeamIds.includes(targetParam))
+        ? [targetParam]
+        : coachTeamIds;
+
+    const appUrl = getPublicAppUrl();
+    let totalSent = 0;
+    let totalSkipped = 0;
+    let totalUnbound = 0;
+    let lastError = "";
+
+    if (targetTeamIds.length === 0) {
+      const res = await sendMorningWellnessRemindersAction({
+        baseUrl: appUrl || undefined,
+        isCron: true,
+      });
+      totalSent += res.sentCount || 0;
+      totalSkipped += res.skippedCount || 0;
+      totalUnbound += res.unboundCount || 0;
+      if (!res.success && res.error) lastError = res.error;
+    } else {
+      for (const tid of targetTeamIds) {
+        const res = await sendMorningWellnessRemindersAction({
+          teamId: tid,
+          baseUrl: appUrl || undefined,
+          isCron: true,
+        });
+        totalSent += res.sentCount || 0;
+        totalSkipped += res.skippedCount || 0;
+        totalUnbound += res.unboundCount || 0;
+        if (!res.success && res.error) lastError = res.error;
+      }
+    }
+
+    const summaryText = lastError
+      ? `❌ Не вдалося надіслати нагадування: ${lastError}`
+      : `📣 *Нагадування гравцям оброблено!*\n\n` +
+        `• Надіслано в Telegram: *${totalSent}*\n` +
+        `• Вже заповнили сьогодні: *${totalSkipped}*\n` +
+        `• Ще не підключили бота: *${totalUnbound}*`;
+
+    await sendOrEditMessage({
+      chatId,
+      text: summaryText,
+      replyMarkup: {
+        inline_keyboard: [[{ text: "🏠 Головне меню", callback_data: "coach_main_menu" }]],
+      },
     });
     return;
   }

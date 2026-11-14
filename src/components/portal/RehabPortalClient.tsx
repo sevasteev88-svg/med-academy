@@ -516,7 +516,7 @@ export default function RehabPortalClient({
               <div className="flex justify-between text-slate-400">
                 <span>Щоденне самопочуття:</span>
                 <span className="font-bold text-emerald-400">
-                  {currentTotalScore} / 20 балів
+                  {currentTotalScore !== null ? `${currentTotalScore} / 20 балів` : "Збережено ✅"}
                 </span>
               </div>
               {hasTrainingSession && sessionRpeScore !== null && (
@@ -537,13 +537,33 @@ export default function RehabPortalClient({
           <span>{URGENT_CASE_WARNING}</span>
         </div>
 
-        <button
-          onClick={handleLogout}
-          disabled={isLoggingOut}
-          className="w-full py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition-colors"
-        >
-          {isLoggingOut ? "Вихід..." : "Завершити або вийти"}
-        </button>
+        <div className="space-y-2.5 pt-1">
+          <button
+            type="button"
+            onClick={() => {
+              setIsSubmitted(false);
+              if (typeof window !== "undefined") {
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }
+            }}
+            className="w-full py-3.5 rounded-2xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-sm transition-colors shadow-lg shadow-sky-500/20"
+          >
+            ✅ Готово (повернутися в кабінет)
+          </button>
+
+          <p className="text-[11px] text-slate-400 leading-snug px-2">
+            На власному телефоні виходити не потрібно — так ти зможеш ввечері одразу оцінити тренування без повторного входу.
+          </p>
+
+          <button
+            type="button"
+            onClick={handleLogout}
+            disabled={isLoggingOut}
+            className="w-full py-2 rounded-xl bg-transparent hover:bg-slate-800/60 text-slate-400 hover:text-slate-200 font-medium text-[11px] transition-colors"
+          >
+            {isLoggingOut ? "Вихід..." : "Вийти з акаунта (для спільного планшета)"}
+          </button>
+        </div>
       </div>
     );
   }

@@ -413,15 +413,22 @@ export async function sendCoachMorningDigestAction(params: {
       }
 
       // Кнопки для швидкої взаємодії
-      const inlineKeyboard = [
+      const inlineKeyboard: any[][] = [
         [
           { text: "🔄 Оновити дані", callback_data: `coach_refresh_digest:${team.id}` },
           { text: "⏱️ Записати тренування", callback_data: `coach_start_training:${team.id}` },
         ],
-        [
-          { text: "🏠 Головне меню", callback_data: "coach_main_menu" },
-        ],
       ];
+
+      if (pendingGroup.length > 0) {
+        inlineKeyboard.push([
+          { text: `📣 Нагадати не заповнившим (${pendingGroup.length})`, callback_data: `coach_remind_wellness:${team.id}` },
+        ]);
+      }
+
+      inlineKeyboard.push([
+        { text: "🏠 Головне меню", callback_data: "coach_main_menu" },
+      ]);
 
       await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
         method: "POST",
