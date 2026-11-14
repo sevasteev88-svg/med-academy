@@ -60,7 +60,7 @@ export default async function AvailabilityPage() {
       `)
       .eq("club_id", user?.clubId || DEFAULT_CLUB_ID)
       .order("sort_order", { ascending: true }),
-    getPlayerAvailability(),
+    getPlayerAvailability(user?.clubId),
   ]);
 
   const availabilityMap = new Map(

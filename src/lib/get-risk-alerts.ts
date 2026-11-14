@@ -5,13 +5,15 @@ import type { WearableBiometricsEntry } from "@/types/wearables";
 import { getPharmacyStockAction } from "@/actions/pharmacy-actions";
 import { getExpiryStatus } from "@/types/pharmacy";
 
-export const getRiskAlerts = cache(async (): Promise<RiskAlertItem[]> => {
+export const getRiskAlerts = cache(async (options?: { includePharmacy?: boolean }): Promise<RiskAlertItem[]> => {
   const supabase = await createClient();
+  const includePharmacy = options?.includePharmacy ?? true;
 
   const [playersRes, injuriesRes, maturationRes, wearableLogsRes, pharmacyStock] = await Promise.all([
     supabase
       .from("players")
-      .select("id, first_name, last_name, position, team_id, teams ( id, name )"),
+      .select("id, first_name, last_name, position, team_id, teams ( id, name )")
+      .is("archived_at", null),
     supabase
       .from("injuries")
       .select("id, player_id, injury_type, description, location, vas_score, status, date_of_injury, expected_return_date")
@@ -19,14 +21,15 @@ export const getRiskAlerts = cache(async (): Promise<RiskAlertItem[]> => {
     supabase
       .from("maturation_assessments")
       .select("player_id, risk_zone, growth_phase, created_at")
-      .order("created_at", { ascending: false }),
+      .order("created_at", { ascending: false })
+      .limit(500),
     supabase
       .from("injury_logs")
-      .select("*")
+      .select("note, date")
       .like("note", "[WEARABLE]%")
       .order("date", { ascending: false })
       .limit(30),
-    getPharmacyStockAction(),
+    includePharmacy ? getPharmacyStockAction() : Promise.resolve([]),
   ]);
 
   const players = playersRes.data || [];

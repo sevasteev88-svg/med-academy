@@ -1,0 +1,303 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createAdminClient } from "@/utils/supabase/admin";
+import { verifyTelegramWebAppInitData } from "@/lib/telegram-webapp-auth";
+import { calculatePlayerAvailability } from "@/lib/availability-rules";
+import {
+  finalizeCoachTrainingSession,
+  getCoachSession,
+  updateCoachSession,
+} from "@/actions/coach-telegram-actions";
+import { memoryCoachBindings } from "@/lib/coach-telegram-state";
+import type { PreSeasonScreening } from "@/types/screening";
+import type { RtpPhaseLog } from "@/types/rtp";
+import type { TrainingSessionType, RpeScore } from "@/types/workload";
+
+export const dynamic = "force-dynamic";
+
+async function resolveCoachByTelegram(initData: string) {
+  const token = process.env.TELEGRAM_BOT_TOKEN || "";
+  const verified = verifyTelegramWebAppInitData(initData, token);
+  if (!verified.ok) {
+    return { error: verified.error, status: 401 as const };
+  }
+
+  const chatId = String(verified.user.id);
+  const supabase = createAdminClient();
+
+  let binding: { coach_user_id: string; club_id?: string | null } | null = null;
+  try {
+    const { data } = await supabase
+      .from("coach_telegram_bindings")
+      .select("coach_user_id, club_id, status")
+      .eq("telegram_chat_id", chatId)
+      .eq("status", "active")
+      .maybeSingle();
+    if (data) binding = data;
+  } catch {}
+
+  if (!binding) {
+    const mem = memoryCoachBindings.get(chatId);
+    if (mem && mem.status === "active") {
+      binding = mem;
+    }
+  }
+
+  if (!binding) {
+    return {
+      error: "Ваш Telegram ще не прив'язано до профілю тренера. Зверніться до адміністратора клубу за QR-посиланням.",
+      status: 403 as const,
+    };
+  }
+
+  const coachUserId = binding.coach_user_id;
+
+  const [profileRes, memberRes, assignmentsRes] = await Promise.all([
+    supabase.from("profiles").select("full_name, team_id").eq("id", coachUserId).maybeSingle(),
+    supabase.from("club_members").select("club_id, team_id").eq("user_id", coachUserId).limit(1).maybeSingle(),
+    supabase.from("coach_team_assignments").select("team_id").eq("coach_user_id", coachUserId),
+  ]);
+
+  const clubId = binding.club_id || memberRes.data?.club_id || null;
+  const teamIds = Array.from(
+    new Set(
+      [
+        ...(assignmentsRes.data || []).map((a: any) => a.team_id),
+        memberRes.data?.team_id,
+        profileRes.data?.team_id,
+      ].filter(Boolean)
+    )
+  ) as string[];
+
+  const coachName =
+    profileRes.data?.full_name ||
+    [verified.user.first_name, verified.user.last_name].filter(Boolean).join(" ") ||
+    "Тренер";
+
+  return {
+    coachUserId,
+    chatId,
+    clubId,
+    teamIds,
+    coachName,
+  };
+}
+
+export async function GET(req: NextRequest) {
+  const initData =
+    req.headers.get("x-telegram-init-data") ||
+    req.nextUrl.searchParams.get("initData") ||
+    "";
+
+  const auth = await resolveCoachByTelegram(initData);
+  if ("error" in auth) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+
+  const supabase = createAdminClient();
+  const todayStr = new Date().toISOString().split("T")[0];
+
+  let teamsQuery = supabase
+    .from("teams")
+    .select("id, name, category, sort_order")
+    .order("sort_order", { ascending: true });
+
+  if (auth.teamIds.length > 0) {
+    teamsQuery = teamsQuery.in("id", auth.teamIds);
+  } else if (auth.clubId) {
+    teamsQuery = teamsQuery.eq("club_id", auth.clubId);
+  }
+
+  let playersQuery = supabase
+    .from("players")
+    .select(`
+      id, first_name, last_name, position, date_of_birth, team_id, club_id, archived_at,
+      teams ( id, name, category, sort_order ),
+      injuries ( id, status, injury_type, location, vas_score, date_of_injury, expected_return_date, description )
+    `)
+    .is("archived_at", null);
+
+  if (auth.teamIds.length > 0) {
+    playersQuery = playersQuery.in("team_id", auth.teamIds);
+  } else if (auth.clubId) {
+    playersQuery = playersQuery.eq("club_id", auth.clubId);
+  }
+
+  const [teamsRes, playersRes, rtpLogsRes, screeningLogsRes, session] = await Promise.all([
+    teamsQuery,
+    playersQuery,
+    supabase
+      .from("injury_logs")
+      .select("injury_id, note, date, created_at")
+      .like("note", "[RTP_PHASE]%")
+      .order("created_at", { ascending: false })
+      .limit(300),
+    supabase
+      .from("injury_logs")
+      .select("note, date, created_at")
+      .like("note", "[SCREENING]%")
+      .order("created_at", { ascending: false })
+      .limit(300),
+    getCoachSession(auth.coachUserId, auth.chatId),
+  ]);
+
+  const latestRtpByInjury: Record<string, Partial<RtpPhaseLog>> = {};
+  for (const log of rtpLogsRes.data || []) {
+    try {
+      const parsed = JSON.parse(log.note.replace("[RTP_PHASE] ", ""));
+      if (parsed.injury_id && !latestRtpByInjury[parsed.injury_id]) {
+        latestRtpByInjury[parsed.injury_id] = parsed;
+      }
+    } catch {}
+  }
+
+  const latestScreeningsMap = new Map<string, PreSeasonScreening>();
+  for (const log of screeningLogsRes.data || []) {
+    try {
+      const parsed = JSON.parse(log.note.replace("[SCREENING] ", "")) as PreSeasonScreening;
+      if (parsed?.player_id && !latestScreeningsMap.has(parsed.player_id)) {
+        latestScreeningsMap.set(parsed.player_id, parsed);
+      }
+    } catch {}
+  }
+
+  const players = (playersRes.data || []).map((p: any) => {
+    const avail = calculatePlayerAvailability(
+      {
+        ...p,
+        screening: latestScreeningsMap.get(p.id) || null,
+      },
+      {
+        date: todayStr,
+        latestRtpByInjury,
+      }
+    );
+
+    return {
+      id: p.id,
+      fullName: `${p.last_name} ${p.first_name}`.trim(),
+      position: p.position || "Гравець",
+      team_id: p.team_id || "",
+      team_name: p.teams?.name || "Команда",
+      status: avail.status,
+      max_minutes: avail.max_minutes,
+      restriction_notes: avail.restriction_notes || "",
+    };
+  });
+
+  players.sort((a, b) => a.fullName.localeCompare(b.fullName, "uk"));
+
+  return NextResponse.json({
+    coachName: auth.coachName,
+    todayDate: todayStr,
+    preferredMode: (session.session_draft as any)?.preferred_mode || "miniapp",
+    teams: teamsRes.data || [],
+    players,
+  });
+}
+
+export async function POST(req: NextRequest) {
+  let body: any = {};
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Некоректний JSON" }, { status: 400 });
+  }
+
+  const initData = req.headers.get("x-telegram-init-data") || body?.initData || "";
+  const auth = await resolveCoachByTelegram(initData);
+  if ("error" in auth) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+
+  const action = body?.action;
+
+  if (action === "save_training") {
+    const res = await finalizeCoachTrainingSession(auth.coachUserId, auth.chatId, {
+      team_id: body.teamId || auth.teamIds[0],
+      date: new Date().toISOString().split("T")[0],
+      session_type: (body.sessionType || "training_team") as TrainingSessionType,
+      duration_minutes: Number(body.durationMinutes) || 90,
+      rpe_score: (Number(body.rpeScore) || 5) as RpeScore,
+      surface: body.surface || "Не вказано",
+      incident: body.incident === "injury" ? "injury" : "none",
+      notes: body.notes || "",
+    });
+    return NextResponse.json(res, { status: res.success ? 200 : 400 });
+  }
+
+  if (action === "report_injury") {
+    const playerId = String(body.playerId || "");
+    const summary = String(body.summary || "").trim();
+    const kind = String(body.kind || "Біль / Дискомфорт").trim();
+    if (!playerId) {
+      return NextResponse.json({ error: "Оберіть гравця" }, { status: 400 });
+    }
+
+    const supabase = createAdminClient();
+    const todayStr = new Date().toISOString().split("T")[0];
+
+    // Знаходимо або створюємо прив'язку до травми для логу, або пишемо в audit_logs
+    const { data: player } = await supabase
+      .from("players")
+      .select("id, first_name, last_name, club_id")
+      .eq("id", playerId)
+      .maybeSingle();
+
+    if (!player) {
+      return NextResponse.json({ error: "Гравця не знайдено" }, { status: 404 });
+    }
+
+    const payload = {
+      type: "COACH_FIELD_REPORT",
+      player_id: player.id,
+      player_name: `${player.last_name} ${player.first_name}`,
+      coach_user_id: auth.coachUserId,
+      coach_name: auth.coachName,
+      kind,
+      summary: summary || kind,
+      date: todayStr,
+    };
+
+    try {
+      await supabase.from("audit_logs").insert({
+        club_id: player.club_id || auth.clubId,
+        user_id: auth.coachUserId,
+        action: "coach_field_injury_report",
+        entity: "players",
+        entity_id: player.id,
+        meta: payload,
+      });
+    } catch {}
+
+    // Також намагаємося додати в injury_logs, якщо у гравця є остання травма
+    try {
+      const { data: latestInj } = await supabase
+        .from("injuries")
+        .select("id")
+        .eq("player_id", player.id)
+        .order("date_of_injury", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (latestInj?.id) {
+        await supabase.from("injury_logs").insert({
+          injury_id: latestInj.id,
+          date: todayStr,
+          note: `[COACH_FIELD_REPORT] ${JSON.stringify(payload)}`,
+        });
+      }
+    } catch {}
+
+    return NextResponse.json({ success: true });
+  }
+
+  if (action === "set_mode") {
+    const mode = body.mode === "chat" ? "chat" : "miniapp";
+    await updateCoachSession(auth.coachUserId, auth.chatId, "idle", {
+      preferred_mode: mode,
+    } as any);
+    return NextResponse.json({ success: true, preferredMode: mode });
+  }
+
+  return NextResponse.json({ error: "Невідома дія" }, { status: 400 });
+}

@@ -16,77 +16,97 @@ export type AppUser = {
   teamIds?: string[];
 };
 
-async function fetchCurrentUser(): Promise<AppUser | null> {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
-
-  // 1. Спробуємо отримати членство в клубі та роль з club_members
-  let clubId = DEFAULT_CLUB_ID;
-  let role: UserRole | null = null;
-  let teamId: string | null = null;
-
+async function fetchMemberRecord(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
   try {
     const { data: member } = await supabase
       .from("club_members")
       .select("club_id, role, team_id")
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .limit(1)
       .maybeSingle();
-
-    if (member && member.club_id) {
-      clubId = member.club_id;
-      role = (member.role as UserRole) || null;
-      teamId = (member as any).team_id || null;
-    }
+    return member;
   } catch {
-    // Якщо колонка ще не додана або сталася помилка — пробуємо без team_id
     try {
       const { data: fallbackMember } = await supabase
         .from("club_members")
         .select("club_id, role")
-        .eq("user_id", user.id)
+        .eq("user_id", userId)
         .limit(1)
         .maybeSingle();
-      if (fallbackMember && fallbackMember.club_id) {
-        clubId = fallbackMember.club_id;
-        role = (fallbackMember.role as UserRole) || null;
-      }
-    } catch {}
+      return fallbackMember;
+    } catch {
+      return null;
+    }
   }
+}
 
-  // 2. Отримуємо профіль користувача (ім'я)
-  let fullName = "";
+async function fetchProfileRecord(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
   try {
     const { data: profile } = await supabase
       .from("profiles")
       .select("full_name, role, team_id")
-      .eq("id", user.id)
+      .eq("id", userId)
       .maybeSingle();
-
-    fullName = profile?.full_name ?? "";
-    if (!teamId && (profile as any)?.team_id) {
-      teamId = (profile as any).team_id;
-    }
-    // Якщо club_members не знайдено, беремо роль з profiles
-    if (!role && profile?.role) {
-      role = (profile.role as UserRole) || null;
-    }
+    return profile;
   } catch {
     try {
       const { data: profile } = await supabase
         .from("profiles")
         .select("full_name, role")
-        .eq("id", user.id)
+        .eq("id", userId)
         .maybeSingle();
-      fullName = profile?.full_name ?? "";
-      if (!role && profile?.role) {
-        role = (profile.role as UserRole) || null;
-      }
-    } catch {}
+      return profile;
+    } catch {
+      return null;
+    }
+  }
+}
+
+async function fetchCoachAssignments(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
+  try {
+    const { data: assignments } = await supabase
+      .from("coach_team_assignments")
+      .select("team_id")
+      .eq("coach_user_id", userId);
+    return assignments ?? [];
+  } catch {
+    return [];
+  }
+}
+
+async function fetchCurrentUser(): Promise<AppUser | null> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  // Паралельно отримуємо членство, профіль та закріплені команди тренера
+  const [member, profile, assignments] = await Promise.all([
+    fetchMemberRecord(supabase, user.id),
+    fetchProfileRecord(supabase, user.id),
+    fetchCoachAssignments(supabase, user.id),
+  ]);
+
+  let clubId = DEFAULT_CLUB_ID;
+  let role: UserRole | null = null;
+  let teamId: string | null = null;
+
+  if (member && member.club_id) {
+    clubId = member.club_id;
+    role = (member.role as UserRole) || null;
+    teamId = (member as any).team_id || null;
   }
 
-  // 3. Резервна перевірка user_metadata з auth.users
+  const fullNameFromProfile = profile?.full_name ?? "";
+  if (!teamId && (profile as any)?.team_id) {
+    teamId = (profile as any).team_id;
+  }
+  if (!role && profile?.role) {
+    role = (profile.role as UserRole) || null;
+  }
+
+  let fullName = fullNameFromProfile;
+
+  // Резервна перевірка user_metadata з auth.users
   if (!role && user.user_metadata?.role) {
     role = (user.user_metadata.role as UserRole) || null;
   }
@@ -94,18 +114,7 @@ async function fetchCurrentUser(): Promise<AppUser | null> {
     fullName = user.user_metadata.full_name;
   }
 
-  // 4. Отримуємо всі закріплені команди тренера з coach_team_assignments
-  let teamIds: string[] = [];
-  try {
-    const { data: assignments } = await supabase
-      .from("coach_team_assignments")
-      .select("team_id")
-      .eq("coach_user_id", user.id);
-
-    if (assignments && assignments.length > 0) {
-      teamIds = assignments.map((a: any) => a.team_id).filter(Boolean);
-    }
-  } catch {}
+  const teamIds: string[] = assignments.map((a: any) => a.team_id).filter(Boolean);
 
   if (teamId && !teamIds.includes(teamId)) {
     teamIds.push(teamId);

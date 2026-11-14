@@ -5,7 +5,6 @@ import AppNav from "@/components/layout/AppNav";
 import PwaRegister from "@/components/layout/PwaRegister";
 import DemoModeBanner from "@/components/layout/DemoModeBanner";
 import { getCurrentUser } from "@/lib/auth";
-import { getRiskAlerts } from "@/lib/get-risk-alerts";
 import { DEMO_CLUB_ID } from "@/lib/demo-generator";
 
 const geistSans = Geist({
@@ -52,8 +51,6 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const user = await getCurrentUser();
-  const rawAlerts = user ? await getRiskAlerts() : [];
-  const alerts = user?.role === "coach" ? rawAlerts.filter((a) => a.type !== "pharmacy") : rawAlerts;
 
   return (
     <html
@@ -65,7 +62,6 @@ export default async function RootLayout({
           <AppNav
             role={user.role}
             userName={user.fullName || user.email}
-            alerts={alerts}
           />
         )}
         <main className={`${user ? "md:ml-16 pt-14 md:pt-0 pb-24 md:pb-6" : ""} flex-1 min-w-0 overflow-x-hidden`}>

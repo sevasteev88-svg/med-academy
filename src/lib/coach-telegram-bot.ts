@@ -11,6 +11,16 @@ import type { TrainingSessionType, RpeScore } from "@/types/workload";
 
 const botToken = () => process.env.TELEGRAM_BOT_TOKEN || "";
 
+function getPublicAppUrl(): string {
+  const raw =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.VERCEL_PROJECT_PRODUCTION_URL ||
+    process.env.VERCEL_URL ||
+    "";
+  if (!raw) return "";
+  return raw.startsWith("http") ? raw.replace(/\/$/, "") : `https://${raw.replace(/\/$/, "")}`;
+}
+
 /**
  * Допоміжна функція для надсилання або редагування повідомлення з кнопками
  */
@@ -81,20 +91,27 @@ export async function sendCoachMainMenu(
   const greeting = coachName ? `Вітаємо, *${coachName}*!` : "👋 Вітаємо в кабінеті тренера!";
   const text =
     `${greeting}\n\n` +
-    `Тут ви можете за 15 секунд дізнатися стан команди перед виходом на поле та внести навантаження після заняття.\n\n` +
-    `Оберіть дію:`;
+    `Оберіть зручний формат роботи — прямо кнопками в чаті або у візуальному Міні-додатку:`;
 
-  const inlineKeyboard = [
+  const appUrl = getPublicAppUrl();
+  const inlineKeyboard: any[][] = [];
+
+  if (appUrl.startsWith("https://")) {
+    inlineKeyboard.push([
+      { text: "📱 Відкрити Міні-додаток", web_app: { url: `${appUrl}/tg-coach` } },
+    ]);
+  }
+
+  inlineKeyboard.push(
+    [{ text: "📋 Стан команди (у чаті)", callback_data: "coach_action_digest" }],
+    [{ text: "⏱️ Записати тренування (у чаті)", callback_data: "coach_action_start_training" }],
+    [{ text: "⚠️ Травма / Біль на полі", callback_data: "coach_action_report_injury" }],
     [
-      { text: "📋 Стан команди (Світлофор)", callback_data: "coach_action_digest" },
+      { text: "🌐 Веб-кабінет (1 клік)", callback_data: "coach_action_magic_link" },
+      { text: "⚙️ Режим роботи", callback_data: "coach_action_mode" },
     ],
-    [
-      { text: "⏱️ Записати тренування", callback_data: "coach_action_start_training" },
-    ],
-    [
-      { text: "⚙️ Довідка та налаштування", callback_data: "coach_action_help" },
-    ],
-  ];
+    [{ text: "ℹ️ Довідка", callback_data: "coach_action_help" }]
+  );
 
   await sendOrEditMessage({
     chatId,
@@ -377,6 +394,115 @@ export async function processCoachCallbackQuery(
     return;
   }
 
+  if (data === "coach_action_mode") {
+    const session = await getCoachSession(coachUserId, chatId);
+    const currentMode = (session.session_draft as any)?.preferred_mode || "chat";
+    const text =
+      `⚙️ *Оберіть зручний формат роботи*\n\n` +
+      `Поточний режим: *${currentMode === "miniapp" ? "📱 Міні-додаток" : "💬 Чат кнопками"}*\n\n` +
+      `• *💬 Чат кнопками* — ранкові звіти та опитування приходять прямо у переписку.\n` +
+      `• *📱 Міні-додаток* — візуальний список команди та запис тренування в один екран всередині Telegram.`;
+
+    await sendOrEditMessage({
+      chatId,
+      messageId,
+      text,
+      replyMarkup: {
+        inline_keyboard: [
+          [
+            { text: currentMode === "chat" ? "✅ 💬 Чат кнопками" : "💬 Чат кнопками", callback_data: "coach_set_mode:chat" },
+            { text: currentMode === "miniapp" ? "✅ 📱 Міні-додаток" : "📱 Міні-додаток", callback_data: "coach_set_mode:miniapp" },
+          ],
+          [{ text: "🏠 Головне меню", callback_data: "coach_main_menu" }],
+        ],
+      },
+    });
+    return;
+  }
+
+  if (data.startsWith("coach_set_mode:")) {
+    const mode = data.split(":")[1] === "miniapp" ? "miniapp" : "chat";
+    await updateCoachSession(coachUserId, chatId, "idle", { preferred_mode: mode } as any);
+    await sendOrEditMessage({
+      chatId,
+      messageId,
+      text: `✅ Збережено! Ваш основний режим: *${mode === "miniapp" ? "📱 Міні-додаток" : "💬 Чат кнопками"}*.`,
+      replyMarkup: {
+        inline_keyboard: [[{ text: "🏠 Головне меню", callback_data: "coach_main_menu" }]],
+      },
+    });
+    return;
+  }
+
+  if (data === "coach_action_report_injury") {
+    await updateCoachSession(coachUserId, chatId, "awaiting_injury_report", {});
+    await sendOrEditMessage({
+      chatId,
+      messageId,
+      text:
+        `⚠️ *Повідомити лікаря про травму або біль*\n\n` +
+        `Напишіть у чат одним повідомленням *прізвище гравця та що сталося* (або надішліть голосове повідомлення).\n\n` +
+        `_Наприклад: «Іванов — забій правого гомілкостопу, зійшов на 35 хв»_`,
+      replyMarkup: {
+        inline_keyboard: [[{ text: "❌ Скасувати", callback_data: "coach_main_menu" }]],
+      },
+    });
+    return;
+  }
+
+  if (data === "coach_action_magic_link") {
+    const supabase = createAdminClient();
+    const { data: userData } = await supabase.auth.admin.getUserById(coachUserId);
+    const email = userData?.user?.email;
+    const appUrl = getPublicAppUrl();
+
+    if (!email) {
+      await sendOrEditMessage({
+        chatId,
+        messageId,
+        text: "❌ Не вдалося знайти email профілю для генерації посилання входу.",
+        replyMarkup: {
+          inline_keyboard: [[{ text: "🏠 Головне меню", callback_data: "coach_main_menu" }]],
+        },
+      });
+      return;
+    }
+
+    const { data: linkData, error: linkErr } = await supabase.auth.admin.generateLink({
+      type: "magiclink",
+      email,
+      options: appUrl ? { redirectTo: `${appUrl}/coach-briefing` } : undefined,
+    });
+
+    const actionLink = linkData?.properties?.action_link;
+    if (linkErr || !actionLink) {
+      await sendOrEditMessage({
+        chatId,
+        messageId,
+        text: "❌ Не вдалося згенерувати посилання входу. Спробуйте пізніше.",
+        replyMarkup: {
+          inline_keyboard: [[{ text: "🏠 Головне меню", callback_data: "coach_main_menu" }]],
+        },
+      });
+      return;
+    }
+
+    await sendOrEditMessage({
+      chatId,
+      messageId,
+      text:
+        `🌐 *Вхід у веб-кабінет без пароля*\n\n` +
+        `Натисніть кнопку нижче — кабінет відкриється вже авторизованим (посилання одноразове):`,
+      replyMarkup: {
+        inline_keyboard: [
+          [{ text: "🚀 Відкрити веб-кабінет", url: actionLink }],
+          [{ text: "🏠 Головне меню", callback_data: "coach_main_menu" }],
+        ],
+      },
+    });
+    return;
+  }
+
   if (data === "coach_action_start_training" || data.startsWith("coach_start_training")) {
     const parts = data.split(":");
     const teamId = parts[1];
@@ -485,6 +611,41 @@ export async function processCoachTextMessage(
       await renderStepSelectRpe(coachUserId, chatId);
       return;
     }
+  }
+
+  // Якщо тренер надсилає звіт про травму на полі
+  if (session.current_step === "awaiting_injury_report") {
+    const reportText = message.voice
+      ? "🎙️ [Голосове повідомлення тренера про інцидент на полі]"
+      : text;
+
+    const supabase = createAdminClient();
+    try {
+      await supabase.from("audit_logs").insert({
+        club_id: coachBinding.club_id || null,
+        user_id: coachUserId,
+        action: "coach_field_injury_report",
+        entity: "telegram_bot",
+        meta: {
+          type: "COACH_FIELD_REPORT",
+          coach_user_id: coachUserId,
+          summary: reportText,
+          date: new Date().toISOString().split("T")[0],
+        },
+      });
+    } catch {}
+
+    await resetCoachSession(coachUserId, chatId);
+    await sendOrEditMessage({
+      chatId,
+      text:
+        `✅ *Сигнал передано медичному штабу!*\n\n` +
+        `📝 *Повідомлення:* ${reportText}`,
+      replyMarkup: {
+        inline_keyboard: [[{ text: "🏠 Головне меню", callback_data: "coach_main_menu" }]],
+      },
+    });
+    return;
   }
 
   // Якщо тренер залишає текстовий коментар або надіслав голосове повідомлення

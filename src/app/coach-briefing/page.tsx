@@ -46,7 +46,7 @@ export default async function CoachBriefingPage() {
   }
 
   // 2. Єдине джерело доступності гравців
-  const availabilityReport = await getPlayerAvailability();
+  const availabilityReport = await getPlayerAvailability(user?.clubId);
 
   let briefingPlayers: BriefingPlayer[] = availabilityReport.players.map((p) => ({
     id: p.id,

@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createClient } from "@/utils/supabase/server";
 import {
   type PreSeasonScreening,
@@ -66,12 +67,14 @@ export async function getPlayerAvailability(
       .from("injury_logs")
       .select("injury_id, note, date, created_at")
       .like("note", "[RTP_PHASE]%")
-      .order("created_at", { ascending: false }),
+      .order("created_at", { ascending: false })
+      .limit(500),
     supabase
       .from("injury_logs")
       .select("note, date, created_at")
       .like("note", "[SCREENING]%")
-      .order("created_at", { ascending: false }),
+      .order("created_at", { ascending: false })
+      .limit(500),
   ]);
 
   const rawPlayers = playersRes.data || [];

@@ -154,8 +154,8 @@ export default async function Home() {
       .not("next_exam_date", "is", null)
       .lte("next_exam_date", weekAheadStr),
     supabase.from("injury_examinations").select("*", { count: "exact", head: true }).gte("date", weekAgoStr),
-    getRiskAlerts(),
-    getPlayerAvailability(),
+    getRiskAlerts({ includePharmacy: user?.role !== "coach" }),
+    getPlayerAvailability(user?.clubId),
     supabase.from("injuries").select("id, activity_type, date_of_injury"),
     supabase.from("exposures").select("id, team_id, date, type, minutes, players_count"),
   ]);

@@ -185,7 +185,7 @@ export default function AppNav({
   role,
   userName,
   clubName = "MedAcademy",
-  alerts = [],
+  alerts: initialAlerts = [],
 }: {
   role: string;
   userName: string;
@@ -195,6 +195,43 @@ export default function AppNav({
   const pathname = usePathname();
   const [isPending, startTransition] = useTransition();
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const [alerts, setAlerts] = useState<RiskAlertItem[]>(initialAlerts);
+
+  // Асинхронне підвантаження алертів з кешем 60с, щоб не блокувати навігацію між меню
+  useEffect(() => {
+    if (initialAlerts.length > 0) {
+      setAlerts(initialAlerts);
+      return;
+    }
+
+    const cacheKey = `med_academy_alerts_${role}`;
+    try {
+      const cachedRaw = sessionStorage.getItem(cacheKey);
+      if (cachedRaw) {
+        const cached = JSON.parse(cachedRaw) as { ts: number; data: RiskAlertItem[] };
+        if (Date.now() - cached.ts < 60_000 && Array.isArray(cached.data)) {
+          setAlerts(cached.data);
+          return;
+        }
+      }
+    } catch {}
+
+    let cancelled = false;
+    fetch("/api/alerts")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((payload) => {
+        if (cancelled || !payload?.alerts) return;
+        setAlerts(payload.alerts);
+        try {
+          sessionStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data: payload.alerts }));
+        } catch {}
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [role, initialAlerts]);
 
   // Дворівневий сайдбар для десктопу
   const [flyoutGroupId, setFlyoutGroupId] = useState<string | null>(null);
@@ -291,8 +328,12 @@ export default function AppNav({
     });
   }
 
-  // Пацієнти та батьки не бачать навігацію
-  if (pathname.startsWith("/rehab-portal") || pathname.startsWith("/consent/")) {
+  // Пацієнти, батьки та Telegram Mini App не бачать основну навігацію
+  if (
+    pathname.startsWith("/rehab-portal") ||
+    pathname.startsWith("/consent/") ||
+    pathname.startsWith("/tg-coach")
+  ) {
     return null;
   }
 
