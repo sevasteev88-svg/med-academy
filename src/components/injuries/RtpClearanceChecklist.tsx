@@ -3,20 +3,36 @@
 import { useState, useTransition } from "react";
 import {
   submitRtpClearanceAction,
-  type RtpCriteriaState,
 } from "@/actions/submit-rtp-clearance-action";
+import {
+  RTP_PROFILES,
+  RTP_CATEGORY_META,
+  resolveRtpProfileId,
+  calculateRtpClearanceStats,
+  type RtpCriteriaState,
+  type RtpProfileId,
+  type RtpCriterionCategory,
+} from "@/lib/rtp-profiles";
 
 type Props = {
   injuryId: string;
   injuryStatus: string;
   playerName: string;
+  injuryType?: string | null;
+  location?: string | null;
+  initialProfileId?: RtpProfileId | null;
   initialCriteria?: RtpCriteriaState | null;
 };
+
+const CATEGORY_ORDER: RtpCriterionCategory[] = ["clinical", "strength", "field", "psych"];
 
 export default function RtpClearanceChecklist({
   injuryId,
   injuryStatus,
   playerName,
+  injuryType,
+  location,
+  initialProfileId,
   initialCriteria,
 }: Props) {
   const [isOpen, setIsOpen] = useState(false);
@@ -27,52 +43,43 @@ export default function RtpClearanceChecklist({
     msg?: string;
   } | null>(null);
 
-  const [criteria, setCriteria] = useState<RtpCriteriaState>(() => initialCriteria || {
-    noPalpationPain: false,
-    fullPainfreeRom: false,
-    noEffusionOrSwelling: false,
-    strengthDeficitLessThan10Pct: false,
-    eccentricControlPassed: false,
-    maximalSprint30mPassed: false,
-    changeOfDirectionPassed: false,
-    fullTrainingSessionCompleted: false,
-    psychologicalReadinessPassed: false,
-    doctorNote: "",
+  const autoProfileId = resolveRtpProfileId(injuryType, location);
+  const [profileId, setProfileId] = useState<RtpProfileId>(() => {
+    const candidate = initialProfileId || initialCriteria?.profileId;
+    if (candidate && candidate in RTP_PROFILES) {
+      return candidate;
+    }
+    return autoProfileId;
   });
+
+  const [criteria, setCriteria] = useState<RtpCriteriaState>(() => ({
+    ...(initialCriteria || {}),
+    doctorNote: (initialCriteria?.doctorNote as string) || "",
+  }));
 
   const [closeInjury, setCloseInjury] = useState(false);
 
-  const passedCount = [
-    criteria.noPalpationPain,
-    criteria.fullPainfreeRom,
-    criteria.noEffusionOrSwelling,
-    criteria.strengthDeficitLessThan10Pct,
-    criteria.eccentricControlPassed,
-    criteria.maximalSprint30mPassed,
-    criteria.changeOfDirectionPassed,
-    criteria.fullTrainingSessionCompleted,
-    criteria.psychologicalReadinessPassed,
-  ].filter(Boolean).length;
+  const activeProfile = RTP_PROFILES[profileId] ?? RTP_PROFILES.base;
+  const { passedCriteria: passedCount, totalCriteria: totalCount, clearancePercentage: percentage } =
+    calculateRtpClearanceStats(profileId, criteria);
 
-  const totalCount = 9;
-  const percentage = Math.round((passedCount / totalCount) * 100);
-
-  function toggle(key: keyof Omit<RtpCriteriaState, "doctorNote">) {
+  function toggle(key: string) {
     setCriteria((prev) => ({ ...prev, [key]: !prev[key] }));
   }
 
   function handleSave() {
     setFeedback(null);
     startTransition(async () => {
-      const res = await submitRtpClearanceAction(injuryId, criteria, closeInjury);
+      const payload: RtpCriteriaState = { ...criteria, profileId };
+      const res = await submitRtpClearanceAction(injuryId, payload, closeInjury, profileId);
       if (res.error) {
         setFeedback({ error: res.error });
       } else {
         setFeedback({
           success: true,
           msg: closeInjury
-            ? `✓ Гравець ${playerName} успішно пройшов RTP-допуск! Травму закрито, гравець готовий до гри.`
-            : `✓ Результати тестування збережено (${res.passedCriteria}/${res.totalCriteria} критеріїв виконано).`,
+            ? `✓ Гравець ${playerName} успішно пройшов RTP-допуск (${activeProfile.titleUa})! Травму закрито, гравець готовий до гри.`
+            : `✓ Результати тестування збережено (${res.passedCriteria}/${res.totalCriteria} критеріїв · ${activeProfile.titleUa}).`,
         });
       }
     });
@@ -82,15 +89,18 @@ export default function RtpClearanceChecklist({
 
   return (
     <div className="bg-slate-900/80 border border-blue-900/20 rounded-xl p-4 space-y-3">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className="text-lg">🎯</span>
           <div>
-            <h3 className="text-sm font-bold text-white">
-              Чек-лист повернення в гру (RTP Clearance)
+            <h3 className="text-sm font-bold text-white flex flex-wrap items-center gap-2">
+              <span>Чек-лист повернення в гру (RTP Clearance)</span>
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/30">
+                {activeProfile.titleUa}
+              </span>
             </h3>
             <p className="text-[11px] text-slate-400">
-              Стандарти Aspetar & FC Barcelona для безпечного допуску до матчів
+              {activeProfile.subtitleUa}
             </p>
           </div>
         </div>
@@ -121,131 +131,65 @@ export default function RtpClearanceChecklist({
 
       {isOpen && (
         <div className="pt-3 border-t border-slate-800/80 space-y-4">
-          {/* Блок 1: Клінічні критерії */}
-          <div className="space-y-2">
-            <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-              <span>🩺</span>
-              <span>1. Клінічні критерії (кабінет лікаря)</span>
+          {/* Перемикач профілю критеріїв RTP */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 rounded-lg bg-slate-950/60 border border-slate-800">
+            <div className="text-[11px] text-slate-400">
+              Профіль критеріїв{" "}
+              {profileId === autoProfileId ? (
+                <span className="text-emerald-400 font-semibold">(автоматично за травмою)</span>
+              ) : (
+                <span className="text-amber-400 font-semibold">(обрано вручну)</span>
+              )}
+              :
             </div>
-            <div className="space-y-1.5 pl-6">
-              <label className="flex items-center gap-2.5 text-xs text-slate-200 cursor-pointer hover:text-white">
-                <input
-                  type="checkbox"
-                  checked={criteria.noPalpationPain}
-                  onChange={() => toggle("noPalpationPain")}
-                  className="rounded border-slate-700"
-                />
-                <span>Повна відсутність локальної болісності при глибокій пальпації</span>
-              </label>
-
-              <label className="flex items-center gap-2.5 text-xs text-slate-200 cursor-pointer hover:text-white">
-                <input
-                  type="checkbox"
-                  checked={criteria.fullPainfreeRom}
-                  onChange={() => toggle("fullPainfreeRom")}
-                  className="rounded border-slate-700"
-                />
-                <span>100% безболісна амплітуда рухів (ROM) порівняно зі здоровою кінцівкою</span>
-              </label>
-
-              <label className="flex items-center gap-2.5 text-xs text-slate-200 cursor-pointer hover:text-white">
-                <input
-                  type="checkbox"
-                  checked={criteria.noEffusionOrSwelling}
-                  onChange={() => toggle("noEffusionOrSwelling")}
-                  className="rounded border-slate-700"
-                />
-                <span>Повна відсутність набряку, випоту або постізометричної реакції</span>
-              </label>
+            <div className="flex flex-wrap gap-1.5">
+              {(Object.keys(RTP_PROFILES) as RtpProfileId[]).map((pid) => (
+                <button
+                  key={pid}
+                  type="button"
+                  onClick={() => setProfileId(pid)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-colors cursor-pointer ${
+                    profileId === pid
+                      ? "bg-sky-600 text-white border-sky-500"
+                      : "bg-slate-900 text-slate-400 border-slate-800 hover:text-white"
+                  }`}
+                >
+                  {RTP_PROFILES[pid].titleUa}
+                </button>
+              ))}
             </div>
           </div>
 
-          {/* Блок 2: Симетричність сили */}
-          <div className="space-y-2">
-            <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-              <span>💪</span>
-              <span>2. Функціонально-симетричні тести</span>
-            </div>
-            <div className="space-y-1.5 pl-6">
-              <label className="flex items-center gap-2.5 text-xs text-slate-200 cursor-pointer hover:text-white">
-                <input
-                  type="checkbox"
-                  checked={criteria.strengthDeficitLessThan10Pct}
-                  onChange={() => toggle("strengthDeficitLessThan10Pct")}
-                  className="rounded border-slate-700"
-                />
-                <span>Дефіцит пікової сили м'яза &lt; 10% (за даними ручного динамометра)</span>
-              </label>
-
-              <label className="flex items-center gap-2.5 text-xs text-slate-200 cursor-pointer hover:text-white">
-                <input
-                  type="checkbox"
-                  checked={criteria.eccentricControlPassed}
-                  onChange={() => toggle("eccentricControlPassed")}
-                  className="rounded border-slate-700"
-                />
-                <span>Безболісний ексцентричний контроль на довгих важелях</span>
-              </label>
-            </div>
-          </div>
-
-          {/* Блок 3: Польові футбольні тести */}
-          <div className="space-y-2">
-            <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-              <span>⚽</span>
-              <span>3. Польові функціональні тести (на газоні)</span>
-            </div>
-            <div className="space-y-1.5 pl-6">
-              <label className="flex items-center gap-2.5 text-xs text-slate-200 cursor-pointer hover:text-white">
-                <input
-                  type="checkbox"
-                  checked={criteria.maximalSprint30mPassed}
-                  onChange={() => toggle("maximalSprint30mPassed")}
-                  className="rounded border-slate-700"
-                />
-                <span>Спринт на 30м з максимальною інтенсивністю (≥ 95% від дотравматичної швидкості)</span>
-              </label>
-
-              <label className="flex items-center gap-2.5 text-xs text-slate-200 cursor-pointer hover:text-white">
-                <input
-                  type="checkbox"
-                  checked={criteria.changeOfDirectionPassed}
-                  onChange={() => toggle("changeOfDirectionPassed")}
-                  className="rounded border-slate-700"
-                />
-                <span>Тест на зміну напрямку руху (5-0-5 або T-Test) на 100% зусилля без дискомфорту</span>
-              </label>
-
-              <label className="flex items-center gap-2.5 text-xs text-slate-200 cursor-pointer hover:text-white">
-                <input
-                  type="checkbox"
-                  checked={criteria.fullTrainingSessionCompleted}
-                  onChange={() => toggle("fullTrainingSessionCompleted")}
-                  className="rounded border-slate-700"
-                />
-                <span>Успішне завершення мінімум 1 повного командного тренування з контактною боротьбою</span>
-              </label>
-            </div>
-          </div>
-
-          {/* Блок 4: Психологічна готовність */}
-          <div className="space-y-2">
-            <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-              <span>🧠</span>
-              <span>4. Психологічна готовність</span>
-            </div>
-            <div className="space-y-1.5 pl-6">
-              <label className="flex items-center gap-2.5 text-xs text-slate-200 cursor-pointer hover:text-white">
-                <input
-                  type="checkbox"
-                  checked={criteria.psychologicalReadinessPassed}
-                  onChange={() => toggle("psychologicalReadinessPassed")}
-                  className="rounded border-slate-700"
-                />
-                <span>Відсутність кинезіофобії (страху рецидиву при стиках, підкатах та ударах)</span>
-              </label>
-            </div>
-          </div>
+          {/* Критерії згруповані за категоріями */}
+          {CATEGORY_ORDER.map((cat) => {
+            const items = activeProfile.criteria.filter((c) => c.category === cat);
+            if (items.length === 0) return null;
+            const meta = RTP_CATEGORY_META[cat];
+            return (
+              <div key={cat} className="space-y-2">
+                <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <span>{meta.icon}</span>
+                  <span>{meta.title}</span>
+                </div>
+                <div className="space-y-1.5 pl-6">
+                  {items.map((item) => (
+                    <label
+                      key={item.key}
+                      className="flex items-center gap-2.5 text-xs text-slate-200 cursor-pointer hover:text-white"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={Boolean(criteria[item.key])}
+                        onChange={() => toggle(item.key)}
+                        className="rounded border-slate-700"
+                      />
+                      <span>{item.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
 
           {/* Примітка лікаря */}
           <div>
@@ -254,7 +198,7 @@ export default function RtpClearanceChecklist({
             </label>
             <input
               type="text"
-              value={criteria.doctorNote}
+              value={(criteria.doctorNote as string) || ""}
               onChange={(e) =>
                 setCriteria((prev) => ({ ...prev, doctorNote: e.target.value }))
               }

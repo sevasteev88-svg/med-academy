@@ -3,62 +3,45 @@
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
 import { assertDoctor } from "@/lib/auth";
+import {
+  calculateRtpClearanceStats,
+  RTP_PROFILES,
+  type RtpCriteriaState,
+  type RtpProfileId,
+} from "@/lib/rtp-profiles";
 
-export type RtpCriteriaState = {
-  // Клінічні тести
-  noPalpationPain: boolean;
-  fullPainfreeRom: boolean;
-  noEffusionOrSwelling: boolean;
-
-  // Силові тести (динамометрія)
-  strengthDeficitLessThan10Pct: boolean;
-  eccentricControlPassed: boolean;
-
-  // Специфічні функціональні тести на полі
-  maximalSprint30mPassed: boolean;
-  changeOfDirectionPassed: boolean;
-  fullTrainingSessionCompleted: boolean;
-
-  // Психологічна готовність
-  psychologicalReadinessPassed: boolean;
-
-  doctorNote?: string;
-};
+export type { RtpCriteriaState, RtpProfileId };
 
 export async function submitRtpClearanceAction(
   injuryId: string,
   criteria: RtpCriteriaState,
-  closeInjuryNow: boolean
+  closeInjuryNow: boolean,
+  profileId?: RtpProfileId
 ) {
   const auth = await assertDoctor();
   if ("error" in auth) return { error: auth.error };
 
   const supabase = await createClient();
 
-  const totalCriteria = 9;
-  const passedCriteria = [
-    criteria.noPalpationPain,
-    criteria.fullPainfreeRom,
-    criteria.noEffusionOrSwelling,
-    criteria.strengthDeficitLessThan10Pct,
-    criteria.eccentricControlPassed,
-    criteria.maximalSprint30mPassed,
-    criteria.changeOfDirectionPassed,
-    criteria.fullTrainingSessionCompleted,
-    criteria.psychologicalReadinessPassed,
-  ].filter(Boolean).length;
+  const candidateProfile = profileId || criteria.profileId || "base";
+  const activeProfileId: RtpProfileId =
+    candidateProfile in RTP_PROFILES ? (candidateProfile as RtpProfileId) : "base";
 
-  const clearancePercentage = Math.round((passedCriteria / totalCriteria) * 100);
-  const isFullyCleared = passedCriteria === totalCriteria;
+  const { passedCriteria, totalCriteria, clearancePercentage, isFullyCleared } =
+    calculateRtpClearanceStats(activeProfileId, criteria);
 
-  // Зберігаємо протокол допуску в injury_logs
+  // Зберігаємо протокол допуску в injury_logs (збережено profileId + зворотна сумісність)
   const clearancePayload = {
     injury_id: injuryId,
+    profileId: activeProfileId,
     passedCriteria,
     totalCriteria,
     clearancePercentage,
     isFullyCleared,
-    criteria,
+    criteria: {
+      ...criteria,
+      profileId: activeProfileId,
+    },
     doctorName: auth.user.fullName || auth.user.email,
     date: new Date().toISOString(),
   };
@@ -100,6 +83,7 @@ export async function submitRtpClearanceAction(
 
   return {
     success: true,
+    profileId: activeProfileId,
     passedCriteria,
     totalCriteria,
     clearancePercentage,

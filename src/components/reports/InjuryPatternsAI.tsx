@@ -25,13 +25,20 @@ export type PatternsSummary = {
     totalExposureHours: number;
     trainingExposureHours: number;
     matchExposureHours: number;
+    totalTimeLossDays: number;
     overallIncidence: number | null;
     trainingIncidence: number | null;
     matchIncidence: number | null;
+    overallBurden: number | null;
+    trainingBurden: number | null;
+    matchBurden: number | null;
     hasSufficientData: boolean;
     displayLabel: string;
     trainingDisplayLabel: string;
     matchDisplayLabel: string;
+    burdenDisplayLabel: string;
+    trainingBurdenDisplayLabel: string;
+    matchBurdenDisplayLabel: string;
   };
 };
 
@@ -158,8 +165,8 @@ export default function InjuryPatternsAI({
         </div>
       )}
 
-      {/* Загальна статистика з плейсхолдером під 1000 годин */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+      {/* Загальна статистика з показниками на 1000 годин */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <MiniStat
           label="Всього травм (n)"
           value={summary.totalInjuries}
@@ -178,7 +185,7 @@ export default function InjuryPatternsAI({
           color="text-status-danger"
           subtitle="Гравці з ≥ 2 травмами"
         />
-        {/* Показники експозиції та захворюваності на 1000 годин замість «травм на гравця» (задача 4.2) */}
+        {/* Показники експозиції та захворюваності на 1000 годин */}
         <MiniStat
           label="Травм на 1000 год"
           value={
@@ -198,6 +205,22 @@ export default function InjuryPatternsAI({
             summary.exposureMetrics?.hasSufficientData
               ? `${summary.exposureMetrics.totalExposureHours.toFixed(0)} год`
               : "Експозиція"
+          }
+        />
+        <MiniStat
+          label="Тягар (дн. / 1000 год)"
+          value={
+            summary.exposureMetrics?.hasSufficientData && summary.exposureMetrics.overallBurden != null
+              ? `${summary.exposureMetrics.overallBurden.toFixed(1)}`
+              : "—"
+          }
+          color={
+            summary.exposureMetrics?.hasSufficientData ? "text-rose-400" : "text-slate-400"
+          }
+          subtitle={
+            summary.exposureMetrics?.hasSufficientData
+              ? `${summary.exposureMetrics.totalTimeLossDays} дн. простою · Трен.: ${summary.exposureMetrics.trainingBurden?.toFixed(1) ?? "—"} · Матчі: ${summary.exposureMetrics.matchBurden?.toFixed(1) ?? "—"}`
+              : "Недостатньо даних про експозицію"
           }
         />
         <MiniStat

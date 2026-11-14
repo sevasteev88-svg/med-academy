@@ -3,9 +3,11 @@ import assert from "node:assert/strict";
 import {
   calculateExposureHours,
   calculateIncidenceRate,
+  calculateInjuryBurden,
   calculateExposureMetrics,
   calculateTeamExposureBreakdown,
   formatIncidenceRate,
+  formatInjuryBurden,
   INSUFFICIENT_EXPOSURE_DATA_MSG,
   type RawExposureItem,
   type RawInjuryItem,
@@ -163,6 +165,73 @@ describe("4.2 Експозиція та захворюваність (травм
       assert.strictEqual(breakdown[1].teamName, "U-17");
       assert.strictEqual(breakdown[1].hasSufficientData, false);
       assert.strictEqual(breakdown[1].displayLabel, INSUFFICIENT_EXPOSURE_DATA_MSG);
+    });
+  });
+
+  describe("6. Розрахунок Injury Burden (дні простою на 1000 год)", () => {
+    it("calculateInjuryBurden рахує (дні простою / години) * 1000 та повертає null при 0 год", () => {
+      assert.strictEqual(calculateInjuryBurden(25, 500), 50.0);
+      assert.strictEqual(calculateInjuryBurden(0, 500), 0.0);
+      assert.strictEqual(calculateInjuryBurden(10, 0), null);
+      assert.strictEqual(formatInjuryBurden(null), INSUFFICIENT_EXPOSURE_DATA_MSG);
+      assert.strictEqual(formatInjuryBurden(123.45), "123.5");
+    });
+
+    it("calculateExposureMetrics окремо рахує overallBurden, trainingBurden та matchBurden", () => {
+      const exposures: RawExposureItem[] = [
+        // 100 год тренувань
+        { date: "2026-10-01", team_id: "t1", type: "training", minutes: 60, players_count: 100 },
+        // 25 год матчів
+        { date: "2026-10-05", team_id: "t1", type: "match", minutes: 60, players_count: 25 },
+      ];
+      const injuries: RawInjuryItem[] = [
+        // Закрита травма на тренуванні: 10 днів простою (2026-10-01 -> 2026-10-11)
+        {
+          date_of_injury: "2026-10-01",
+          actual_return_date: "2026-10-11",
+          status: "closed",
+          team_id: "t1",
+          activity_type: "training",
+        },
+        // Відкрита травма на матчі на referenceDate 2026-10-15: 10 днів простою (2026-10-05 -> 2026-10-15)
+        {
+          date_of_injury: "2026-10-05",
+          status: "active",
+          team_id: "t1",
+          activity_type: "match",
+        },
+      ];
+
+      const res = calculateExposureMetrics(exposures, injuries, {
+        teamId: "t1",
+        referenceDate: new Date("2026-10-15T12:00:00Z"),
+      });
+
+      assert.strictEqual(res.trainingTimeLossDays, 10);
+      assert.strictEqual(res.matchTimeLossDays, 10);
+      assert.strictEqual(res.totalTimeLossDays, 20);
+
+      // Тренування: (10 / 100) * 1000 = 100.0
+      assert.strictEqual(res.trainingBurden, 100.0);
+      assert.strictEqual(res.trainingBurdenDisplayLabel, "100.0 дн. / 1000 год");
+
+      // Матчі: (10 / 25) * 1000 = 400.0
+      assert.strictEqual(res.matchBurden, 400.0);
+      assert.strictEqual(res.matchBurdenDisplayLabel, "400.0 дн. / 1000 год");
+
+      // Загальний: (20 / 125) * 1000 = 160.0
+      assert.strictEqual(res.overallBurden, 160.0);
+      assert.strictEqual(res.burdenDisplayLabel, "160.0 дн. / 1000 год");
+    });
+
+    it("повертає null burden та fallback label за відсутності експозиції", () => {
+      const res = calculateExposureMetrics([], [
+        { date_of_injury: "2026-10-01", actual_return_date: "2026-10-05", team_id: "t1" },
+      ]);
+      assert.strictEqual(res.overallBurden, null);
+      assert.strictEqual(res.burdenDisplayLabel, INSUFFICIENT_EXPOSURE_DATA_MSG);
+      assert.strictEqual(res.trainingBurdenDisplayLabel, INSUFFICIENT_EXPOSURE_DATA_MSG);
+      assert.strictEqual(res.matchBurdenDisplayLabel, INSUFFICIENT_EXPOSURE_DATA_MSG);
     });
   });
 });

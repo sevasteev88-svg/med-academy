@@ -2,9 +2,11 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   calculateAcwr,
+  calculateFifa11Compliance,
   ACWR_THRESHOLDS,
   BORG_CR10_SCALE,
   ABSENCE_REASONS,
+  FIFA11_STATUS_UA,
   type RpeScore,
   type TeamTrainingPlayerItem,
 } from "../src/types/workload.ts";
@@ -146,6 +148,43 @@ describe("8.6 Навантаження тренера (session-RPE за 10 се�
       const isDiscrepant = diff >= 2;
       assert.strictEqual(isDiscrepant, false);
       assert.strictEqual(diff, 1);
+    });
+  });
+
+  describe("4. Облік виконання програми FIFA 11+ / 11+ Kids на тренуваннях", () => {
+    it("містить українські лейбли для статусів none, partial, full", () => {
+      assert.strictEqual(FIFA11_STATUS_UA.none.label, "Не виконувалась");
+      assert.strictEqual(FIFA11_STATUS_UA.partial.label, "Частково");
+      assert.strictEqual(FIFA11_STATUS_UA.full.label, "Повністю");
+    });
+
+    it("дедуплікує гравців до командних сесій, виключає матчі та рахує % FIFA 11+", () => {
+      const sessions = [
+        // Сесія 1 (2026-10-01): 2 гравці, статус full
+        { date: "2026-10-01", team_id: "t1", team_session_id: "s1", session_type: "training_team", fifa11_status: "full" },
+        { date: "2026-10-01", team_id: "t1", team_session_id: "s1", session_type: "training_team", fifa11_status: "full" },
+        // Сесія 2 (2026-10-02): 1 гравець, статус partial у JSON notes
+        { date: "2026-10-02", team_id: "t1", team_session_id: "s2", session_type: "training_team", notes: '[COACH_SESSION] {"fifa11_status":"partial"}' },
+        // Сесія 3 (2026-10-03): статус none
+        { date: "2026-10-03", team_id: "t1", team_session_id: "s3", session_type: "gym_strength", fifa11_status: "none" },
+        // Сесія 4 (2026-10-04): матч (не повинен враховуватись у % тренувань)
+        { date: "2026-10-04", team_id: "t1", team_session_id: "s4", session_type: "match", fifa11_status: "none" },
+      ];
+
+      const summary = calculateFifa11Compliance(sessions);
+      assert.strictEqual(summary.totalSessions, 3);
+      assert.strictEqual(summary.fullCount, 1);
+      assert.strictEqual(summary.partialCount, 1);
+      assert.strictEqual(summary.noneCount, 1);
+      assert.strictEqual(summary.compliantCount, 2);
+      assert.strictEqual(summary.compliancePercent, 67); // 2/3 = 66.67 -> 67%
+      assert.strictEqual(summary.fullPercent, 33); // 1/3 = 33.33 -> 33%
+    });
+
+    it("повертає 0% при відсутності тренувальних сесій", () => {
+      const summary = calculateFifa11Compliance([]);
+      assert.strictEqual(summary.totalSessions, 0);
+      assert.strictEqual(summary.compliancePercent, 0);
     });
   });
 });

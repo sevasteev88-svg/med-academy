@@ -156,7 +156,7 @@ export default async function Home() {
     supabase.from("injury_examinations").select("*", { count: "exact", head: true }).gte("date", weekAgoStr),
     getRiskAlerts({ includePharmacy: user?.role !== "coach" }),
     getPlayerAvailability(user?.clubId),
-    supabase.from("injuries").select("id, activity_type, date_of_injury"),
+    supabase.from("injuries").select("id, activity_type, date_of_injury, actual_return_date, expected_return_date, status"),
     supabase.from("exposures").select("id, team_id, date, type, minutes, players_count"),
   ]);
 
@@ -165,6 +165,9 @@ export default async function Home() {
     allExposures ?? [],
     (allInjuriesForExposure ?? []).map((i: any) => ({
       date_of_injury: i.date_of_injury,
+      actual_return_date: i.actual_return_date ?? null,
+      expected_return_date: i.expected_return_date ?? null,
+      status: i.status ?? null,
       activity_type: i.activity_type ?? "training",
     }))
   );
@@ -635,7 +638,7 @@ export default async function Home() {
 
               {exposureMetrics.hasSufficientData && exposureMetrics.overallIncidence != null ? (
                 <div className="space-y-2.5">
-                  <div className="flex items-baseline justify-between">
+                  <div className="flex items-baseline justify-between gap-2">
                     <div>
                       <span className="text-2xl font-black font-mono text-white">
                         {exposureMetrics.overallIncidence.toFixed(1)}
@@ -646,6 +649,15 @@ export default async function Home() {
                     </div>
                     <span className="text-[11px] font-mono text-sky-400 font-semibold">
                       {exposureMetrics.totalExposureHours.toFixed(0)} год експозиції
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs px-2.5 py-1.5 rounded-xl bg-rose-950/25 border border-rose-500/20">
+                    <span className="text-slate-400">Тягар травм (Burden):</span>
+                    <span className="font-mono font-bold text-rose-300">
+                      {exposureMetrics.overallBurden != null
+                        ? `${exposureMetrics.overallBurden.toFixed(1)} дн. / 1000 год (${exposureMetrics.totalTimeLossDays} дн.)`
+                        : "—"}
                     </span>
                   </div>
 
@@ -660,7 +672,7 @@ export default async function Home() {
                           : "—"}
                       </div>
                       <div className="text-[9px] text-slate-500 mt-0.5">
-                        {exposureMetrics.trainingExposureHours.toFixed(0)} год ({exposureMetrics.trainingInjuries} травм)
+                        {exposureMetrics.trainingExposureHours.toFixed(0)} год ({exposureMetrics.trainingInjuries} травм) · {exposureMetrics.trainingBurden != null ? `${exposureMetrics.trainingBurden.toFixed(1)} дн./1000` : "—"}
                       </div>
                     </div>
 
@@ -674,7 +686,7 @@ export default async function Home() {
                           : "—"}
                       </div>
                       <div className="text-[9px] text-slate-500 mt-0.5">
-                        {exposureMetrics.matchExposureHours.toFixed(0)} год ({exposureMetrics.matchInjuries} травм)
+                        {exposureMetrics.matchExposureHours.toFixed(0)} год ({exposureMetrics.matchInjuries} травм) · {exposureMetrics.matchBurden != null ? `${exposureMetrics.matchBurden.toFixed(1)} дн./1000` : "—"}
                       </div>
                     </div>
                   </div>

@@ -15,6 +15,16 @@ import {
 
 export type ReadinessColor = "green" | "yellow" | "red" | "gray";
 
+export type ManualReadinessColor = "green" | "yellow" | "red";
+
+export interface ReadinessOverride {
+  status: ManualReadinessColor;
+  reason: string;
+  overriddenByName?: string | null;
+  overriddenById?: string | null;
+  overriddenAt: string;
+}
+
 export type ReadinessGrayReason =
   | "no_consent" // Неповнолітній без згоди на обробку даних
   | "no_device" // Пристрій не активовано
@@ -113,6 +123,16 @@ export interface PlayerReadinessResult {
   monotonyDays: number;
   monotonyPrompt?: string | null;
 
+  // Ручна корекція світлофора лікарем (вихідний розрахунок збережено в originalStatus)
+  manualOverride?: {
+    status: ManualReadinessColor;
+    originalStatus: ReadinessColor;
+    originalStatusLabel: string;
+    reason?: string | null; // Приховано від тренера в sanitizeReadinessForCoach
+    overriddenByName?: string | null;
+    overriddenAt: string;
+  } | null;
+
   // ДЕТАЛІ ДЛЯ ЛІКАРЯ (Суворо null або undefined для тренера!)
   doctorDetails?: {
     pain: boolean;
@@ -183,6 +203,7 @@ export interface CalculateReadinessOptions {
     position?: string;
   };
   wearablesReport?: WearableBaselineReport | null;
+  manualOverride?: ReadinessOverride | null;
 }
 
 /**
@@ -234,9 +255,65 @@ export function calculateZScore(
 }
 
 /**
+ * Накладає ручне перевизначення статусу світлофора лікарем,
+ * зберігаючи вихідний розрахунок за анкетою в `manualOverride.originalStatus`.
+ */
+export function applyReadinessOverride(
+  result: PlayerReadinessResult,
+  override?: ReadinessOverride | null,
+  isDoctorRole: boolean = true
+): PlayerReadinessResult {
+  if (
+    !override ||
+    (override.status !== "green" && override.status !== "yellow" && override.status !== "red")
+  ) {
+    return result;
+  }
+
+  const labels: Record<ManualReadinessColor, { statusLabel: string; actionPrompt: string }> = {
+    green: {
+      statusLabel: "Оптимально",
+      actionPrompt: "Допущено лікарем до планового навантаження",
+    },
+    yellow: {
+      statusLabel: "Потребує уваги",
+      actionPrompt: "Можливе коригування навантаження за рішенням лікаря",
+    },
+    red: {
+      statusLabel: "Поговорити з гравцем / повідомити лікаря",
+      actionPrompt: "Обмеження навантаження за рішенням лікаря",
+    },
+  };
+
+  return {
+    ...result,
+    status: override.status,
+    statusLabel: labels[override.status].statusLabel,
+    actionPrompt: labels[override.status].actionPrompt,
+    grayReason: null,
+    manualOverride: {
+      status: override.status,
+      originalStatus: result.status,
+      originalStatusLabel: result.statusLabel,
+      reason: isDoctorRole ? override.reason : null,
+      overriddenByName: override.overriddenByName ?? null,
+      overriddenAt: override.overriddenAt,
+    },
+  };
+}
+
+/**
  * Головна серверна функція розрахунку готовності гравця за алгоритмом 8.4
  */
 export function evaluatePlayerReadiness(
+  options: CalculateReadinessOptions
+): PlayerReadinessResult {
+  const isDoctorRole = options.forRole === "doctor" || options.forRole === "admin";
+  const base = evaluateBasePlayerReadiness(options);
+  return applyReadinessOverride(base, options.manualOverride, isDoctorRole);
+}
+
+function evaluateBasePlayerReadiness(
   options: CalculateReadinessOptions
 ): PlayerReadinessResult {
   const {
@@ -742,6 +819,12 @@ export function sanitizeReadinessForCoach(
     hasMonotony: false,
     monotonyDays: 0,
     monotonyPrompt: null,
+    manualOverride: result.manualOverride
+      ? {
+          ...result.manualOverride,
+          reason: null, // Медична причина прихована від тренера
+        }
+      : null,
     doctorDetails: coachDetails,
     trendLast7Days: result.trendLast7Days.map((pt) => ({
       date: pt.date,

@@ -41,6 +41,7 @@ export default async function TrainingPage({
           userRole={data.userRole}
           initialPlayers={data.players}
           existingSession={data.existingSession}
+          fifa11Summary={data.fifa11Summary}
         />
       </div>
     </div>

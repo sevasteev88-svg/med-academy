@@ -189,12 +189,16 @@ export default async function InjuryDetailPage({ params }: Props) {
 
   const clearanceLogRaw = clearanceRes.data?.[0]?.note;
   let initialClearanceCriteria = null;
+  let initialClearanceProfileId = null;
   if (clearanceLogRaw) {
     try {
       const jsonStr = clearanceLogRaw.replace("[RTP_CLEARANCE] ", "");
       const parsed = JSON.parse(jsonStr);
       if (parsed.criteria) {
         initialClearanceCriteria = parsed.criteria;
+      }
+      if (parsed.profileId || parsed.criteria?.profileId) {
+        initialClearanceProfileId = parsed.profileId || parsed.criteria?.profileId;
       }
     } catch {}
   }
@@ -360,6 +364,9 @@ export default async function InjuryDetailPage({ params }: Props) {
             injuryId={injury.id}
             injuryStatus={injury.status}
             playerName={playerName}
+            injuryType={injury.injury_type}
+            location={injury.location}
+            initialProfileId={initialClearanceProfileId}
             initialCriteria={initialClearanceCriteria}
           />
         </div>

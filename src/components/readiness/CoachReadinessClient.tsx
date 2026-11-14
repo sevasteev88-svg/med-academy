@@ -6,6 +6,8 @@ import {
   type PlayerReadinessResult,
   type ReadinessColor,
   type PhysicalFlagCategory,
+  type ReadinessOverride,
+  applyReadinessOverride,
 } from "@/lib/readiness";
 import {
   READINESS_DISCLAIMER_TEXT,
@@ -137,6 +139,20 @@ export default function CoachReadinessClient({
       }
       setPendingPlayerId(null);
     });
+  };
+
+  const handleOverrideSaved = (playerId: string, override: ReadinessOverride | null) => {
+    const updatePlayer = (p: PlayerReadinessResult): PlayerReadinessResult => {
+      if (p.playerId !== playerId) return p;
+      if (!override) {
+        // Якщо скасовано — перезавантажимо сторінку для точного відновлення вихідного статусу
+        window.location.reload();
+        return p;
+      }
+      return applyReadinessOverride(p, override, isDoctorOrAdmin);
+    };
+    setPlayers((prev) => prev.map(updatePlayer));
+    setSelectedDoctorPlayer((prev) => (prev ? updatePlayer(prev) : null));
   };
 
   // Фільтрація списку гравців
@@ -604,6 +620,7 @@ export default function CoachReadinessClient({
             setSelectedDoctorDate(undefined);
           }}
           onAcknowledge={handleAcknowledge}
+          onOverrideSaved={handleOverrideSaved}
           isPendingAck={pendingPlayerId === selectedDoctorPlayer.playerId}
         />
       )}
@@ -759,6 +776,20 @@ function PlayerReadinessCard({
                 <span>{style.icon}</span>
                 <span>{player.statusLabel}</span>
               </span>
+
+              {player.manualOverride && (
+                <span
+                  title={
+                    isDoctorOrAdmin && player.manualOverride.reason
+                      ? `Було: ${player.manualOverride.originalStatusLabel} · Причина: ${player.manualOverride.reason}`
+                      : "Статус готовності скориговано лікарем клубу"
+                  }
+                  className="text-[11px] px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/35 font-semibold inline-flex items-center gap-1"
+                >
+                  <span>🩺</span>
+                  <span>Скориговано лікарем</span>
+                </span>
+              )}
 
               <span className="text-xs text-slate-400 font-medium">
                 {player.actionPrompt}

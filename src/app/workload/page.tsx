@@ -6,8 +6,9 @@ import type {
   PlayerWorkloadSummary,
   SessionRpeEntry,
   RpeScore,
+  Fifa11ComplianceSummary,
 } from "@/types/workload";
-import { calculateAcwr } from "@/types/workload";
+import { calculateAcwr, calculateFifa11Compliance } from "@/types/workload";
 
 export const metadata = {
   title: "Моніторинг навантажень (Session-RPE & ACWR) · Штаб команди",
@@ -143,6 +144,8 @@ export default async function WorkloadPage({
     };
   });
 
+  const fifa11Summary: Fifa11ComplianceSummary = calculateFifa11Compliance(workloadEntries);
+
   return (
     <div className="min-h-screen bg-transparent text-slate-100 p-4 sm:p-6 md:p-8">
       <div className="max-w-6xl mx-auto space-y-6">
@@ -196,6 +199,7 @@ export default async function WorkloadPage({
             summaries={summaries}
             recentEntries={enrichedEntries}
             defaultPlayerId={playerId}
+            fifa11Summary={fifa11Summary}
           />
         </Suspense>
       </div>

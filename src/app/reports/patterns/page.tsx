@@ -160,6 +160,9 @@ export default async function InjuryPatternsPage() {
     exposuresRaw ?? [],
     injuries.map((i) => ({
       date_of_injury: i.dateOfInjury,
+      actual_return_date: i.actualReturn,
+      expected_return_date: i.expectedReturn,
+      status: i.status,
       team_id: i.teamId,
       activity_type: i.activityType,
     }))

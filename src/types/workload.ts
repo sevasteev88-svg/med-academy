@@ -2,6 +2,39 @@ export type RpeScore = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 
 export type AttendanceStatus = "present" | "absent";
 
+export type Fifa11Status = "none" | "partial" | "full";
+
+export const FIFA11_STATUS_UA: Record<
+  Fifa11Status,
+  { label: string; shortLabel: string; colorClass: string }
+> = {
+  none: {
+    label: "Не виконувалась",
+    shortLabel: "Ні",
+    colorClass: "bg-slate-900 text-slate-400 border-slate-700",
+  },
+  partial: {
+    label: "Частково",
+    shortLabel: "Частково",
+    colorClass: "bg-amber-500/20 text-amber-300 border-amber-500/40",
+  },
+  full: {
+    label: "Повністю",
+    shortLabel: "Повністю",
+    colorClass: "bg-emerald-500/20 text-emerald-300 border-emerald-500/40",
+  },
+};
+
+export interface Fifa11ComplianceSummary {
+  totalSessions: number;
+  fullCount: number;
+  partialCount: number;
+  noneCount: number;
+  compliantCount: number;
+  compliancePercent: number;
+  fullPercent: number;
+}
+
 export type TrainingSessionType =
   | "match"
   | "training_team"
@@ -23,6 +56,7 @@ export type SessionRpeEntry = {
   player_rpe?: RpeScore | null;
   attendance_status?: AttendanceStatus;
   absence_reason?: string | null;
+  fifa11_status?: Fifa11Status;
   workload_au: number;
   notes?: string | null;
   created_at: string;
@@ -120,6 +154,7 @@ export type SaveTeamTrainingInput = {
   sessionType: TrainingSessionType;
   defaultMinutes: number;
   defaultRpe: RpeScore;
+  fifa11Status?: Fifa11Status;
   sessionNotes?: string;
   notifyTelegram?: boolean;
   players: {
@@ -249,5 +284,98 @@ export function calculateAcwr(
     titleUa: "Високе навантаження (ACWR ≥ 1.5) — орієнтир: спайк втоми",
     badgeClass: "bg-red-500/15 text-red-400 border-red-500/30 font-bold",
     isInsufficientData: false,
+  };
+}
+
+export function normalizeFifa11Status(value: unknown): Fifa11Status {
+  if (value === "full" || value === "partial" || value === "none") {
+    return value;
+  }
+  return "none";
+}
+
+export function extractFifa11StatusFromSession(row: {
+  fifa11_status?: unknown;
+  notes?: string | null;
+}): Fifa11Status {
+  if (row.fifa11_status === "full" || row.fifa11_status === "partial") {
+    return row.fifa11_status;
+  }
+  if (row.notes && typeof row.notes === "string" && row.notes.startsWith("[COACH_SESSION]")) {
+    try {
+      const parsed = JSON.parse(row.notes.replace("[COACH_SESSION]", "").trim());
+      if (parsed?.fifa11_status === "full" || parsed?.fifa11_status === "partial") {
+        return parsed.fifa11_status;
+      }
+    } catch {}
+  }
+  return normalizeFifa11Status(row.fifa11_status);
+}
+
+/**
+ * Розрахунок % тренувань з виконанням програми FIFA 11+ / 11+ Kids.
+ * Дедуплікує індивідуальні записи гравців до рівня командної сесії
+ * (за team_session_id або парою team_id + date), виключаючи матчі та дні відновлення.
+ */
+export function calculateFifa11Compliance(
+  sessions: Array<{
+    date: string;
+    team_id?: string | null;
+    team_session_id?: string | null;
+    session_type?: string | null;
+    fifa11_status?: unknown;
+    notes?: string | null;
+  }>
+): Fifa11ComplianceSummary {
+  const sessionMap = new Map<string, Fifa11Status>();
+
+  for (const s of sessions) {
+    if (s.session_type === "match" || s.session_type === "recovery") {
+      continue;
+    }
+
+    let parsedTeamId = s.team_id || null;
+    let parsedTeamSessionId = s.team_session_id || null;
+    if ((!parsedTeamId || !parsedTeamSessionId) && s.notes && typeof s.notes === "string" && s.notes.startsWith("[COACH_SESSION]")) {
+      try {
+        const parsed = JSON.parse(s.notes.replace("[COACH_SESSION]", "").trim());
+        parsedTeamId = parsedTeamId || parsed?.team_id || null;
+        parsedTeamSessionId = parsedTeamSessionId || parsed?.team_session_id || null;
+      } catch {}
+    }
+
+    const key = parsedTeamSessionId || `${parsedTeamId || "team"}_${s.date}`;
+    const status = extractFifa11StatusFromSession(s);
+    const prev = sessionMap.get(key);
+    // Якщо в одній сесії є записи, беремо найвищий статус (full > partial > none)
+    const rank: Record<Fifa11Status, number> = { none: 0, partial: 1, full: 2 };
+    if (!prev || rank[status] > rank[prev]) {
+      sessionMap.set(key, status);
+    }
+  }
+
+  let fullCount = 0;
+  let partialCount = 0;
+  let noneCount = 0;
+
+  for (const st of sessionMap.values()) {
+    if (st === "full") fullCount++;
+    else if (st === "partial") partialCount++;
+    else noneCount++;
+  }
+
+  const totalSessions = sessionMap.size;
+  const compliantCount = fullCount + partialCount;
+  const compliancePercent = totalSessions > 0 ? Math.round((compliantCount / totalSessions) * 100) : 0;
+  const fullPercent = totalSessions > 0 ? Math.round((fullCount / totalSessions) * 100) : 0;
+
+  return {
+    totalSessions,
+    fullCount,
+    partialCount,
+    noneCount,
+    compliantCount,
+    compliancePercent,
+    fullPercent,
   };
 }

@@ -457,4 +457,85 @@ describe("8.4 Світлофор готовності для тренера (Rea
       assert(typeof res.trendLast7Days[6].compositeScore === "number");
     });
   });
+
+  // 8. Ручна корекція «світлофора» готовності лікарем
+  describe("8. Ручна корекція «світлофора» готовності лікарем", () => {
+    it("перевизначає статус світлофора, зберігаючи вихідний розрахунок за анкетою", () => {
+      const history = generateHistoricalEntries(TODAY, 16);
+      const todayEntry = createMockEntry(TODAY, {
+        sleep_quality: 4,
+        fatigue: 4,
+        soreness: 4,
+      });
+
+      const res = evaluatePlayerReadiness({
+        todayDate: TODAY,
+        hasConsent: true,
+        hasActiveDevice: true,
+        entriesLast28Days: [...history, todayEntry],
+        forRole: "doctor",
+        manualOverride: {
+          status: "yellow",
+          reason: "Легке перевантаження після гри, рекомендовано обмеження спринтів",
+          overriddenByName: "Др. Іваненко",
+          overriddenAt: "2026-11-14T08:00:00.000Z",
+        },
+      });
+
+      assert.equal(res.status, "yellow");
+      assert.ok(res.manualOverride);
+      assert.equal(res.manualOverride.status, "yellow");
+      assert.equal(res.manualOverride.originalStatus, "green");
+      assert.equal(
+        res.manualOverride.reason,
+        "Легке перевантаження після гри, рекомендовано обмеження спринтів"
+      );
+    });
+
+    it("sanitizeReadinessForCoach приховує медичну причину корекції від тренера, але залишає бейдж", () => {
+      const history = generateHistoricalEntries(TODAY, 16);
+      const todayEntry = createMockEntry(TODAY, {
+        illness: true,
+      });
+
+      const raw = evaluatePlayerReadiness({
+        todayDate: TODAY,
+        hasConsent: true,
+        hasActiveDevice: true,
+        entriesLast28Days: [...history, todayEntry],
+        forRole: "doctor",
+        manualOverride: {
+          status: "red",
+          reason: "ГРВІ, температура 37.8",
+          overriddenByName: "Др. Іваненко",
+          overriddenAt: "2026-11-14T08:00:00.000Z",
+        },
+      });
+
+      const forCoach = sanitizeReadinessForCoach(raw);
+      assert.equal(forCoach.status, "red");
+      assert.ok(forCoach.manualOverride);
+      assert.equal(forCoach.manualOverride.status, "red");
+      assert.equal(forCoach.manualOverride.reason, null);
+    });
+
+    it("працює навіть коли гравець ще не заповнив анкету (gray -> red/yellow/green)", () => {
+      const res = evaluatePlayerReadiness({
+        todayDate: TODAY,
+        hasConsent: true,
+        hasActiveDevice: true,
+        entriesLast28Days: [],
+        forRole: "doctor",
+        manualOverride: {
+          status: "red",
+          reason: "Плановий медогляд у клініці",
+          overriddenAt: "2026-11-14T08:00:00.000Z",
+        },
+      });
+
+      assert.equal(res.status, "red");
+      assert.equal(res.grayReason, null);
+      assert.equal(res.manualOverride?.originalStatus, "gray");
+    });
+  });
 });

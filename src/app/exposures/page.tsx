@@ -35,7 +35,7 @@ export default async function ExposuresPage() {
       supabase
         .from("injuries")
         .select(`
-          id, activity_type, date_of_injury,
+          id, activity_type, date_of_injury, actual_return_date, expected_return_date, status,
           players ( team_id )
         `),
     ]);
@@ -70,6 +70,9 @@ export default async function ExposuresPage() {
     id: i.id,
     team_id: i.players?.team_id ?? null,
     date_of_injury: i.date_of_injury,
+    actual_return_date: i.actual_return_date ?? null,
+    expected_return_date: i.expected_return_date ?? null,
+    status: i.status ?? null,
     activity_type: i.activity_type ?? "training",
   }));
 

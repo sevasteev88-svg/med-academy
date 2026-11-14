@@ -2,7 +2,15 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import type { PlayerReadinessResult } from "@/lib/readiness";
+import type {
+  PlayerReadinessResult,
+  ManualReadinessColor,
+  ReadinessOverride,
+} from "@/lib/readiness";
+import {
+  overridePlayerReadinessAction,
+  clearPlayerReadinessOverrideAction,
+} from "@/actions/readiness-actions";
 import { WEARABLES_DISCLAIMER_TEXT } from "@/lib/wearables-constants";
 import { formatPainLocation } from "@/lib/dictionaries";
 import type { InjuryLocation, InjurySide, InjuryType } from "@/types/database";
@@ -129,6 +137,7 @@ export interface DoctorPlayerReadinessModalProps {
   player: PlayerReadinessResult;
   onClose: () => void;
   onAcknowledge?: (playerId: string, date: string) => void;
+  onOverrideSaved?: (playerId: string, override: ReadinessOverride | null) => void;
   isPendingAck?: boolean;
   initialDate?: string;
   userRole?: "coach" | "doctor" | "admin";
@@ -138,6 +147,7 @@ export function DoctorPlayerReadinessModal({
   player,
   onClose,
   onAcknowledge,
+  onOverrideSaved,
   isPendingAck,
   initialDate,
   userRole,
@@ -178,6 +188,86 @@ export function DoctorPlayerReadinessModal({
     details?.doctorRecommendation || null
   );
   const [isRefreshingReplies, setIsRefreshingReplies] = useState(false);
+
+  // Ручна корекція світлофора лікарем
+  const [overrideColor, setOverrideColor] = useState<ManualReadinessColor>(
+    player.manualOverride?.status ||
+      (player.status === "green" || player.status === "yellow" || player.status === "red"
+        ? player.status
+        : "yellow")
+  );
+  const [overrideReason, setOverrideReason] = useState<string>(
+    player.manualOverride?.reason || ""
+  );
+  const [isSavingOverride, setIsSavingOverride] = useState(false);
+  const [overrideFeedback, setOverrideFeedback] = useState<{
+    success?: boolean;
+    msg?: string;
+  } | null>(null);
+
+  const handleSaveOverride = async () => {
+    if (overrideReason.trim().length < 5) {
+      setOverrideFeedback({
+        success: false,
+        msg: "Вкажіть причину корекції (щонайменше 5 символів)",
+      });
+      return;
+    }
+    setIsSavingOverride(true);
+    setOverrideFeedback(null);
+    try {
+      const res = await overridePlayerReadinessAction({
+        playerId: player.playerId,
+        date: activeDate,
+        status: overrideColor,
+        reason: overrideReason.trim(),
+      });
+      if (res.success && res.override) {
+        setOverrideFeedback({
+          success: true,
+          msg: "Статус світлофора скориговано та записано в журнал аудиту.",
+        });
+        onOverrideSaved?.(player.playerId, res.override);
+      } else {
+        setOverrideFeedback({
+          success: false,
+          msg: res.error || "Помилка збереження корекції",
+        });
+      }
+    } catch (e: any) {
+      setOverrideFeedback({ success: false, msg: e?.message || "Помилка мережі" });
+    } finally {
+      setIsSavingOverride(false);
+    }
+  };
+
+  const handleClearOverride = async () => {
+    setIsSavingOverride(true);
+    setOverrideFeedback(null);
+    try {
+      const res = await clearPlayerReadinessOverrideAction({
+        playerId: player.playerId,
+        date: activeDate,
+      });
+      if (res.success) {
+        setOverrideReason("");
+        setOverrideFeedback({
+          success: true,
+          msg: "Корекцію скасовано — відновлено автоматичний розрахунок за анкетою.",
+        });
+        onOverrideSaved?.(player.playerId, null);
+      } else {
+        setOverrideFeedback({
+          success: false,
+          msg: res.error || "Помилка скасування корекції",
+        });
+      }
+    } catch (e: any) {
+      setOverrideFeedback({ success: false, msg: e?.message || "Помилка мережі" });
+    } finally {
+      setIsSavingOverride(false);
+    }
+  };
 
   const fetchLatestRecommendation = React.useCallback(async () => {
     if (!player.playerId || !activeDate) return;
@@ -1064,6 +1154,89 @@ export function DoctorPlayerReadinessModal({
             </div>
           )}
         </div>
+
+        {/* РУЧНА КОРЕКЦІЯ СВІТЛОФОРА ЛІКАРЕМ (ТІЛЬКИ DOCTOR/ADMIN) */}
+        {isDoctorOrAdmin && isSelectedToday && (
+          <div className="p-4 rounded-2xl bg-slate-950/80 border border-sky-500/25 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-base">🩺</span>
+                <span className="text-xs font-bold uppercase tracking-wider text-sky-300">
+                  Ручна корекція світлофора лікарем
+                </span>
+              </div>
+              {player.manualOverride && (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/40">
+                  Скориговано лікарем · Було: {player.manualOverride.originalStatusLabel}
+                </span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              {(
+                [
+                  { key: "green", label: "🟢 Зелений", active: "bg-emerald-500/20 border-emerald-400 text-emerald-200" },
+                  { key: "yellow", label: "🟡 Жовтий", active: "bg-amber-500/20 border-amber-400 text-amber-200" },
+                  { key: "red", label: "🔴 Червоний", active: "bg-rose-500/20 border-rose-400 text-rose-200" },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => setOverrideColor(opt.key)}
+                  className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                    overrideColor === opt.key
+                      ? opt.active
+                      : "bg-slate-900 border-slate-800 text-slate-400 hover:text-white"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="space-y-2">
+              <input
+                type="text"
+                value={overrideReason}
+                onChange={(e) => setOverrideReason(e.target.value)}
+                placeholder="Обов'язкова причина корекції (мін. 5 символів — тренер не бачить медичну причину)"
+                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-sky-500 focus:outline-none"
+              />
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  disabled={isSavingOverride}
+                  onClick={handleSaveOverride}
+                  className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold transition-colors disabled:opacity-50 cursor-pointer"
+                >
+                  {isSavingOverride ? "Збереження..." : "Застосувати корекцію"}
+                </button>
+                {player.manualOverride && (
+                  <button
+                    type="button"
+                    disabled={isSavingOverride}
+                    onClick={handleClearOverride}
+                    className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors disabled:opacity-50 cursor-pointer"
+                  >
+                    Скинути до авторозрахунку
+                  </button>
+                )}
+              </div>
+              {overrideFeedback && (
+                <div
+                  className={`text-xs px-3 py-2 rounded-xl border ${
+                    overrideFeedback.success
+                      ? "bg-emerald-950/40 border-emerald-500/40 text-emerald-300"
+                      : "bg-rose-950/40 border-rose-500/40 text-rose-300"
+                  }`}
+                >
+                  {overrideFeedback.msg}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* FOOTER */}
         <div className="flex justify-end pt-2 border-t border-slate-800">

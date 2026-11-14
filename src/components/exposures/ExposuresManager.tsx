@@ -255,8 +255,8 @@ export default function ExposuresManager({
 
   return (
     <div className="space-y-6">
-      {/* KPI Cards: Експозиція та захворюваність на 1000 годин */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
+      {/* KPI Cards: Експозиція, захворюваність та тягар травм (Injury Burden) */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3.5">
         <div className="bg-slate-900/60 backdrop-blur-md border border-sky-500/15 rounded-2xl p-4">
           <div className="text-[10px] uppercase font-mono tracking-wider text-slate-400 mb-1">
             Загальна експозиція
@@ -279,6 +279,9 @@ export default function ExposuresManager({
           <div className="text-[10px] text-slate-400 mt-1">
             Інцидентність: {currentMetrics.trainingDisplayLabel}
           </div>
+          <div className="text-[10px] text-slate-500 mt-0.5">
+            Тягар: {currentMetrics.trainingBurdenDisplayLabel}
+          </div>
         </div>
 
         <div className="bg-slate-900/60 backdrop-blur-md border border-sky-500/15 rounded-2xl p-4">
@@ -290,6 +293,9 @@ export default function ExposuresManager({
           </div>
           <div className="text-[10px] text-slate-400 mt-1">
             Інцидентність: {currentMetrics.matchDisplayLabel}
+          </div>
+          <div className="text-[10px] text-slate-500 mt-0.5">
+            Тягар: {currentMetrics.matchBurdenDisplayLabel}
           </div>
         </div>
 
@@ -310,6 +316,26 @@ export default function ExposuresManager({
           </div>
           <div className="text-[10px] text-slate-400 mt-1">
             {currentMetrics.totalInjuries} травм у періоді
+          </div>
+        </div>
+
+        <div className={`bg-slate-900/60 backdrop-blur-md border rounded-2xl p-4 col-span-2 md:col-span-1 ${
+          currentMetrics.hasSufficientData ? "border-rose-500/30" : "border-slate-800"
+        }`}>
+          <div className="text-[10px] uppercase font-mono tracking-wider text-rose-400 mb-1 font-bold">
+            Тягар травм (Injury Burden)
+          </div>
+          <div className="text-xl md:text-2xl font-black font-mono text-white truncate">
+            {currentMetrics.hasSufficientData && currentMetrics.overallBurden != null ? (
+              <span>{currentMetrics.overallBurden.toFixed(1)} <span className="text-xs text-slate-400 font-sans">дн. / 1000 год</span></span>
+            ) : (
+              <span className="text-xs text-slate-400 font-normal leading-tight block">
+                {INSUFFICIENT_EXPOSURE_DATA_MSG}
+              </span>
+            )}
+          </div>
+          <div className="text-[10px] text-slate-400 mt-1">
+            {currentMetrics.totalTimeLossDays} дн. простою у періоді
           </div>
         </div>
       </div>

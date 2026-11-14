@@ -16,6 +16,8 @@ import { sendPostSessionRemindersAction } from "./telegram-actions";
 import type {
   TrainingSessionType,
   RpeScore,
+  Fifa11Status,
+  Fifa11ComplianceSummary,
   SaveTeamTrainingInput,
   TeamTrainingPlayerItem,
   SessionRpeEntry,
@@ -23,7 +25,13 @@ import type {
   PlayerSessionFeedbackInput,
   PlayerTodaySession,
 } from "@/types/workload";
-import { SORENESS_LOCATIONS, SESSION_TYPE_UA } from "@/types/workload";
+import {
+  SORENESS_LOCATIONS,
+  SESSION_TYPE_UA,
+  calculateFifa11Compliance,
+  extractFifa11StatusFromSession,
+  normalizeFifa11Status,
+} from "@/types/workload";
 
 export type TeamTrainingScreenData = {
   success: boolean;
@@ -38,9 +46,11 @@ export type TeamTrainingScreenData = {
     sessionType: TrainingSessionType;
     defaultMinutes: number;
     defaultRpe: RpeScore;
+    fifa11Status: Fifa11Status;
     sessionNotes: string;
     loggedAt: string;
   } | null;
+  fifa11Summary?: Fifa11ComplianceSummary;
   error?: string;
 };
 
@@ -171,6 +181,7 @@ export async function getTeamTrainingDataAction(params?: {
             absence_reason: parsedNotes?.absence_reason ?? null,
             team_session_id: parsedNotes?.team_session_id ?? null,
             session_type: parsedNotes?.session_type ?? s.session_type,
+            fifa11_status: extractFifa11StatusFromSession(s),
             cleanNotes: parsedNotes?.notes ?? (s.notes?.startsWith("[COACH_SESSION]") ? "" : s.notes),
             player_feedback: parsedNotes?.player_feedback ?? null,
           };
@@ -259,10 +270,36 @@ export async function getTeamTrainingDataAction(params?: {
         sessionType: (firstExisting.session_type as TrainingSessionType) || "training_team",
         defaultMinutes: firstExisting.duration_minutes || 75,
         defaultRpe: (firstExisting.coach_rpe ?? firstExisting.rpe_score ?? 6) as RpeScore,
+        fifa11Status: normalizeFifa11Status(firstExisting.fifa11_status),
         sessionNotes: (firstExisting.cleanNotes ?? (firstExisting.notes?.startsWith("[COACH_SESSION]") ? "" : firstExisting.notes)) || "",
         loggedAt: firstExisting.created_at || new Date().toISOString(),
       }
     : null;
+
+  // 6. Зведення виконання FIFA 11+ / 11+ Kids по команді
+  let fifa11Summary: Fifa11ComplianceSummary = {
+    totalSessions: 0,
+    fullCount: 0,
+    partialCount: 0,
+    noneCount: 0,
+    compliantCount: 0,
+    compliancePercent: 0,
+    fullPercent: 0,
+  };
+  if (playerIds.length > 0) {
+    try {
+      const { data: recentTeamSessions } = await supabase
+        .from("workload_sessions")
+        .select("*")
+        .in("player_id", playerIds)
+        .order("date", { ascending: false })
+        .limit(500);
+
+      if (recentTeamSessions && recentTeamSessions.length > 0) {
+        fifa11Summary = calculateFifa11Compliance(recentTeamSessions);
+      }
+    } catch {}
+  }
 
   return {
     success: true,
@@ -273,6 +310,7 @@ export async function getTeamTrainingDataAction(params?: {
     userRole: effectiveRole,
     players,
     existingSession,
+    fifa11Summary,
   };
 }
 
@@ -296,6 +334,7 @@ export async function saveTeamTrainingAction(input: SaveTeamTrainingInput) {
 
   const teamSessionId = `team_sess_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const nowIso = new Date().toISOString();
+  const fifa11Status = normalizeFifa11Status(input.fifa11Status);
 
   let savedCount = 0;
   let presentCount = 0;
@@ -349,6 +388,7 @@ export async function saveTeamTrainingAction(input: SaveTeamTrainingInput) {
       player_rpe: (playerRpe as RpeScore) ?? null,
       attendance_status: isPresent ? "present" : "absent",
       absence_reason: !isPresent ? (item.absenceReason?.trim() || "unspecified") : null,
+      fifa11_status: fifa11Status,
       workload_au: workloadAu,
       notes: item.notes?.trim() || input.sessionNotes?.trim() || null,
       created_at: nowIso,
@@ -369,17 +409,36 @@ export async function saveTeamTrainingAction(input: SaveTeamTrainingInput) {
       const { error: wErr } = await supabase.from("workload_sessions").insert({
         id: sessionPayload.id,
         club_id: clubId,
+        team_id: input.teamId,
+        team_session_id: teamSessionId,
         player_id: item.playerId,
         date: input.date,
         session_type: input.sessionType,
         duration_minutes: duration,
         rpe_score: Math.max(1, rpe),
+        fifa11_status: fifa11Status,
         workload_au: workloadAu,
         notes: `[COACH_SESSION] ${JSON.stringify(sessionPayload)}`,
       } as any);
 
       if (!wErr) {
         insertSuccess = true;
+      } else {
+        // Fallback на випадок, якщо в БД ще не застосовані колонки team_id/fifa11_status
+        const { error: baseErr } = await supabase.from("workload_sessions").insert({
+          id: sessionPayload.id,
+          club_id: clubId,
+          player_id: item.playerId,
+          date: input.date,
+          session_type: input.sessionType,
+          duration_minutes: duration,
+          rpe_score: Math.max(1, rpe),
+          workload_au: workloadAu,
+          notes: `[COACH_SESSION] ${JSON.stringify(sessionPayload)}`,
+        } as any);
+        if (!baseErr) {
+          insertSuccess = true;
+        }
       }
     } catch {}
 
@@ -439,6 +498,7 @@ export async function saveTeamTrainingAction(input: SaveTeamTrainingInput) {
       date: input.date,
       defaultMinutes: input.defaultMinutes,
       defaultRpe: input.defaultRpe,
+      fifa11Status,
       totalPlayers: input.players.length,
       savedCount,
       presentCount,

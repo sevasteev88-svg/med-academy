@@ -28,6 +28,8 @@ import {
   evaluatePlayerReadiness,
   sanitizeReadinessForCoach,
   type PlayerReadinessResult,
+  type ManualReadinessColor,
+  type ReadinessOverride,
 } from "@/lib/readiness";
 import { isSubscriptionAccessGranted } from "@/lib/billing";
 import type { WellnessEntry, TeamComplianceStats } from "@/types/wellness";
@@ -161,6 +163,165 @@ export async function saveClubReadinessConfigAction(input: {
     return { success: true, config: newConfig };
   } catch (err: any) {
     return { success: false, error: err.message || "Помилка збереження" };
+  }
+}
+
+/**
+ * Ручна корекція «світлофора» готовності гравця на конкретну дату лікарем або адміном.
+ * Вимагає обов'язкову причину (мін. 5 символів) і фіксує дію в audit_log.
+ */
+export async function overridePlayerReadinessAction(input: {
+  playerId: string;
+  date?: string;
+  status: ManualReadinessColor;
+  reason: string;
+}): Promise<{
+  success: boolean;
+  override?: ReadinessOverride;
+  error?: string;
+}> {
+  const authRes = await assertDoctor();
+  if ("error" in authRes) {
+    return { success: false, error: authRes.error };
+  }
+
+  if (input.status !== "green" && input.status !== "yellow" && input.status !== "red") {
+    return { success: false, error: "Некоректний статус світлофора" };
+  }
+
+  const trimmedReason = (input.reason || "").trim();
+  if (trimmedReason.length < 5) {
+    return {
+      success: false,
+      error: "Причина корекції має містити щонайменше 5 символів",
+    };
+  }
+
+  const { user } = authRes;
+  const clubId = user.clubId || DEFAULT_CLUB_ID;
+  const timezone = await getClubTimezone(clubId);
+  const targetDate = input.date || getClubDate(timezone);
+  const nowIso = new Date().toISOString();
+  const doctorName = user.fullName || "Лікар клубу";
+  const supabase = createAdminClient();
+
+  try {
+    const { data: club } = await supabase
+      .from("clubs")
+      .select("settings")
+      .eq("id", clubId)
+      .maybeSingle();
+
+    const curr = (club as any)?.settings || {};
+    const overrides = curr.readiness_overrides || {};
+    const overrideKey = `${input.playerId}_${targetDate}`;
+    const newOverride: ReadinessOverride = {
+      status: input.status,
+      reason: trimmedReason,
+      overriddenByName: doctorName,
+      overriddenById: user.id,
+      overriddenAt: nowIso,
+    };
+    overrides[overrideKey] = newOverride;
+
+    const { error: updateErr } = await supabase
+      .from("clubs")
+      .update({
+        settings: {
+          ...curr,
+          readiness_overrides: overrides,
+        },
+      } as any)
+      .eq("id", clubId);
+
+    if (updateErr) {
+      return { success: false, error: updateErr.message };
+    }
+
+    await logAudit({
+      action: "override_readiness_status",
+      entity: "readiness_overrides",
+      entityId: input.playerId,
+      userId: user.id,
+      clubId,
+      meta: {
+        date: targetDate,
+        status: input.status,
+        reason: trimmedReason,
+        doctorName,
+      },
+    });
+
+    revalidatePath("/team/readiness");
+    revalidatePath("/coach-briefing");
+    revalidatePath("/");
+
+    return { success: true, override: newOverride };
+  } catch (err: any) {
+    return { success: false, error: err?.message || "Помилка збереження корекції" };
+  }
+}
+
+/**
+ * Скасування ручної корекції «світлофора» лікарем (повернення до розрахунку за анкетою).
+ */
+export async function clearPlayerReadinessOverrideAction(input: {
+  playerId: string;
+  date?: string;
+}): Promise<{ success: boolean; error?: string }> {
+  const authRes = await assertDoctor();
+  if ("error" in authRes) {
+    return { success: false, error: authRes.error };
+  }
+
+  const { user } = authRes;
+  const clubId = user.clubId || DEFAULT_CLUB_ID;
+  const timezone = await getClubTimezone(clubId);
+  const targetDate = input.date || getClubDate(timezone);
+  const supabase = createAdminClient();
+
+  try {
+    const { data: club } = await supabase
+      .from("clubs")
+      .select("settings")
+      .eq("id", clubId)
+      .maybeSingle();
+
+    const curr = (club as any)?.settings || {};
+    const overrides = { ...(curr.readiness_overrides || {}) };
+    const overrideKey = `${input.playerId}_${targetDate}`;
+    delete overrides[overrideKey];
+
+    const { error: updateErr } = await supabase
+      .from("clubs")
+      .update({
+        settings: {
+          ...curr,
+          readiness_overrides: overrides,
+        },
+      } as any)
+      .eq("id", clubId);
+
+    if (updateErr) {
+      return { success: false, error: updateErr.message };
+    }
+
+    await logAudit({
+      action: "clear_readiness_override",
+      entity: "readiness_overrides",
+      entityId: input.playerId,
+      userId: user.id,
+      clubId,
+      meta: { date: targetDate },
+    });
+
+    revalidatePath("/team/readiness");
+    revalidatePath("/coach-briefing");
+    revalidatePath("/");
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || "Помилка скасування корекції" };
   }
 }
 
@@ -411,8 +572,9 @@ export async function getTeamReadinessAction(params?: {
   // 3. Конфігурація клубу
   const config = await getClubReadinessConfigAction();
 
-  // Отримуємо збережені acknowledgements із налаштувань клубу для максимальної надійності
+  // Отримуємо збережені acknowledgements та ручні корекції із налаштувань клубу
   let clubAcknowledgements: Record<string, any> = {};
+  let clubOverrides: Record<string, ReadinessOverride> = {};
   try {
     const { data: clubData } = await supabase
       .from("clubs")
@@ -420,6 +582,7 @@ export async function getTeamReadinessAction(params?: {
       .eq("id", user.clubId || DEFAULT_CLUB_ID)
       .maybeSingle();
     clubAcknowledgements = (clubData as any)?.settings?.wellness_acknowledgements || {};
+    clubOverrides = (clubData as any)?.settings?.readiness_overrides || {};
   } catch {}
 
   // 4. Отримуємо гравців обраної команди
@@ -683,6 +846,7 @@ export async function getTeamReadinessAction(params?: {
         teamName: (p.teams as any)?.name || undefined,
       },
       wearablesReport: pWearablesReport,
+      manualOverride: clubOverrides[`${p.id}_${today}`] || null,
     });
 
     if (isCoachUser) {

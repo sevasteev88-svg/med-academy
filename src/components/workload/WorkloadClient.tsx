@@ -8,6 +8,7 @@ import {
   type TrainingSessionType,
   type SessionRpeEntry,
   type PlayerWorkloadSummary,
+  type Fifa11ComplianceSummary,
   BORG_CR10_SCALE,
   SESSION_TYPE_UA,
   calculateAcwr,
@@ -27,6 +28,7 @@ type Props = {
   summaries: PlayerWorkloadSummary[];
   recentEntries: (SessionRpeEntry & { playerName?: string; teamName?: string })[];
   defaultPlayerId?: string;
+  fifa11Summary?: Fifa11ComplianceSummary;
 };
 
 export default function WorkloadClient({
@@ -34,6 +36,7 @@ export default function WorkloadClient({
   summaries,
   recentEntries,
   defaultPlayerId,
+  fifa11Summary,
 }: Props) {
   const [selectedPlayerId, setSelectedPlayerId] = useState<string>(
     defaultPlayerId || (players[0]?.id ?? "")
@@ -103,8 +106,8 @@ export default function WorkloadClient({
 
   return (
     <div className="space-y-6">
-      {/* Top Banner & Quick Stats (5 карток, включаючи категорію "Немає даних" за правилом 3.1) */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+      {/* Top Banner & Quick Stats (6 карток, включаючи "Немає даних" та FIFA 11+) */}
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
         <div className="bg-slate-900/90 border border-blue-900/20 rounded-xl p-4">
           <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1">
             Гравців у базі
@@ -140,13 +143,28 @@ export default function WorkloadClient({
           <div className="text-xs text-red-400/80 mt-1">ACWR ≥ 1.5 (Орієнтир втоми)</div>
         </div>
 
-        <div className="bg-slate-900/90 border border-slate-700/60 rounded-xl p-4 col-span-2 lg:col-span-1">
+        <div className="bg-slate-900/90 border border-slate-700/60 rounded-xl p-4">
           <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-between">
             <span>Немає даних</span>
             <span>⚪</span>
           </div>
           <div className="text-2xl font-black text-slate-300">{insufficientCount}</div>
           <div className="text-xs text-slate-500 mt-1">&lt;28 днів спостереження</div>
+        </div>
+
+        <div className="bg-emerald-950/15 border border-emerald-500/25 rounded-xl p-4">
+          <div className="text-[11px] font-semibold text-emerald-400 uppercase tracking-wider mb-1 flex items-center justify-between">
+            <span>FIFA 11+</span>
+            <span>🛡️</span>
+          </div>
+          <div className="text-2xl font-black text-emerald-300">
+            {fifa11Summary ? `${fifa11Summary.compliancePercent}%` : "0%"}
+          </div>
+          <div className="text-xs text-slate-400 mt-1">
+            {fifa11Summary && fifa11Summary.totalSessions > 0
+              ? `${fifa11Summary.compliantCount}/${fifa11Summary.totalSessions} тренувань`
+              : "Немає сесій"}
+          </div>
         </div>
       </div>
 
