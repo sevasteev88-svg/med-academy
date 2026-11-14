@@ -29,6 +29,7 @@ export async function middleware(request: NextRequest) {
     path.startsWith("/rehab-portal") ||
     path.startsWith("/consent/") ||
     path.startsWith("/a/") ||
+    path.startsWith("/auth/") ||
     path.startsWith("/tg-coach") ||
     path.startsWith("/api/tg-coach") ||
     path.startsWith("/api/telegram/webhook")

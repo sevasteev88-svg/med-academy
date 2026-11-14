@@ -273,9 +273,9 @@ export async function sendCoachMorningDigestAction(params: {
       // Отримуємо всіх активних гравців цієї команди
       const { data: players } = await supabase
         .from("players")
-        .select("id, first_name, last_name, status")
+        .select("id, first_name, last_name, archived_at")
         .eq("team_id", team.id)
-        .neq("status", "archived")
+        .is("archived_at", null)
         .order("last_name", { ascending: true });
 
       const teamPlayers = players || [];

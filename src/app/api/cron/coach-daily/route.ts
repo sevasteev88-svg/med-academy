@@ -5,11 +5,15 @@ import { sendCoachMorningDigestAction, getCoachSession } from "@/actions/coach-t
 export const dynamic = "force-dynamic";
 
 function getPublicAppUrl(): string {
+  const envAppUrl = process.env.NEXT_PUBLIC_APP_URL || "";
+  const vercelProd = process.env.VERCEL_PROJECT_PRODUCTION_URL || "";
+  const vercelUrl = process.env.VERCEL_URL || "";
+  const isLocal = (u: string) => u.includes("localhost") || u.includes("127.0.0.1");
   const raw =
-    process.env.NEXT_PUBLIC_APP_URL ||
-    process.env.VERCEL_PROJECT_PRODUCTION_URL ||
-    process.env.VERCEL_URL ||
-    "";
+    (envAppUrl && !(process.env.VERCEL && isLocal(envAppUrl)) ? envAppUrl : "") ||
+    vercelProd ||
+    vercelUrl ||
+    envAppUrl;
   if (!raw) return "";
   return raw.startsWith("http") ? raw.replace(/\/$/, "") : `https://${raw.replace(/\/$/, "")}`;
 }

@@ -12,11 +12,18 @@ import type { TrainingSessionType, RpeScore } from "@/types/workload";
 const botToken = () => process.env.TELEGRAM_BOT_TOKEN || "";
 
 function getPublicAppUrl(): string {
+  const envAppUrl = process.env.NEXT_PUBLIC_APP_URL || "";
+  const vercelProd = process.env.VERCEL_PROJECT_PRODUCTION_URL || "";
+  const vercelUrl = process.env.VERCEL_URL || "";
+
+  // На Vercel ігноруємо випадковий localhost у NEXT_PUBLIC_APP_URL
+  const isLocal = (u: string) => u.includes("localhost") || u.includes("127.0.0.1");
   const raw =
-    process.env.NEXT_PUBLIC_APP_URL ||
-    process.env.VERCEL_PROJECT_PRODUCTION_URL ||
-    process.env.VERCEL_URL ||
-    "";
+    (envAppUrl && !(process.env.VERCEL && isLocal(envAppUrl)) ? envAppUrl : "") ||
+    vercelProd ||
+    vercelUrl ||
+    envAppUrl;
+
   if (!raw) return "";
   return raw.startsWith("http") ? raw.replace(/\/$/, "") : `https://${raw.replace(/\/$/, "")}`;
 }
@@ -474,8 +481,13 @@ export async function processCoachCallbackQuery(
       options: appUrl ? { redirectTo: `${appUrl}/coach-briefing` } : undefined,
     });
 
-    const actionLink = linkData?.properties?.action_link;
-    if (linkErr || !actionLink) {
+    const hashedToken = linkData?.properties?.hashed_token;
+    const directConfirmUrl =
+      appUrl && hashedToken
+        ? `${appUrl}/auth/confirm?token_hash=${encodeURIComponent(hashedToken)}&type=magiclink&next=${encodeURIComponent("/coach-briefing")}`
+        : linkData?.properties?.action_link;
+
+    if (linkErr || !directConfirmUrl) {
       await sendOrEditMessage({
         chatId,
         messageId,
@@ -495,7 +507,7 @@ export async function processCoachCallbackQuery(
         `Натисніть кнопку нижче — кабінет відкриється вже авторизованим (посилання одноразове):`,
       replyMarkup: {
         inline_keyboard: [
-          [{ text: "🚀 Відкрити веб-кабінет", url: actionLink }],
+          [{ text: "🚀 Відкрити веб-кабінет", url: directConfirmUrl }],
           [{ text: "🏠 Головне меню", callback_data: "coach_main_menu" }],
         ],
       },
