@@ -281,15 +281,56 @@ export async function sendCoachMorningDigestAction(params: {
       const teamPlayers = players || [];
       const playerIds = teamPlayers.map((p) => p.id);
 
-      // Отримуємо сьогоднішні велнес-записи
-      const { data: wellnessRecords } = await supabase
-        .from("wellness_entries")
-        .select("*")
-        .in("player_id", playerIds)
-        .eq("date", dateStr);
+      // Отримуємо сьогоднішні велнес-записи з усіх джерел (wellness_entries + wellness_surveys + clubs.settings.wellness_entries_store)
+      const [weRes, wsRes, teamClubRes] = await Promise.all([
+        supabase
+          .from("wellness_entries")
+          .select("*")
+          .in("player_id", playerIds)
+          .eq("date", dateStr),
+        supabase
+          .from("wellness_surveys")
+          .select("*")
+          .in("player_id", playerIds)
+          .eq("date", dateStr),
+        supabase
+          .from("teams")
+          .select("club_id, clubs ( settings )")
+          .eq("id", team.id)
+          .maybeSingle(),
+      ]);
 
       const wellnessMap = new Map<string, any>();
-      (wellnessRecords || []).forEach((w) => wellnessMap.set(w.player_id, w));
+      (weRes.data || []).forEach((w: any) => wellnessMap.set(w.player_id, w));
+
+      for (const s of wsRes.data || []) {
+        if (!wellnessMap.has(s.player_id)) {
+          let extra: any = {};
+          if (s.notes && typeof s.notes === "string" && s.notes.startsWith("{")) {
+            try { extra = JSON.parse(s.notes); } catch {}
+          }
+          wellnessMap.set(s.player_id, {
+            player_id: s.player_id,
+            date: s.date,
+            sleep_quality: s.sleep_quality,
+            fatigue: s.fatigue_level,
+            soreness: s.muscle_soreness,
+            stress: s.stress_level,
+            sleep_hours: extra.sleep_hours ?? null,
+            pain: Boolean(extra.pain),
+            pain_vas: extra.pain_vas ?? null,
+            illness: Boolean(extra.illness),
+            comment: extra.comment || (s.notes?.startsWith("{") ? null : s.notes),
+          });
+        }
+      }
+
+      const storedMap = ((teamClubRes.data as any)?.clubs?.settings?.wellness_entries_store || {}) as Record<string, any>;
+      for (const entry of Object.values(storedMap)) {
+        if (entry?.date === dateStr && entry?.player_id && !wellnessMap.has(entry.player_id)) {
+          wellnessMap.set(entry.player_id, entry);
+        }
+      }
 
       const redGroup: { name: string; note: string }[] = [];
       const yellowGroup: { name: string; note: string }[] = [];
@@ -305,26 +346,37 @@ export async function sendCoachMorningDigestAction(params: {
           continue;
         }
 
-        // Оцінка стану (світлофор)
-        const painScore = Number(w.soreness_score || w.pain_score || 0);
-        const fatigueScore = Number(w.fatigue_score || 0);
-        const sleepHours = Number(w.sleep_hours || 8);
-        const readinessPct = Number(w.readiness_score || 75);
+        // Оцінка стану за реальними полями WellnessEntry (1-5 де 5=добре, pain_vas 0-10)
+        const painVas = Number(w.pain_vas ?? w.soreness_score ?? w.pain_score ?? 0);
+        const hasPain = Boolean(w.pain) || painVas > 0;
+        const isIll = Boolean(w.illness);
+        const sleepHours = w.sleep_hours != null ? Number(w.sleep_hours) : null;
+        const fatigue = w.fatigue != null ? Number(w.fatigue) : null; // 1-5 (1=дуже втомлений)
+        const soreness = w.soreness != null ? Number(w.soreness) : null; // 1-5 (1=сильна крепатура)
+        const sleepQuality = w.sleep_quality != null ? Number(w.sleep_quality) : null; // 1-5
 
-        // Червоний прапорець: біль > 3, сон < 5 годин, або readiness < 45%
-        if (painScore >= 4 || sleepHours <= 5 || readinessPct < 45 || w.has_injury_alert) {
+        if ((hasPain && painVas >= 5) || isIll || (sleepHours !== null && sleepHours <= 5) || w.has_injury_alert) {
           const reasons: string[] = [];
-          if (painScore >= 4) reasons.push(`біль ${painScore}/10`);
-          if (sleepHours <= 5) reasons.push(`сон ${sleepHours} год`);
-          if (w.injury_description) reasons.push(w.injury_description);
+          if (hasPain && painVas >= 5) reasons.push(`біль ВАШ ${painVas}/10`);
+          if (isIll) reasons.push("нездужання");
+          if (sleepHours !== null && sleepHours <= 5) reasons.push(`сон ${sleepHours} год`);
           redGroup.push({
             name: pName,
-            note: reasons.length > 0 ? reasons.join(", ") : "високий рівень втоми",
+            note: reasons.length > 0 ? reasons.join(", ") : "потребує уваги лікаря",
           });
-        } else if (painScore === 3 || fatigueScore >= 4 || (readinessPct >= 45 && readinessPct < 65)) {
+        } else if (
+          (hasPain && painVas >= 3) ||
+          (fatigue !== null && fatigue <= 2) ||
+          (soreness !== null && soreness <= 2) ||
+          (sleepQuality !== null && sleepQuality <= 2)
+        ) {
+          const notes: string[] = [];
+          if (hasPain && painVas >= 3) notes.push(`біль ${painVas}/10`);
+          if (fatigue !== null && fatigue <= 2) notes.push("підвищена втома");
+          if (soreness !== null && soreness <= 2) notes.push("крепатура");
           yellowGroup.push({
             name: pName,
-            note: fatigueScore >= 4 ? "підвищена втома" : "дискомфорт у м'язах",
+            note: notes.length > 0 ? notes.join(", ") : "легкий дискомфорт",
           });
         } else {
           greenGroup.push(pName);
