@@ -185,7 +185,7 @@ export default function AppNav({
   role,
   userName,
   clubName = "MedAcademy",
-  alerts: initialAlerts = [],
+  alerts: initialAlerts,
 }: {
   role: string;
   userName: string;
@@ -195,11 +195,11 @@ export default function AppNav({
   const pathname = usePathname();
   const [isPending, startTransition] = useTransition();
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
-  const [alerts, setAlerts] = useState<RiskAlertItem[]>(initialAlerts);
+  const [alerts, setAlerts] = useState<RiskAlertItem[]>(initialAlerts ?? []);
 
   // Асинхронне підвантаження алертів з кешем 60с, щоб не блокувати навігацію між меню
   useEffect(() => {
-    if (initialAlerts.length > 0) {
+    if (initialAlerts && initialAlerts.length > 0) {
       setAlerts(initialAlerts);
       return;
     }
@@ -231,7 +231,7 @@ export default function AppNav({
     return () => {
       cancelled = true;
     };
-  }, [role, initialAlerts]);
+  }, [role]);
 
   // Дворівневий сайдбар для десктопу
   const [flyoutGroupId, setFlyoutGroupId] = useState<string | null>(null);
