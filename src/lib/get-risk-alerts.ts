@@ -1,11 +1,15 @@
 import { cache } from "react";
 import { createClient } from "@/utils/supabase/server";
+import { getCurrentUser } from "@/lib/auth";
 import type { RiskAlertItem } from "@/components/alerts/RiskAlertsCenter";
 import type { WearableBiometricsEntry } from "@/types/wearables";
 import { getPharmacyStockAction } from "@/actions/pharmacy-actions";
 import { getExpiryStatus } from "@/types/pharmacy";
 
 export const getRiskAlerts = cache(async (options?: { includePharmacy?: boolean }): Promise<RiskAlertItem[]> => {
+  const user = await getCurrentUser();
+  if (!user) return [];
+
   const supabase = await createClient();
   const includePharmacy = options?.includePharmacy ?? true;
 
@@ -13,10 +17,12 @@ export const getRiskAlerts = cache(async (options?: { includePharmacy?: boolean 
     supabase
       .from("players")
       .select("id, first_name, last_name, position, team_id, teams ( id, name )")
+      .eq("club_id", user.clubId)
       .is("archived_at", null),
     supabase
       .from("injuries")
       .select("id, player_id, injury_type, description, location, vas_score, status, date_of_injury, expected_return_date")
+      .eq("club_id", user.clubId)
       .in("status", ["active", "rehabilitation"]),
     supabase
       .from("maturation_assessments")
@@ -26,6 +32,7 @@ export const getRiskAlerts = cache(async (options?: { includePharmacy?: boolean 
     supabase
       .from("injury_logs")
       .select("note, date")
+      .eq("club_id", user.clubId)
       .like("note", "[WEARABLE]%")
       .order("date", { ascending: false })
       .limit(30),

@@ -5,6 +5,7 @@ import AppNav from "@/components/layout/AppNav";
 import PwaRegister from "@/components/layout/PwaRegister";
 import DemoModeBanner from "@/components/layout/DemoModeBanner";
 import { getCurrentUser } from "@/lib/auth";
+import { createClient } from "@/utils/supabase/server";
 import { DEMO_CLUB_ID } from "@/lib/demo-generator";
 
 const geistSans = Geist({
@@ -51,6 +52,19 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const user = await getCurrentUser();
+  let clubName = "MedAcademy";
+  let clubLogoUrl: string | undefined;
+
+  if (user?.clubId) {
+    const supabase = await createClient();
+    const { data: club } = await supabase
+      .from("clubs")
+      .select("name, logo_url")
+      .eq("id", user.clubId)
+      .maybeSingle();
+    if (club?.name) clubName = club.name;
+    if (club?.logo_url) clubLogoUrl = club.logo_url;
+  }
 
   return (
     <html
@@ -62,6 +76,9 @@ export default async function RootLayout({
           <AppNav
             role={user.role}
             userName={user.fullName || user.email}
+            clubId={user.clubId}
+            clubName={clubName}
+            clubLogoUrl={clubLogoUrl}
           />
         )}
         <main className={`${user ? "md:ml-16 pt-14 md:pt-0 pb-24 md:pb-6" : ""} flex-1 min-w-0 overflow-x-hidden`}>

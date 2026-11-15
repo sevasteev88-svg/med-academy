@@ -192,14 +192,19 @@ const COACH_MOBILE_PRIMARY: NavItem[] = [
 export default function AppNav({
   role,
   userName,
+  clubId,
   clubName = "MedAcademy",
+  clubLogoUrl,
   alerts: initialAlerts,
 }: {
   role: string;
   userName: string;
+  clubId?: string;
   clubName?: string;
+  clubLogoUrl?: string;
   alerts?: RiskAlertItem[];
 }) {
+  const logoSrc = clubLogoUrl || "/icon-192.png";
   const pathname = usePathname();
   const [isPending, startTransition] = useTransition();
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
@@ -212,7 +217,7 @@ export default function AppNav({
       return;
     }
 
-    const cacheKey = `med_academy_alerts_${role}`;
+    const cacheKey = `med_academy_alerts_${clubId || "default"}_${role}`;
     try {
       const cachedRaw = sessionStorage.getItem(cacheKey);
       if (cachedRaw) {
@@ -363,7 +368,7 @@ export default function AppNav({
           }}
         >
           <div className="relative p-0.5 rounded-full ring-2 ring-sky-500/30 hover:ring-sky-400">
-            <Image src="/logo-chr.png" alt={clubName} width={36} height={36} className="rounded-full object-contain" />
+            <img src={logoSrc} alt={clubName} width={36} height={36} className="w-9 h-9 rounded-full object-contain" />
           </div>
         </Link>
 
@@ -593,7 +598,7 @@ export default function AppNav({
       <header className="md:hidden fixed top-0 left-0 right-0 h-13 bg-slate-950/95 backdrop-blur-xl border-b border-sky-500/15 z-40 px-3 flex items-center justify-between shadow-lg">
         <Link href="/" className="flex items-center gap-2.5 min-h-[44px] min-w-[44px]">
           <div className="relative p-0.5 rounded-full ring-1 ring-sky-500/30">
-            <Image src="/logo-chr.png" alt={clubName} width={26} height={26} className="rounded-full object-contain" />
+            <img src={logoSrc} alt={clubName} width={26} height={26} className="w-[26px] h-[26px] rounded-full object-contain" />
           </div>
           <span className="font-bold text-sm tracking-tight text-white truncate max-w-[170px]">
             {clubName}

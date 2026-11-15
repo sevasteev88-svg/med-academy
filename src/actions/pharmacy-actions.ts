@@ -2,7 +2,7 @@
 
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
-import { assertDoctor } from "@/lib/auth";
+import { assertDoctor, getCurrentUser, DEFAULT_CLUB_ID } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import type { PharmacyItem, MedicalTreatmentEntry } from "@/types/pharmacy";
 import { DEFAULT_PHARMACY_ITEMS } from "@/lib/default-pharmacy-stock";
@@ -65,26 +65,31 @@ async function getOrCreateSystemInjuryId(
     if (newInj?.id) return newInj.id;
   }
 
-  // 4. Глобальний фолбек на будь-яку травму в БД
-  const { data: anyInj } = await supabase.from("injuries").select("id").limit(1).maybeSingle();
-  return anyInj?.id || "00000000-0000-0000-0000-000000000000";
+  return "00000000-0000-0000-0000-000000000000";
 }
 
 /**
- * Отримує актуальний стан складу аптеки з Supabase injury_logs або повертає дефолтний склад
+ * Отримує актуальний стан складу аптеки поточного клубу з Supabase injury_logs
+ * Для нових клубів повертає порожній список [], щоб не підтягувати чужі препарати
  */
 export async function getPharmacyStockAction(): Promise<PharmacyItem[]> {
+  const user = await getCurrentUser();
+  if (!user) {
+    return [];
+  }
+
   const supabase = await createClient();
 
   const { data: logs, error } = await supabase
     .from("injury_logs")
     .select("note, created_at")
+    .eq("club_id", user.clubId)
     .like("note", "[PHARMACY_STOCK_UPDATE]%")
     .order("created_at", { ascending: false })
     .limit(1);
 
   if (error || !logs || logs.length === 0) {
-    return DEFAULT_PHARMACY_ITEMS;
+    return user.clubId === DEFAULT_CLUB_ID ? DEFAULT_PHARMACY_ITEMS : [];
   }
 
   try {
@@ -92,7 +97,7 @@ export async function getPharmacyStockAction(): Promise<PharmacyItem[]> {
     const items = JSON.parse(raw) as PharmacyItem[];
     return items;
   } catch {
-    return DEFAULT_PHARMACY_ITEMS;
+    return user.clubId === DEFAULT_CLUB_ID ? DEFAULT_PHARMACY_ITEMS : [];
   }
 }
 
