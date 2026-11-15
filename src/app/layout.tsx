@@ -4,6 +4,7 @@ import "./globals.css";
 import AppNav from "@/components/layout/AppNav";
 import PwaRegister from "@/components/layout/PwaRegister";
 import DemoModeBanner from "@/components/layout/DemoModeBanner";
+import ForcePasswordChangeModal from "@/components/layout/ForcePasswordChangeModal";
 import { getCurrentUser } from "@/lib/auth";
 import { createClient } from "@/utils/supabase/server";
 import { DEMO_CLUB_ID } from "@/lib/demo-generator";
@@ -84,6 +85,9 @@ export default async function RootLayout({
         <main className={`${user ? "md:ml-16 pt-14 md:pt-0 pb-24 md:pb-6" : ""} flex-1 min-w-0 overflow-x-hidden`}>
           {user && user.clubId === DEMO_CLUB_ID && (
             <DemoModeBanner isDemoClub={true} />
+          )}
+          {user?.mustChangePassword && (
+            <ForcePasswordChangeModal userEmail={user.email} />
           )}
           {children}
         </main>

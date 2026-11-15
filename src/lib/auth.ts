@@ -14,6 +14,7 @@ export type AppUser = {
   role: UserRole;
   teamId?: string | null;
   teamIds?: string[];
+  mustChangePassword?: boolean;
 };
 
 async function fetchMemberRecord(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
@@ -131,6 +132,7 @@ async function fetchCurrentUser(): Promise<AppUser | null> {
     role: role || "doctor",
     teamId,
     teamIds,
+    mustChangePassword: Boolean(user.user_metadata?.must_change_password),
   };
 }
 
