@@ -5,7 +5,16 @@
  * Забезпечує зворотну сумісність зі старими чек-листами (9 базових критеріїв).
  */
 
-export type RtpProfileId = "hamstring" | "ankle" | "knee_acl" | "base";
+export type RtpProfileId =
+  | "hamstring"
+  | "adductor_groin"
+  | "quadriceps"
+  | "calf"
+  | "ankle"
+  | "knee_acl"
+  | "knee_collateral"
+  | "knee_meniscus"
+  | "base";
 
 export type RtpCriterionCategory = "clinical" | "strength" | "field" | "psych";
 
@@ -75,6 +84,127 @@ export const RTP_PROFILES: Record<RtpProfileId, RtpProfileDef> = {
       },
     ],
   },
+  adductor_groin: {
+    id: "adductor_groin",
+    titleUa: "Привідні м'язи / пах",
+    subtitleUa: "Протокол для аддукторів та пахової зони (Doha / Adductor Squeeze)",
+    criteria: [
+      {
+        key: "noPalpationPain",
+        label: "Безболісна пальпація привідних м'язів та зони лонного зчленування",
+        category: "clinical",
+      },
+      {
+        key: "adductorSqueezePassed",
+        label: "Adductor Squeeze Test на 0° та 45° без болю (VAS 0–1)",
+        category: "clinical",
+      },
+      {
+        key: "adductorStrengthSymmetry",
+        label: "Сила привідних м'язів (ForceFrame / динамометр) LSI ≥ 90% та Copenhagen Adduction без болю",
+        category: "strength",
+      },
+      {
+        key: "changeOfDirectionPassed",
+        label: "Зміна напрямку руху (cutting) та прискорення без дискомфорту в паху",
+        category: "field",
+      },
+      {
+        key: "kickingPassingPainfree",
+        label: "Удари по м'ячу внутрішньою стороною стопи та довгі передачі без болю",
+        category: "field",
+      },
+      {
+        key: "fullTrainingSessionCompleted",
+        label: "Повне командне тренування з контактною боротьбою",
+        category: "field",
+      },
+      {
+        key: "psychologicalReadinessPassed",
+        label: "Психологічна готовність (відсутність страху рецидиву)",
+        category: "psych",
+      },
+    ],
+  },
+  quadriceps: {
+    id: "quadriceps",
+    titleUa: "Квадрицепс",
+    subtitleUa: "Протокол для передньої поверхні стегна (тест Елі / удар по м'ячу)",
+    criteria: [
+      {
+        key: "noPalpationPain",
+        label: "Безболісна глибока пальпація передньої поверхні стегна",
+        category: "clinical",
+      },
+      {
+        key: "fullPainfreeRom",
+        label: "Повний безболісний тест розтягнення (тест Елі / згинання коліна 100%)",
+        category: "clinical",
+      },
+      {
+        key: "lsi90Passed",
+        label: "Сила квадрицепса (концентрична та ексцентрична) LSI ≥ 90%",
+        category: "strength",
+      },
+      {
+        key: "kickingMaxPowerPassed",
+        label: "Максимальний удар по м'ячу підйомом та різке гальмування без болю",
+        category: "field",
+      },
+      {
+        key: "maximalSprint30mPassed",
+        label: "Максимальний спринт > 95% від дотравматичної швидкості",
+        category: "field",
+      },
+      {
+        key: "fullTrainingSessionCompleted",
+        label: "Повне командне тренування з контактною боротьбою",
+        category: "field",
+      },
+      {
+        key: "psychologicalReadinessPassed",
+        label: "Психологічна готовність",
+        category: "psych",
+      },
+    ],
+  },
+  calf: {
+    id: "calf",
+    titleUa: "Литка / м'язи гомілки",
+    subtitleUa: "Протокол для литкового та камбалоподібного м'язів (Heel Raise / пліометрика)",
+    criteria: [
+      {
+        key: "noPalpationPain",
+        label: "Безболісна пальпація литкового та камбалоподібного м'язів (gastrocnemius / soleus)",
+        category: "clinical",
+      },
+      {
+        key: "fullPainfreeRom",
+        label: "Повне безболісне тильне згинання та розтягнення гомілки",
+        category: "clinical",
+      },
+      {
+        key: "singleLegHeelRaisePassed",
+        label: "Single-Leg Heel Raise (≥ 25–30 разів, симетрія ≥ 90% з прямою і зігнутою ногою)",
+        category: "strength",
+      },
+      {
+        key: "reactiveHopPassed",
+        label: "Реактивні стрибки (plyometric hop-тести) та бігові прискорення без болю",
+        category: "field",
+      },
+      {
+        key: "fullTrainingSessionCompleted",
+        label: "Повне командне тренування з контактною боротьбою",
+        category: "field",
+      },
+      {
+        key: "psychologicalReadinessPassed",
+        label: "Психологічна готовність",
+        category: "psych",
+      },
+    ],
+  },
   ankle: {
     id: "ankle",
     titleUa: "Гомілковостопний суглоб",
@@ -115,7 +245,7 @@ export const RTP_PROFILES: Record<RtpProfileId, RtpProfileDef> = {
   knee_acl: {
     id: "knee_acl",
     titleUa: "Коліно / ПКС",
-    subtitleUa: "Розширений протокол для зв'язок та менісків коліна (LSI / ACL-RSI)",
+    subtitleUa: "Протокол для передньої хрестоподібної зв'язки (LSI / Hop / ACL-RSI)",
     criteria: [
       {
         key: "noEffusionOrSwelling",
@@ -151,6 +281,100 @@ export const RTP_PROFILES: Record<RtpProfileId, RtpProfileDef> = {
         key: "fullTrainingSessionCompleted",
         label: "Повне командне тренування з контактною боротьбою",
         category: "field",
+      },
+    ],
+  },
+  knee_collateral: {
+    id: "knee_collateral",
+    titleUa: "Коліно / БЗК (MCL/LCL)",
+    subtitleUa: "Протокол для медіальної та латеральної бокових зв'язок коліна",
+    criteria: [
+      {
+        key: "noEffusionOrSwelling",
+        label: "Без випоту та набряку в зоні бокової зв'язки",
+        category: "clinical",
+      },
+      {
+        key: "valgusVarusStressNegative",
+        label: "Негативний вальгус/варус-стрес тест на 0° та 30° без болю та люфту",
+        category: "clinical",
+      },
+      {
+        key: "fullPainfreeRom",
+        label: "Повний безболісний ROM (0° розгинання та повне згинання)",
+        category: "clinical",
+      },
+      {
+        key: "lsi90Passed",
+        label: "LSI ≥ 90% (квадрицепс / хамстринг на динамометрі)",
+        category: "strength",
+      },
+      {
+        key: "kickingPassingPainfree",
+        label: "Удар по м'ячу внутрішньою стороною стопи та бокові зміщення без болю",
+        category: "field",
+      },
+      {
+        key: "changeOfDirectionPassed",
+        label: "Зміна напрямку руху (cutting) та гальмування без нестабільності",
+        category: "field",
+      },
+      {
+        key: "fullTrainingSessionCompleted",
+        label: "Повне командне тренування з контактною боротьбою",
+        category: "field",
+      },
+      {
+        key: "psychologicalReadinessPassed",
+        label: "Психологічна готовність",
+        category: "psych",
+      },
+    ],
+  },
+  knee_meniscus: {
+    id: "knee_meniscus",
+    titleUa: "Коліно / Меніск",
+    subtitleUa: "Протокол для ушкоджень меніска (McMurray / Thessaly / глибокий присід)",
+    criteria: [
+      {
+        key: "noEffusionOrSwelling",
+        label: "Без випоту та внутрішньосуглобового набряку",
+        category: "clinical",
+      },
+      {
+        key: "meniscusTestsNegative",
+        label: "Негативні тести McMurray та Thessaly, відсутність блокад/клацання",
+        category: "clinical",
+      },
+      {
+        key: "deepSquatPainfree",
+        label: "Повний ROM та глибоке безболісне присідання без дискомфорту",
+        category: "clinical",
+      },
+      {
+        key: "lsi90Passed",
+        label: "LSI ≥ 90% (квадрицепс / хамстринг)",
+        category: "strength",
+      },
+      {
+        key: "hopSeries90Passed",
+        label: "Серія hop-тестів (Single, Triple, Crossover) LSI ≥ 90%",
+        category: "field",
+      },
+      {
+        key: "changeOfDirectionPassed",
+        label: "Ротаційні рухи та зміна напрямку без болю в суглобовій щілині",
+        category: "field",
+      },
+      {
+        key: "fullTrainingSessionCompleted",
+        label: "Повне командне тренування з контактною боротьбою",
+        category: "field",
+      },
+      {
+        key: "psychologicalReadinessPassed",
+        label: "Психологічна готовність",
+        category: "psych",
       },
     ],
   },
@@ -212,13 +436,25 @@ export function resolveRtpProfileId(
   injuryType?: string | null,
   location?: string | null
 ): RtpProfileId {
-  if (injuryType === "muscular" && location === "thigh") {
+  if (location === "hamstring" || (injuryType === "muscular" && location === "thigh")) {
     return "hamstring";
+  }
+  if (location === "adductor" || location === "groin") {
+    return "adductor_groin";
+  }
+  if (location === "quadriceps") {
+    return "quadriceps";
+  }
+  if (location === "calf") {
+    return "calf";
   }
   if ((injuryType === "ligament" || injuryType === "tendon") && location === "ankle") {
     return "ankle";
   }
-  if ((injuryType === "ligament" || injuryType === "cartilage") && location === "knee") {
+  if (injuryType === "cartilage" && location === "knee") {
+    return "knee_meniscus";
+  }
+  if (injuryType === "ligament" && location === "knee") {
     return "knee_acl";
   }
   return "base";

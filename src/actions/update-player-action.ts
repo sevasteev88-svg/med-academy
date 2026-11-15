@@ -75,12 +75,17 @@ export async function updatePlayerAction(
     };
 
     try {
-      await supabase.from("injury_logs").insert({
+      await supabase.from("player_anamnesis").insert({
         club_id: auth.user.clubId,
-        category: "note",
+        player_id: playerId,
         date: new Date().toISOString().split("T")[0],
-        note: `[INITIAL_ANAMNESIS] ${JSON.stringify(anamnesisPayload)}`,
-      });
+        jersey_number: anamnesisPayload.jersey_number,
+        phone: anamnesisPayload.phone,
+        blood_type: anamnesisPayload.blood_type,
+        allergies: anamnesisPayload.allergies,
+        past_injuries: anamnesisPayload.past_injuries,
+        data: anamnesisPayload,
+      } as any);
     } catch (e) {
       console.warn("Помилка оновлення анамнезу:", e);
     }

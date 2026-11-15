@@ -11,6 +11,7 @@ import {
   ECG_STATUS_META,
   calcFootballSeason,
   SCREENING_RANGES,
+  compareScreeningWithBaseline,
 } from "@/types/screening";
 import { saveScreeningAction } from "@/actions/save-screening-action";
 import BiomechanicsGuidanceModal from "@/components/players/BiomechanicsGuidanceModal";
@@ -20,12 +21,14 @@ type Props = {
   playerId: string;
   playerName: string;
   initialScreenings: PreSeasonScreening[];
+  growthPhase?: "pre_phv" | "phv" | "post_phv" | null;
 };
 
 export default function PreSeasonScreeningCard({
   playerId,
   playerName,
   initialScreenings,
+  growthPhase = null,
 }: Props) {
   const [screenings, setScreenings] = useState<PreSeasonScreening[]>(initialScreenings);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -90,6 +93,13 @@ export default function PreSeasonScreeningCard({
 
   const latest = screenings[0] || null;
   const latestMeta = latest ? CLEARANCE_STATUS_META[latest.overall_status] : null;
+  const baselineScreening =
+    screenings.length > 1
+      ? [...screenings].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0]
+      : null;
+  const baselineComparison = selectedScreening
+    ? compareScreeningWithBaseline(selectedScreening, baselineScreening, growthPhase)
+    : null;
 
   // Обробка зміни дати -> автоперерахунок сезону та терміну дії
   const handleDateChange = (newDate: string) => {
@@ -527,6 +537,70 @@ export default function PreSeasonScreeningCard({
                   ℹ️
                 </button>
               </div>
+
+              {/* Порівняння з передсезонним бейзлайном та PHV-алерт */}
+              {baselineComparison && (
+                <div className="mt-2 pt-2 border-t border-slate-800 space-y-2">
+                  {baselineComparison.hasBaseline && (
+                    <div className="rounded-lg bg-slate-950/70 border border-slate-800 p-2 text-[11px] space-y-1">
+                      <div className="font-bold text-sky-300">
+                        Δ vs Передсезонний бейзлайн ({baselineComparison.baselineDate}):
+                      </div>
+                      <div className="flex flex-wrap gap-x-3 gap-y-1 text-slate-300 font-mono">
+                        {baselineComparison.wbltLeftDelta != null && (
+                          <span className={baselineComparison.wbltLeftDelta <= -1 ? "text-rose-400" : "text-emerald-400"}>
+                            WBLT L: {baselineComparison.wbltLeftDelta > 0 ? "+" : ""}
+                            {baselineComparison.wbltLeftDelta} см
+                          </span>
+                        )}
+                        {baselineComparison.wbltRightDelta != null && (
+                          <span className={baselineComparison.wbltRightDelta <= -1 ? "text-rose-400" : "text-emerald-400"}>
+                            WBLT R: {baselineComparison.wbltRightDelta > 0 ? "+" : ""}
+                            {baselineComparison.wbltRightDelta} см
+                          </span>
+                        )}
+                        {baselineComparison.wbltAsymmetryLatest != null && (
+                          <span className={baselineComparison.wbltAsymmetryLatest >= 2 ? "text-amber-300" : "text-slate-400"}>
+                            Асиметрія WBLT: {baselineComparison.wbltAsymmetryLatest} см
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-x-3 gap-y-1 text-slate-300 font-mono">
+                        {baselineComparison.hamstringsLeftDelta != null && (
+                          <span className={baselineComparison.hamstringsLeftDelta >= 5 ? "text-rose-400" : "text-emerald-400"}>
+                            Ham L: {baselineComparison.hamstringsLeftDelta > 0 ? "+" : ""}
+                            {baselineComparison.hamstringsLeftDelta}°
+                          </span>
+                        )}
+                        {baselineComparison.hamstringsRightDelta != null && (
+                          <span className={baselineComparison.hamstringsRightDelta >= 5 ? "text-rose-400" : "text-emerald-400"}>
+                            Ham R: {baselineComparison.hamstringsRightDelta > 0 ? "+" : ""}
+                            {baselineComparison.hamstringsRightDelta}°
+                          </span>
+                        )}
+                        {baselineComparison.hamstringsAsymmetryLatest != null && (
+                          <span className={baselineComparison.hamstringsAsymmetryLatest >= 5 ? "text-amber-300" : "text-slate-400"}>
+                            Асиметрія Ham: {baselineComparison.hamstringsAsymmetryLatest}°
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {baselineComparison.phvClinicalAlert && (
+                    <div className="rounded-lg bg-rose-500/15 border border-rose-500/40 p-2.5 text-[11px] text-rose-200 space-y-1">
+                      <div className="font-bold text-rose-300">
+                        ⚠️ {baselineComparison.phvClinicalAlert}
+                      </div>
+                      {baselineComparison.phvRecommendation && (
+                        <div className="text-rose-100/90">
+                          {baselineComparison.phvRecommendation}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Lab & Validity */}

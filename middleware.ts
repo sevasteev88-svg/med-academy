@@ -27,6 +27,7 @@ export async function middleware(request: NextRequest) {
     path === "/register" ||
     path === "/privacy" ||
     path.startsWith("/rehab-portal") ||
+    path.startsWith("/parent/") ||
     path.startsWith("/consent/") ||
     path.startsWith("/a/") ||
     path.startsWith("/auth/") ||

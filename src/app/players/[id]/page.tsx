@@ -35,6 +35,8 @@ import { getCurrentUser } from "@/lib/auth";
 import { canUserAccessTeam } from "@/lib/team-access";
 import { POSITION_LABELS, POSITION_FULL, DOMINANT_UA, LOCATION_UA, SEVERITY_UA, INJURY_TYPE_UA, STATUS_UA } from "@/lib/constants";
 import PlayerConsentsCard from "@/components/consents/PlayerConsentsCard";
+import PlayerParentAccessCard from "@/components/parent/PlayerParentAccessCard";
+import { getPlayerParentAccessStateAction } from "@/actions/parent-portal-actions";
 import PlayerTreatmentsCard from "@/components/players/PlayerTreatmentsCard";
 import PlayerAnamnesisCard from "@/components/players/PlayerAnamnesisCard";
 import type { PlayerMedicalAnamnesis } from "@/types/player-anamnesis";
@@ -79,29 +81,31 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
       .order("created_at", { ascending: false })
       .limit(1),
     supabase
-      .from("injury_logs")
-      .select("*")
-      .like("note", "[SCREENING]%")
+      .from("player_screenings")
+      .select("id, player_id, date, season, examiner_doctor, overall_status, valid_until, cardio_clearance, restrictions_notes, data, created_at")
+      .eq("player_id", id)
+      .order("date", { ascending: false }),
+    supabase
+      .from("player_nutrition_profiles")
+      .select("id, player_id, date, data, created_at")
+      .eq("player_id", id)
       .order("date", { ascending: false }),
     supabase
       .from("injury_logs")
       .select("*")
-      .like("note", "[NUTRITION]%")
-      .order("date", { ascending: false }),
+      .like("note", `[PLAYER_PHOTO] %"player_id":"${id}"%`)
+      .order("date", { ascending: false })
+      .limit(10),
     supabase
       .from("injury_logs")
       .select("*")
-      .like("note", "[PLAYER_PHOTO]%")
-      .order("date", { ascending: false }),
+      .like("note", `[WEARABLE] %"player_id":"${id}"%`)
+      .order("date", { ascending: false })
+      .limit(100),
     supabase
-      .from("injury_logs")
+      .from("rehab_checkins")
       .select("*")
-      .like("note", "[WEARABLE]%")
-      .order("date", { ascending: false }),
-    supabase
-      .from("injury_logs")
-      .select("*")
-      .like("note", "[REHAB_CHECKIN]%")
+      .eq("player_id", id)
       .order("date", { ascending: false }),
     supabase
       .from("injury_logs")
@@ -110,16 +114,16 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
       .order("date", { ascending: false })
       .limit(1),
     supabase
-      .from("injury_logs")
+      .from("lsi_assessments")
       .select("*")
-      .like("note", "[LSI_ASSESSMENT]%")
+      .eq("player_id", id)
       .order("date", { ascending: false }),
     supabase
-      .from("injury_logs")
-      .select("note")
-      .like("note", "[CUSTOM_REHAB_PLAN]%")
+      .from("rehab_plans")
+      .select("*")
+      .eq("player_id", id)
       .order("created_at", { ascending: false })
-      .limit(20),
+      .limit(1),
     supabase
       .from("workload_sessions")
       .select("date, workload_au, duration_minutes, rpe_score")
@@ -135,27 +139,27 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
     supabase
       .from("injury_logs")
       .select("date, note")
-      .like("note", "[WORKLOAD]%")
+      .like("note", `[WORKLOAD] %"player_id":"${id}"%`)
       .order("date", { ascending: false })
       .limit(100),
     supabase
       .from("injury_logs")
       .select("date, note")
-      .like("note", "[WELLNESS%")
+      .like("note", `[WELLNESS%"player_id":"${id}"%`)
       .order("date", { ascending: false })
       .limit(100),
     supabase
-      .from("injury_logs")
-      .select("id, date, note")
-      .like("note", "[TREATMENT]%")
+      .from("medical_treatments")
+      .select("*")
+      .eq("player_id", id)
       .order("date", { ascending: false })
       .limit(100),
     supabase
-      .from("injury_logs")
-      .select("id, date, note, created_at")
-      .like("note", "[INITIAL_ANAMNESIS]%")
+      .from("player_anamnesis")
+      .select("*")
+      .eq("player_id", id)
       .order("created_at", { ascending: false })
-      .limit(20),
+      .limit(1),
   ]);
 
   const { data: player, error } = playerRes;
@@ -165,43 +169,51 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
   const measurements = anthroRes.data ?? [];
   const maturation = matRes.data?.[0] ?? null;
 
-  const screenings: PreSeasonScreening[] = (screeningLogsRes.data || [])
-    .map((l) => {
-      try {
-        const rawJson = l.note.replace("[SCREENING] ", "");
-        const parsed = JSON.parse(rawJson);
-        return parsed.player_id === id ? (parsed as PreSeasonScreening) : null;
-      } catch {
-        return null;
-      }
-    })
-    .filter(Boolean) as PreSeasonScreening[];
+  const screenings: PreSeasonScreening[] = (screeningLogsRes.data || []).map((row: any) => ({
+    ...((row.data as PreSeasonScreening) || {}),
+    id: row.data?.id || row.id,
+    player_id: row.player_id,
+    date: row.date,
+    season: row.season ?? row.data?.season,
+    examiner_doctor: row.examiner_doctor ?? row.data?.examiner_doctor,
+    overall_status: row.overall_status ?? row.data?.overall_status,
+    valid_until: row.valid_until ?? row.data?.valid_until,
+    cardio_clearance: row.cardio_clearance ?? row.data?.cardio_clearance,
+    restrictions_notes: row.restrictions_notes ?? row.data?.restrictions_notes,
+    created_at: row.created_at ?? row.data?.created_at,
+  }));
 
-  const nutritionLogs = (nutritionLogsRes.data || [])
-    .map((l) => {
-      try {
-        const rawJson = l.note.replace("[NUTRITION] ", "");
-        const parsed = JSON.parse(rawJson);
-        return parsed.player_id === id ? (parsed as NutritionProfile) : null;
-      } catch {
-        return null;
-      }
-    })
-    .filter(Boolean) as NutritionProfile[];
+  const nutritionLogs: NutritionProfile[] = (nutritionLogsRes.data || []).map((row: any) => ({
+    ...((row.data as NutritionProfile) || {}),
+    id: row.data?.id || row.id,
+    player_id: row.player_id,
+    date: row.date,
+    created_at: row.created_at ?? row.data?.created_at,
+  }));
 
   const latestNutrition: NutritionProfile | null = nutritionLogs[0] || null;
 
-  const anamnesisRecord: PlayerMedicalAnamnesis | null = (anamnesisLogsRes.data || [])
-    .map((l) => {
-      try {
-        const rawJson = l.note.replace("[INITIAL_ANAMNESIS] ", "").replace("[INITIAL_ANAMNESIS]", "").trim();
-        const parsed = JSON.parse(rawJson) as PlayerMedicalAnamnesis;
-        return parsed.player_id === id ? parsed : null;
-      } catch {
-        return null;
+  const latestAnamnesisRow = (anamnesisLogsRes.data || [])[0] as any;
+  const anamnesisRecord: PlayerMedicalAnamnesis | null = latestAnamnesisRow
+    ? {
+        ...((latestAnamnesisRow.data as PlayerMedicalAnamnesis) || {}),
+        player_id: latestAnamnesisRow.player_id,
+        jersey_number: latestAnamnesisRow.jersey_number ?? latestAnamnesisRow.data?.jersey_number ?? null,
+        phone: latestAnamnesisRow.phone ?? latestAnamnesisRow.data?.phone ?? null,
+        blood_type: latestAnamnesisRow.blood_type ?? latestAnamnesisRow.data?.blood_type ?? null,
+        allergies: latestAnamnesisRow.allergies ?? latestAnamnesisRow.data?.allergies ?? null,
+        past_injuries: latestAnamnesisRow.past_injuries ?? latestAnamnesisRow.data?.past_injuries ?? null,
+        initial_height:
+          latestAnamnesisRow.initial_height != null
+            ? Number(latestAnamnesisRow.initial_height)
+            : latestAnamnesisRow.data?.initial_height ?? null,
+        initial_weight:
+          latestAnamnesisRow.initial_weight != null
+            ? Number(latestAnamnesisRow.initial_weight)
+            : latestAnamnesisRow.data?.initial_weight ?? null,
+        created_at: latestAnamnesisRow.created_at ?? latestAnamnesisRow.data?.created_at,
       }
-    })
-    .find(Boolean) || null;
+    : null;
 
   const photoLogs = (photoLogsRes.data || [])
     .map((l) => {
@@ -229,61 +241,80 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
     })
     .filter(Boolean) as WearableBiometricsEntry[];
 
-  const rehabCheckins = (rehabLogsRes.data || [])
-    .map((l) => {
-      try {
-        const rawJson = l.note.replace("[REHAB_CHECKIN] ", "");
-        const parsed = JSON.parse(rawJson);
-        return parsed.player_id === id ? (parsed as RehabCheckinData) : null;
-      } catch {
-        return null;
-      }
-    })
-    .filter(Boolean) as RehabCheckinData[];
+  const rehabCheckins: RehabCheckinData[] = (rehabLogsRes.data || []).map((row: any) => ({
+    ...((row.data as RehabCheckinData) || {}),
+    player_id: row.player_id,
+    injury_id: row.injury_id ?? row.data?.injury_id ?? "",
+    date: row.date,
+    vas_score: row.vas_score ?? row.data?.vas_score,
+    sleep_quality: row.sleep_quality ?? row.data?.sleep_quality,
+    freshness_level: row.freshness_level ?? row.data?.freshness_level,
+    muscle_soreness: row.muscle_soreness ?? row.data?.muscle_soreness,
+    stress_level: row.stress_level ?? row.data?.stress_level,
+  }));
 
   const portalToken = await getOrGeneratePlayerPortalToken(id);
 
-  const lsiRecords = (lsiLogsRes.data || [])
-    .map((l) => {
-      try {
-        const rawJson = l.note.replace("[LSI_ASSESSMENT] ", "");
-        const parsed = JSON.parse(rawJson);
-        return parsed.player_id === id ? (parsed as LsiAssessmentRecord) : null;
-      } catch {
-        return null;
-      }
-    })
-    .filter(Boolean) as LsiAssessmentRecord[];
+  const lsiRecords: LsiAssessmentRecord[] = (lsiLogsRes.data || []).map((row: any) => ({
+    ...((row.data as LsiAssessmentRecord) || {}),
+    id: row.data?.id || row.id,
+    player_id: row.player_id,
+    injury_id: row.injury_id ?? row.data?.injury_id ?? null,
+    date: row.date,
+    injury_type: row.injury_type ?? row.data?.injury_type ?? "ligament",
+    tested_limb: row.tested_limb ?? row.data?.tested_limb ?? "left",
+    evaluator_name: row.evaluator_name ?? row.data?.evaluator_name ?? "",
+    doctor_signature: row.doctor_signature ?? row.data?.doctor_signature ?? "",
+    protocol_source: row.protocol_source ?? row.data?.protocol_source ?? "",
+    phase_clearance: row.phase_clearance ?? row.data?.phase_clearance ?? "",
+    overall_lsi_percent:
+      row.overall_lsi_percent != null
+        ? Number(row.overall_lsi_percent)
+        : row.data?.overall_lsi_percent ?? 0,
+    criteria_met: Boolean(row.criteria_met ?? row.data?.criteria_met),
+    status: row.status ?? row.data?.status ?? "conditional",
+    doctor_verdict: row.doctor_verdict ?? row.data?.doctor_verdict ?? "",
+    notes: row.notes ?? row.data?.notes,
+    created_at: row.created_at ?? row.data?.created_at,
+  }));
 
-  let playerCustomPlan: PlayerCustomRehabPlan | null = null;
-  if (planLogsRes.data && planLogsRes.data.length > 0) {
-    for (const log of planLogsRes.data) {
-      try {
-        const raw = log.note.replace("[CUSTOM_REHAB_PLAN] ", "");
-        const parsed = JSON.parse(raw);
-        if (parsed.player_id === id) {
-          playerCustomPlan = parsed;
-          break;
-        }
-      } catch {}
-    }
-  }
-
-  const playerTreatments: MedicalTreatmentEntry[] = (treatmentLogsRes.data || [])
-    .map((l) => {
-      try {
-        const rawJson = l.note.replace("[TREATMENT] ", "");
-        const parsed = JSON.parse(rawJson);
-        if (parsed.player_id === id) {
-          parsed.log_id = l.id;
-          return parsed as MedicalTreatmentEntry;
-        }
-        return null;
-      } catch {
-        return null;
+  const latestPlanRow = (planLogsRes.data || [])[0] as any;
+  const playerCustomPlan: PlayerCustomRehabPlan | null = latestPlanRow
+    ? {
+        ...((latestPlanRow.data as PlayerCustomRehabPlan) || {}),
+        id: latestPlanRow.data?.id || latestPlanRow.id,
+        player_id: latestPlanRow.player_id,
+        target_injury_id: latestPlanRow.target_injury_id ?? latestPlanRow.data?.target_injury_id,
+        status: latestPlanRow.status ?? latestPlanRow.data?.status ?? "approved",
+        doctor_name: latestPlanRow.doctor_name ?? latestPlanRow.data?.doctor_name,
+        approved_by: latestPlanRow.approved_by ?? latestPlanRow.data?.approved_by,
+        approved_at: latestPlanRow.approved_at ?? latestPlanRow.data?.approved_at,
+        created_at: latestPlanRow.created_at ?? latestPlanRow.data?.created_at,
       }
-    })
-    .filter(Boolean) as MedicalTreatmentEntry[];
+    : null;
+
+  const playerTreatments: MedicalTreatmentEntry[] = (treatmentLogsRes.data || []).map((row: any) => ({
+    ...((row.data as MedicalTreatmentEntry) || {}),
+    id: row.legacy_entry_id || row.id,
+    log_id: row.id,
+    injury_id: row.injury_id,
+    player_id: row.player_id,
+    date: row.date,
+    category: row.category,
+    title: row.title,
+    dosage_or_params: row.dosage_or_params,
+    duration_days: row.duration_days,
+    duration_note: row.duration_note,
+    reason: row.reason,
+    doctor_name: row.doctor_name,
+    wada_status: row.wada_status,
+    doctor_wada_confirmed: row.doctor_wada_confirmed,
+    doctor_confirmation_note: row.doctor_confirmation_note,
+    notes: row.notes,
+    pharmacy_item_id: row.pharmacy_item_id,
+    units_deducted: row.units_deducted != null ? Number(row.units_deducted) : null,
+    created_at: row.created_at,
+  }));
 
   const totalInjuries = injuryList.length;
   const totalDaysMissed = injuryList.reduce((s,i) => s + calcDaysMissed(i), 0);
@@ -406,12 +437,14 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
     devicesRes,
     telegramRes,
     subRes,
+    parentAccessState,
   ] = await Promise.all([
     getPlayerConsentSummary(id, player.date_of_birth, player.club_id),
     getActiveConsentDocuments(player.club_id),
     getPlayerActiveDevicesAction(id),
     getPlayerTelegramStatusAction(id),
     supabase.from("player_subscriptions").select("*").eq("player_id", id).maybeSingle(),
+    getPlayerParentAccessStateAction(id),
   ]);
 
   const playerSub = subRes?.data || null;
@@ -896,6 +929,7 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
                 playerWeightKg={anthroRes.data?.[0]?.weight ? Number(anthroRes.data[0].weight) : null}
                 defaultInjuryType={injuryList?.[0]?.injury_type}
                 defaultSide={injuryList?.[0]?.side === "left" || injuryList?.[0]?.side === "right" ? injuryList[0].side : undefined}
+                preSeasonScreenings={screenings}
               />
 
               {/* Історія чек-інів реабілітації */}
@@ -968,7 +1002,12 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
               />
 
               {/* Передсезонний медичний скринінг */}
-              <PreSeasonScreeningCard playerId={id} playerName={`${player.last_name} ${player.first_name}`} initialScreenings={screenings} />
+              <PreSeasonScreeningCard
+                playerId={id}
+                playerName={`${player.last_name} ${player.first_name}`}
+                initialScreenings={screenings}
+                growthPhase={(maturation?.growth_phase as "pre_phv" | "phv" | "post_phv") ?? null}
+              />
               
               {/* Антропометрія та біологічне дозрівання */}
               <AnthropometrySection playerId={id} measurements={measurements} maturation={maturation} dateOfBirth={player.date_of_birth} />
@@ -1012,6 +1051,14 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
                       }
                     : null
                 }
+              />
+
+              {/* Сімейний кабінет для батьків (персональне посилання + повідомлення) */}
+              <PlayerParentAccessCard
+                playerId={id}
+                playerName={`${player.last_name} ${player.first_name}`}
+                initialTokens={parentAccessState.tokens}
+                initialMessages={parentAccessState.messages}
               />
 
               {/* Згоди законних представників (батьків) та гравця */}

@@ -20,21 +20,35 @@ export async function saveMedicalTreatmentAction(
     created_at: new Date().toISOString(),
   };
 
-  const payload = `[TREATMENT] ${JSON.stringify(entry)}`;
-
-  const dbCategory: "prescription" | "procedure" =
-    input.category === "injection" || input.category === "taping" || input.category === "physiotherapy"
-      ? "procedure"
-      : "prescription";
-
-  const { error } = await supabase.from("injury_logs").insert({
-    injury_id: input.injury_id || (null as any),
-    date: input.date,
-    category: dbCategory,
-    note: payload,
-  } as any);
+  const { data: inserted, error } = await supabase
+    .from("medical_treatments")
+    .insert({
+      club_id: auth.user.clubId,
+      player_id: input.player_id,
+      injury_id: input.injury_id || null,
+      date: input.date,
+      category: input.category,
+      title: input.title,
+      dosage_or_params: input.dosage_or_params || null,
+      duration_days: input.duration_days ?? null,
+      duration_note: input.duration_note || null,
+      reason: input.reason || null,
+      doctor_name: input.doctor_name,
+      wada_status: input.wada_status,
+      doctor_wada_confirmed: Boolean(input.doctor_wada_confirmed),
+      doctor_confirmation_note: input.doctor_confirmation_note || null,
+      notes: input.notes || null,
+      pharmacy_item_id: input.pharmacy_item_id || null,
+      units_deducted: input.units_deducted ?? null,
+      legacy_entry_id: entry.id,
+      data: entry,
+    } as any)
+    .select("id")
+    .single();
 
   if (error) return { error: error.message };
+
+  entry.log_id = inserted?.id;
 
   await logAudit({
     action: "prescribe_treatment",

@@ -81,10 +81,9 @@ export default async function InjuryDetailPage({ params }: Props) {
       .like("note", "[IMAGING]%")
       .order("date", { ascending: false }),
     supabase
-      .from("injury_logs")
+      .from("medical_treatments")
       .select("*")
       .or(`injury_id.eq.${id},injury_id.is.null`)
-      .like("note", "[TREATMENT]%")
       .order("date", { ascending: false }),
     supabase
       .from("injury_logs")
@@ -93,9 +92,9 @@ export default async function InjuryDetailPage({ params }: Props) {
       .like("note", "[CONCUSSION]%")
       .order("date", { ascending: false }),
     supabase
-      .from("injury_logs")
+      .from("lsi_assessments")
       .select("*")
-      .like("note", "[LSI_ASSESSMENT]%")
+      .or(`injury_id.eq.${id},injury_id.is.null`)
       .order("date", { ascending: false }),
     supabase
       .from("injury_logs")
@@ -143,19 +142,29 @@ export default async function InjuryDetailPage({ params }: Props) {
     .filter(Boolean) as ImagingStudy[];
 
   const medicalTreatments: MedicalTreatmentEntry[] = (treatmentsRes.data || [])
-    .map((l) => {
-      try {
-        const rawJson = l.note.replace("[TREATMENT] ", "");
-        const parsed = JSON.parse(rawJson);
-        if (parsed.injury_id === id || (!parsed.injury_id && parsed.player_id === injury.player_id)) {
-          return parsed as MedicalTreatmentEntry;
-        }
-        return null;
-      } catch {
-        return null;
-      }
-    })
-    .filter(Boolean) as MedicalTreatmentEntry[];
+    .filter((row: any) => row.injury_id === id || (!row.injury_id && row.player_id === injury.player_id))
+    .map((row: any) => ({
+      ...((row.data as MedicalTreatmentEntry) || {}),
+      id: row.legacy_entry_id || row.id,
+      log_id: row.id,
+      injury_id: row.injury_id,
+      player_id: row.player_id,
+      date: row.date,
+      category: row.category,
+      title: row.title,
+      dosage_or_params: row.dosage_or_params,
+      duration_days: row.duration_days,
+      duration_note: row.duration_note,
+      reason: row.reason,
+      doctor_name: row.doctor_name,
+      wada_status: row.wada_status,
+      doctor_wada_confirmed: row.doctor_wada_confirmed,
+      doctor_confirmation_note: row.doctor_confirmation_note,
+      notes: row.notes,
+      pharmacy_item_id: row.pharmacy_item_id,
+      units_deducted: row.units_deducted != null ? Number(row.units_deducted) : null,
+      created_at: row.created_at,
+    }));
 
   const concussionAssessments: ConcussionAssessment[] = (concussionsRes.data || [])
     .map((l) => {
@@ -169,19 +178,29 @@ export default async function InjuryDetailPage({ params }: Props) {
     .filter(Boolean) as ConcussionAssessment[];
 
   const lsiAssessments: LsiAssessmentRecord[] = (lsiRes.data || [])
-    .map((l) => {
-      try {
-        const rawJson = l.note.replace("[LSI_ASSESSMENT] ", "");
-        const parsed = JSON.parse(rawJson);
-        if (parsed.injury_id === id || (!parsed.injury_id && parsed.player_id === injury.player_id)) {
-          return parsed as LsiAssessmentRecord;
-        }
-        return null;
-      } catch {
-        return null;
-      }
-    })
-    .filter(Boolean) as LsiAssessmentRecord[];
+    .filter((row: any) => row.injury_id === id || (!row.injury_id && row.player_id === injury.player_id))
+    .map((row: any) => ({
+      ...((row.data as LsiAssessmentRecord) || {}),
+      id: row.data?.id || row.id,
+      player_id: row.player_id,
+      injury_id: row.injury_id ?? row.data?.injury_id ?? null,
+      date: row.date,
+      injury_type: row.injury_type ?? row.data?.injury_type ?? "ligament",
+      tested_limb: row.tested_limb ?? row.data?.tested_limb ?? "left",
+      evaluator_name: row.evaluator_name ?? row.data?.evaluator_name ?? "",
+      doctor_signature: row.doctor_signature ?? row.data?.doctor_signature ?? "",
+      protocol_source: row.protocol_source ?? row.data?.protocol_source ?? "",
+      phase_clearance: row.phase_clearance ?? row.data?.phase_clearance ?? "",
+      overall_lsi_percent:
+        row.overall_lsi_percent != null
+          ? Number(row.overall_lsi_percent)
+          : row.data?.overall_lsi_percent ?? 0,
+      criteria_met: Boolean(row.criteria_met ?? row.data?.criteria_met),
+      status: row.status ?? row.data?.status ?? "conditional",
+      doctor_verdict: row.doctor_verdict ?? row.data?.doctor_verdict ?? "",
+      notes: row.notes ?? row.data?.notes,
+      created_at: row.created_at ?? row.data?.created_at,
+    }));
 
   const initialAttachments: InjuryAttachment[] = (attachmentsRes?.data || []) as unknown as InjuryAttachment[];
 

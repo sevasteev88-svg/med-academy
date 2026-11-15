@@ -447,3 +447,165 @@ export const RECOMMENDED_AGE_RANGE = {
   male: { min: 12, max: 16 },
   female: { min: 10, max: 14 },
 };
+
+// ─── Біо-бандинг (Bio-banding) ───────────────────────────────
+
+export type BioBandKey = "pre_phv" | "early_phv" | "circa_phv" | "post_phv";
+export type MaturationTempo = "early" | "on_time" | "late";
+
+export interface BioBandDefinition {
+  key: BioBandKey;
+  label: string;
+  offsetRangeLabel: string;
+  badgeVariant: "neutral" | "warn" | "danger" | "ok";
+  coachRecommendations: string[];
+  injuryFocus: string;
+}
+
+export interface BioBandingPlayerInput {
+  id: string;
+  firstName: string;
+  lastName: string;
+  position?: string;
+  teamName?: string | null;
+  sex: Sex | string;
+  chronologicalAge: number;
+  consensusOffset: number;
+  consensusPhvAge: number;
+  heightVelocity?: number | null;
+  riskZone?: RiskZone;
+}
+
+export interface BioBandedPlayer extends BioBandingPlayerInput {
+  band: BioBandKey;
+  biologicalAge: number;
+  ageDiscrepancyYears: number;
+  maturationTempo: MaturationTempo;
+}
+
+export interface BioBandGroup {
+  definition: BioBandDefinition;
+  players: BioBandedPlayer[];
+}
+
+export const BIO_BAND_ORDER: BioBandKey[] = [
+  "pre_phv",
+  "early_phv",
+  "circa_phv",
+  "post_phv",
+];
+
+export const BIO_BAND_DEFINITIONS: Record<BioBandKey, BioBandDefinition> = {
+  pre_phv: {
+    key: "pre_phv",
+    label: "Pre-PHV (До стрибка росту)",
+    offsetRangeLabel: "< -1.0 р.",
+    badgeVariant: "neutral",
+    coachRecommendations: [
+      "Координація, техніка володіння м'ячем та рухова грамотність",
+      "Пліометрика низької інтенсивності та вправи з власною вагою",
+      "Короткі спринти (10–20 м) з повним відновленням",
+    ],
+    injuryFocus: "Фокус: профілактика хвороби Сівера (п'ятка) при високому біговому об'ємі",
+  },
+  early_phv: {
+    key: "early_phv",
+    label: "Early-PHV (Вхід у пік росту)",
+    offsetRangeLabel: "-1.0 .. -0.5 р.",
+    badgeVariant: "warn",
+    coachRecommendations: [
+      "Контроль техніки приземлення та помірний об'єм стрибків",
+      "Розвиток гнучкості задньої поверхні стегна, литки та гомілкостопа",
+      "Моніторинг швидкості росту та поступове коригування спринтів",
+    ],
+    injuryFocus: "Фокус: профілактика хвороби Сівера та початкових проявів Осгуда-Шлаттера",
+  },
+  circa_phv: {
+    key: "circa_phv",
+    label: "Circa-PHV / Пік росту",
+    offsetRangeLabel: "-0.5 .. +0.5 р.",
+    badgeVariant: "danger",
+    coachRecommendations: [
+      "Зменшити об'єм пліометрики та максимальних спринтів на 20–30%",
+      "Уникати максимальних осьових/силових навантажень (акцент на кор та ізометрію)",
+      "Щоденний скринінг болю в колінах (Осгуд-Шлаттер) та п'ятах (Сівер)",
+    ],
+    injuryFocus: "Критична зона: Осгуд-Шлаттер, Сівер, відривні переломи апофізів",
+  },
+  post_phv: {
+    key: "post_phv",
+    label: "Post-PHV (Після піку росту)",
+    offsetRangeLabel: "> +0.5 р.",
+    badgeVariant: "ok",
+    coachRecommendations: [
+      "Поступове впровадження силових тренувань з обтяженням",
+      "Повна пліометрика, реактивна сила та високошвидкісний біг",
+      "Профілактика ПКС (нейром'язовий контроль) та ексцентрика хамстрінгів",
+    ],
+    injuryFocus: "Фокус: профілактика ПКС, тендинопатій та м'язових перевантажень",
+  },
+};
+
+export function classifyBioBand(consensusOffset: number): BioBandKey {
+  if (consensusOffset < -1.0) return "pre_phv";
+  if (consensusOffset < -0.5) return "early_phv";
+  if (consensusOffset <= 0.5) return "circa_phv";
+  return "post_phv";
+}
+
+export function assessMaturationTempo(
+  sex: Sex | string,
+  consensusOffset: number,
+  chronologicalAge: number
+): {
+  biologicalAge: number;
+  ageDiscrepancyYears: number;
+  maturationTempo: MaturationTempo;
+} {
+  const referencePhvAge = sex === "female" ? 12.0 : 13.8;
+  const biologicalAge = round2(referencePhvAge + consensusOffset);
+  const ageDiscrepancyYears = round2(biologicalAge - chronologicalAge);
+
+  let maturationTempo: MaturationTempo = "on_time";
+  if (ageDiscrepancyYears >= 1.0) {
+    maturationTempo = "early";
+  } else if (ageDiscrepancyYears <= -1.0) {
+    maturationTempo = "late";
+  }
+
+  return { biologicalAge, ageDiscrepancyYears, maturationTempo };
+}
+
+export function groupPlayersByBioBand(
+  players: BioBandingPlayerInput[]
+): BioBandGroup[] {
+  const grouped: Record<BioBandKey, BioBandedPlayer[]> = {
+    pre_phv: [],
+    early_phv: [],
+    circa_phv: [],
+    post_phv: [],
+  };
+
+  for (const player of players) {
+    const band = classifyBioBand(player.consensusOffset);
+    const { biologicalAge, ageDiscrepancyYears, maturationTempo } =
+      assessMaturationTempo(
+        player.sex,
+        player.consensusOffset,
+        player.chronologicalAge
+      );
+
+    grouped[band].push({
+      ...player,
+      band,
+      biologicalAge,
+      ageDiscrepancyYears,
+      maturationTempo,
+    });
+  }
+
+  return BIO_BAND_ORDER.map((key) => ({
+    definition: BIO_BAND_DEFINITIONS[key],
+    players: grouped[key].sort((a, b) => a.consensusOffset - b.consensusOffset),
+  }));
+}

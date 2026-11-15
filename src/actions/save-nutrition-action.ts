@@ -38,50 +38,26 @@ export async function saveNutritionAction(
     created_at: new Date().toISOString(),
   };
 
-  const payload = `[NUTRITION] ${JSON.stringify(record)}`;
-
-  // Отримуємо або створюємо системний запис у injuries для уникнення порушення NOT NULL constraint
-  let targetInjuryId: string | null = null;
-  const { data: activeInjuries } = await supabase
-    .from("injuries")
+  // Зберігаємо безпосередньо в player_nutrition_profiles (без фіктивної травми в injuries)
+  const { data: inserted, error } = await supabase
+    .from("player_nutrition_profiles")
+    .insert({
+      club_id: auth.user.clubId,
+      player_id: input.player_id,
+      date: record.date,
+      data: record,
+    } as any)
     .select("id")
-    .eq("player_id", input.player_id)
-    .order("date_of_injury", { ascending: false })
-    .limit(1);
-
-  if (activeInjuries && activeInjuries.length > 0) {
-    targetInjuryId = activeInjuries[0].id;
-  } else {
-    const { data: newInjury, error: createInjErr } = await supabase
-      .from("injuries")
-      .insert({
-        player_id: input.player_id,
-        date_of_injury: record.date,
-        injury_type: "illness",
-        location: "other",
-        severity: "minor",
-        status: "closed",
-        description: "Нутриціологічний профіль / Санація",
-        vas_score: 0,
-      } as any)
-      .select("id")
-      .single();
-
-    if (!createInjErr && newInjury) {
-      targetInjuryId = newInjury.id;
-    }
-  }
-
-  const { error } = await supabase.from("injury_logs").insert({
-    injury_id: targetInjuryId,
-    date: record.date,
-    category: "examination",
-    note: payload,
-  } as any);
+    .single();
 
   if (error) return { error: error.message };
 
+  const savedRecord: NutritionProfile = {
+    ...record,
+    id: inserted?.id || record.id,
+  };
+
   revalidatePath(`/players/${input.player_id}`);
 
-  return { success: true, profile: record };
+  return { success: true, profile: savedRecord };
 }

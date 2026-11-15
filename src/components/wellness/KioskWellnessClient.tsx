@@ -8,6 +8,13 @@ import {
   type WellnessSurvey,
   calculateWellnessReadiness,
 } from "@/types/wellness";
+import {
+  enqueueOfflineItem,
+  generateOfflineItemId,
+  isBrowserOffline,
+  isNetworkError,
+  OFFLINE_SAVED_MESSAGE,
+} from "@/lib/offline-queue";
 
 type Player = {
   id: string;
@@ -93,6 +100,7 @@ export default function KioskWellnessClient({ players, todaySurveys }: Props) {
   });
 
   const [isPending, startTransition] = useTransition();
+  const [offlineNotice, setOfflineNotice] = useState<string | null>(null);
 
   const teams = Array.from(new Set(players.map((p) => p.team_name)));
 
@@ -121,19 +129,75 @@ export default function KioskWellnessClient({ players, todaySurveys }: Props) {
     } else {
       // Final step submit
       if (!activePlayer) return;
+      const targetPlayer = activePlayer;
       startTransition(async () => {
         const today = new Date().toISOString().split("T")[0];
-        const res = await saveWellnessSurveyAction({
-          playerId: activePlayer.id,
-          date: today,
-          sleepQuality: nextAnswers.sleepQuality,
-          fatigueLevel: nextAnswers.fatigueLevel,
-          muscleSoreness: nextAnswers.muscleSoreness,
-          stressLevel: nextAnswers.stressLevel,
-        });
+        const saveOffline = async () => {
+          const offlineId = generateOfflineItemId();
+          const nowIso = new Date().toISOString();
+          const readiness = calculateWellnessReadiness({
+            sleep_quality: nextAnswers.sleepQuality,
+            fatigue_level: nextAnswers.fatigueLevel,
+            muscle_soreness: nextAnswers.muscleSoreness,
+            stress_level: nextAnswers.stressLevel,
+          });
+          await enqueueOfflineItem({
+            id: offlineId,
+            type: "wellness",
+            client_timestamp: nowIso,
+            plain_payload: {
+              id: offlineId,
+              player_id: targetPlayer.id,
+              date: today,
+              sleep_quality: nextAnswers.sleepQuality,
+              fatigue: nextAnswers.fatigueLevel,
+              soreness: nextAnswers.muscleSoreness,
+              stress: nextAnswers.stressLevel,
+              source: "staff",
+            },
+          });
+          setSurveys((prev) => ({
+            ...prev,
+            [targetPlayer.id]: {
+              id: offlineId,
+              player_id: targetPlayer.id,
+              date: today,
+              sleep_quality: nextAnswers.sleepQuality,
+              fatigue_level: nextAnswers.fatigueLevel,
+              muscle_soreness: nextAnswers.muscleSoreness,
+              stress_level: nextAnswers.stressLevel,
+              total_score: readiness.total_score,
+              readiness_status: readiness.readiness_status,
+              created_at: nowIso,
+            },
+          }));
+          setOfflineNotice(`${targetPlayer.last_name} ${targetPlayer.first_name}: ${OFFLINE_SAVED_MESSAGE}`);
+        };
 
-        if (res.survey) {
-          setSurveys((prev) => ({ ...prev, [activePlayer.id]: res.survey! }));
+        if (isBrowserOffline()) {
+          await saveOffline();
+          setTimeout(() => setActivePlayer(null), 500);
+          return;
+        }
+
+        try {
+          const res = await saveWellnessSurveyAction({
+            playerId: targetPlayer.id,
+            date: today,
+            sleepQuality: nextAnswers.sleepQuality,
+            fatigueLevel: nextAnswers.fatigueLevel,
+            muscleSoreness: nextAnswers.muscleSoreness,
+            stressLevel: nextAnswers.stressLevel,
+          });
+
+          if (res.survey) {
+            setSurveys((prev) => ({ ...prev, [targetPlayer.id]: res.survey! }));
+            setOfflineNotice(null);
+          }
+        } catch (err) {
+          if (isNetworkError(err)) {
+            await saveOffline();
+          }
         }
         setTimeout(() => setActivePlayer(null), 800);
       });
@@ -180,6 +244,20 @@ export default function KioskWellnessClient({ players, todaySurveys }: Props) {
           </Link>
         </div>
       </div>
+
+      {/* Offline Notice */}
+      {offlineNotice && (
+        <div className="p-3.5 rounded-2xl bg-amber-500/15 border border-amber-500/40 text-amber-200 text-xs font-medium flex items-center justify-between gap-3">
+          <span>📴 {offlineNotice}</span>
+          <button
+            type="button"
+            onClick={() => setOfflineNotice(null)}
+            className="text-amber-300 hover:text-white font-bold"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Team Filters */}
       <div className="flex flex-wrap gap-2 items-center">

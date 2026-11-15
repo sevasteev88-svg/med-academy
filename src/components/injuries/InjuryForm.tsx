@@ -17,7 +17,14 @@ import type {
   InjurySide,
   InjuryType,
 } from "@/types/database";
-import { Zap, Stethoscope, Clock, Shield, AlertTriangle } from "lucide-react";
+import { Zap, Stethoscope, Clock, Shield, AlertTriangle, WifiOff } from "lucide-react";
+import {
+  enqueueOfflineItem,
+  generateOfflineItemId,
+  isBrowserOffline,
+  isNetworkError,
+  OFFLINE_SAVED_MESSAGE,
+} from "@/lib/offline-queue";
 
 export type InjuryFormInitialValues = {
   injuryType?: InjuryType;
@@ -270,6 +277,7 @@ export default function InjuryForm({
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [offlineNotice, setOfflineNotice] = useState<string | null>(null);
 
   // Завантаження минулих травм для зв'язку рецидивів
   useEffect(() => {
@@ -327,6 +335,7 @@ export default function InjuryForm({
     }
 
     setError(null);
+    setOfflineNotice(null);
     setLoading(true);
 
     try {
@@ -362,6 +371,44 @@ export default function InjuryForm({
           : metaPrefix;
       }
 
+      const saveToOfflineQueue = async () => {
+        const offlineId = generateOfflineItemId();
+        await enqueueOfflineItem({
+          id: offlineId,
+          type: "injury",
+          client_timestamp: new Date().toISOString(),
+          plain_payload: {
+            id: offlineId,
+            player_id: playerId,
+            injury_type: injuryType,
+            location: location as InjuryLocation,
+            side,
+            severity,
+            mechanism,
+            date_of_injury: dateOfInjury,
+            expected_return_date: expectedReturnDate || null,
+            vas_score: vasScore ?? null,
+            activity_type: activityType || "training",
+            description: combinedDescription || null,
+            osiics_code: osiicsCode?.trim() || null,
+            onset: onset || "acute",
+            occurrence: occurrence || "new",
+            previous_injury_id:
+              occurrence === "recurrence" || occurrence === "exacerbation"
+                ? previousInjuryId || null
+                : null,
+            status: "active",
+          },
+        });
+        setOfflineNotice(OFFLINE_SAVED_MESSAGE);
+        onSuccess?.();
+      };
+
+      if (isBrowserOffline()) {
+        await saveToOfflineQueue();
+        return;
+      }
+
       const result = await createInjury({
         playerId,
         injuryType,
@@ -389,8 +436,45 @@ export default function InjuryForm({
         onSuccess?.();
         if (successRedirectUrl) router.push(successRedirectUrl);
       }
-    } catch {
-      setError("Помилка збереження. Спробуйте ще раз.");
+    } catch (err) {
+      if (isNetworkError(err)) {
+        try {
+          const offlineId = generateOfflineItemId();
+          await enqueueOfflineItem({
+            id: offlineId,
+            type: "injury",
+            client_timestamp: new Date().toISOString(),
+            plain_payload: {
+              id: offlineId,
+              player_id: playerId,
+              injury_type: injuryType,
+              location: location as InjuryLocation,
+              side,
+              severity,
+              mechanism,
+              date_of_injury: dateOfInjury,
+              expected_return_date: expectedReturnDate || null,
+              vas_score: vasScore ?? null,
+              activity_type: activityType || "training",
+              description: description.trim() || null,
+              osiics_code: osiicsCode?.trim() || null,
+              onset: onset || "acute",
+              occurrence: occurrence || "new",
+              previous_injury_id:
+                occurrence === "recurrence" || occurrence === "exacerbation"
+                  ? previousInjuryId || null
+                  : null,
+              status: "active",
+            },
+          });
+          setOfflineNotice(OFFLINE_SAVED_MESSAGE);
+          onSuccess?.();
+        } catch {
+          setError("Помилка збереження в офлайн-чергу. Спробуйте ще раз.");
+        }
+      } else {
+        setError("Помилка збереження. Спробуйте ще раз.");
+      }
     } finally {
       setLoading(false);
     }
@@ -924,6 +1008,14 @@ export default function InjuryForm({
               <span className="text-xl">⏱️</span>
             </div>
           </section>
+
+          {/* Офлайн-повідомлення */}
+          {offlineNotice && (
+            <div className="p-3 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-200 text-xs flex items-center gap-2">
+              <WifiOff className="w-4 h-4 shrink-0 text-amber-400" />
+              <span>{offlineNotice}</span>
+            </div>
+          )}
 
           {/* Повідомлення про помилку */}
           {error && (

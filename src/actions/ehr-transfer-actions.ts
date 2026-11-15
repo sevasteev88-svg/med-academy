@@ -196,100 +196,64 @@ export async function exportPlayerEhrAction(
 
   // СКРИНІНГИ
   if (sectionsToFetch.has("screenings")) {
-    let qSc = supabase
-      .from("injury_logs")
-      .select("date, note")
-      .eq("category", "examination")
-      .like("note", "[SCREENING]%")
+    const { data: scRows } = await supabase
+      .from("player_screenings")
+      .select("date, season, examiner_doctor, overall_status, valid_until, cardio_clearance, restrictions_notes, data")
+      .eq("player_id", player.id)
       .order("date", { ascending: false });
 
-    const { data: scLogs } = await qSc;
-    transferData.screenings = (scLogs || [])
-      .map((l) => {
-        try {
-          const raw = l.note.replace("[SCREENING] ", "");
-          const parsed = JSON.parse(raw);
-          if (parsed.player_id === player.id) {
-            return {
-              season: parsed.season || "2026/2027",
-              date: parsed.date || l.date,
-              examiner_doctor: parsed.examiner_doctor || "Лікар клубу",
-              overall_status: parsed.overall_status || "cleared",
-              valid_until: parsed.valid_until || "2027-06-30",
-              cardio_clearance: Boolean(parsed.cardio_clearance),
-              restrictions_notes: parsed.restrictions_notes || null,
-            };
-          }
-          return null;
-        } catch {
-          return null;
-        }
-      })
-      .filter(Boolean) as any[];
+    transferData.screenings = (scRows || []).map((row: any) => ({
+      season: row.season || row.data?.season || "2026/2027",
+      date: row.date || row.data?.date,
+      examiner_doctor: row.examiner_doctor || row.data?.examiner_doctor || "Лікар клубу",
+      overall_status: row.overall_status || row.data?.overall_status || "cleared",
+      valid_until: row.valid_until || row.data?.valid_until || "2027-06-30",
+      cardio_clearance: Boolean(row.cardio_clearance ?? row.data?.cardio_clearance),
+      restrictions_notes: row.restrictions_notes || row.data?.restrictions_notes || null,
+    })) as any[];
   }
 
   // ПРИЗНАЧЕННЯ ТА ЛІКИ
   if (sectionsToFetch.has("prescriptions")) {
-    const { data: pLogs } = await supabase
-      .from("injury_logs")
-      .select("date, note")
-      .like("note", "[TREATMENT]%")
+    const { data: pRows } = await supabase
+      .from("medical_treatments")
+      .select("date, title, dosage_or_params, wada_status, doctor_name, notes, data")
+      .eq("player_id", player.id)
       .order("date", { ascending: false });
 
-    transferData.prescriptions = (pLogs || [])
-      .map((l) => {
-        try {
-          const raw = l.note.replace("[TREATMENT] ", "");
-          const parsed = JSON.parse(raw);
-          if (parsed.player_id === player.id) {
-            return {
-              date: parsed.date || l.date,
-              medication_name: parsed.medication_name || parsed.title || "Медикамент",
-              dosage: parsed.dosage || "За протоколом",
-              route: parsed.route || "oral",
-              is_wada_prohibited: Boolean(parsed.is_wada_prohibited),
-              prescribed_by: parsed.prescribed_by || user.fullName,
-              notes: parsed.notes,
-            };
-          }
-          return null;
-        } catch {
-          return null;
-        }
-      })
-      .filter(Boolean) as any[];
+    transferData.prescriptions = (pRows || []).map((row: any) => ({
+      date: row.date || row.data?.date,
+      medication_name: row.data?.medication_name || row.title || "Медикамент",
+      dosage: row.data?.dosage || row.dosage_or_params || "За протоколом",
+      route: row.data?.route || "oral",
+      is_wada_prohibited: Boolean(
+        row.data?.is_wada_prohibited ??
+          (row.wada_status && row.wada_status !== "allowed")
+      ),
+      prescribed_by: row.data?.prescribed_by || row.doctor_name || user.fullName,
+      notes: row.notes ?? row.data?.notes,
+    })) as any[];
   }
 
   // LSI ТЕСТИ
   if (sectionsToFetch.has("lsi")) {
-    const { data: lsiLogs } = await supabase
-      .from("injury_logs")
-      .select("date, note")
-      .like("note", "[LSI_ASSESSMENT]%")
+    const { data: lsiRows } = await supabase
+      .from("lsi_assessments")
+      .select("date, overall_lsi_percent, status, doctor_verdict, data")
+      .eq("player_id", player.id)
       .order("date", { ascending: false });
 
-    transferData.lsi = (lsiLogs || [])
-      .map((l) => {
-        try {
-          const raw = l.note.replace("[LSI_ASSESSMENT] ", "");
-          const parsed = JSON.parse(raw);
-          if (parsed.player_id === player.id) {
-            return {
-              date: parsed.assessment_date || l.date,
-              metric_name: parsed.metric_name || "Динамометрія",
-              involved_value: parsed.involved_limb_value || 0,
-              uninvolved_value: parsed.uninvolved_limb_value || 0,
-              lsi_percentage: parsed.lsi_percentage || 100,
-              status: parsed.symmetry_status || "optimal",
-              notes: parsed.clinical_decision,
-            };
-          }
-          return null;
-        } catch {
-          return null;
-        }
-      })
-      .filter(Boolean) as any[];
+    transferData.lsi = (lsiRows || []).map((row: any) => ({
+      date: row.data?.assessment_date || row.date,
+      metric_name: row.data?.metric_name || row.data?.tests?.[0]?.test_name || "Динамометрія",
+      involved_value: row.data?.involved_limb_value ?? row.data?.tests?.[0]?.injured_limb_value ?? 0,
+      uninvolved_value: row.data?.uninvolved_limb_value ?? row.data?.tests?.[0]?.uninjured_limb_value ?? 0,
+      lsi_percentage:
+        row.data?.lsi_percentage ??
+        (row.overall_lsi_percent != null ? Number(row.overall_lsi_percent) : 100),
+      status: row.data?.symmetry_status || row.status || "optimal",
+      notes: row.data?.clinical_decision || row.doctor_verdict,
+    })) as any[];
   }
 
   // 4. Побудова стандартизованого пакету

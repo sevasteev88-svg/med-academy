@@ -122,6 +122,16 @@ export async function GET(req: NextRequest) {
     playersQuery = playersQuery.eq("club_id", auth.clubId);
   }
 
+  let screeningsQuery = supabase
+    .from("player_screenings")
+    .select("id, player_id, date, season, examiner_doctor, overall_status, valid_until, cardio_clearance, restrictions_notes, data, created_at")
+    .order("date", { ascending: false })
+    .limit(300);
+
+  if (auth.clubId) {
+    screeningsQuery = screeningsQuery.eq("club_id", auth.clubId);
+  }
+
   const [teamsRes, playersRes, rtpLogsRes, screeningLogsRes, session] = await Promise.all([
     teamsQuery,
     playersQuery,
@@ -131,12 +141,7 @@ export async function GET(req: NextRequest) {
       .like("note", "[RTP_PHASE]%")
       .order("created_at", { ascending: false })
       .limit(300),
-    supabase
-      .from("injury_logs")
-      .select("note, date, created_at")
-      .like("note", "[SCREENING]%")
-      .order("created_at", { ascending: false })
-      .limit(300),
+    screeningsQuery,
     getCoachSession(auth.coachUserId, auth.chatId),
   ]);
 
@@ -151,13 +156,22 @@ export async function GET(req: NextRequest) {
   }
 
   const latestScreeningsMap = new Map<string, PreSeasonScreening>();
-  for (const log of screeningLogsRes.data || []) {
-    try {
-      const parsed = JSON.parse(log.note.replace("[SCREENING] ", "")) as PreSeasonScreening;
-      if (parsed?.player_id && !latestScreeningsMap.has(parsed.player_id)) {
-        latestScreeningsMap.set(parsed.player_id, parsed);
-      }
-    } catch {}
+  for (const row of (screeningLogsRes.data || []) as any[]) {
+    if (row.player_id && !latestScreeningsMap.has(row.player_id)) {
+      latestScreeningsMap.set(row.player_id, {
+        ...((row.data as PreSeasonScreening) || {}),
+        id: row.data?.id || row.id,
+        player_id: row.player_id,
+        date: row.date,
+        season: row.season ?? row.data?.season,
+        examiner_doctor: row.examiner_doctor ?? row.data?.examiner_doctor,
+        overall_status: row.overall_status ?? row.data?.overall_status,
+        valid_until: row.valid_until ?? row.data?.valid_until,
+        cardio_clearance: row.cardio_clearance ?? row.data?.cardio_clearance,
+        restrictions_notes: row.restrictions_notes ?? row.data?.restrictions_notes,
+        created_at: row.created_at ?? row.data?.created_at,
+      });
+    }
   }
 
   const players = (playersRes.data || []).map((p: any) => {

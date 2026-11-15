@@ -25,49 +25,36 @@ export async function saveLsiAssessmentAction(
     created_at: new Date().toISOString(),
   };
 
-  const payload = `[LSI_ASSESSMENT] ${JSON.stringify(record)}`;
-
-  // Отримуємо або створюємо системний запис травми для прив'язки
-  let targetInjuryId = assessmentData.injury_id || null;
-  if (!targetInjuryId) {
-    const { data: existingInj } = await supabase
-      .from("injuries")
-      .select("id")
-      .eq("player_id", assessmentData.player_id)
-      .order("date_of_injury", { ascending: false })
-      .limit(1);
-
-    if (existingInj && existingInj.length > 0) {
-      targetInjuryId = existingInj[0].id;
-    } else {
-      const { data: newInj } = await supabase
-        .from("injuries")
-        .insert({
-          player_id: assessmentData.player_id,
-          date_of_injury: assessmentData.date,
-          injury_type: assessmentData.injury_type || "ligament",
-          location: "knee",
-          side: assessmentData.tested_limb,
-          severity: "moderate",
-          status: "rehabilitation",
-          description: "Протокол функціонального тестування симетрії LSI / Динамометрія",
-          vas_score: 0,
-        } as any)
-        .select("id")
-        .single();
-
-      if (newInj) targetInjuryId = newInj.id;
-    }
-  }
-
-  const { error } = await supabase.from("injury_logs").insert({
-    injury_id: targetInjuryId,
-    date: assessmentData.date,
-    category: "examination",
-    note: payload,
-  } as any);
+  // Зберігаємо безпосередньо в lsi_assessments (без фіктивної травми в injuries)
+  const { data: inserted, error } = await supabase
+    .from("lsi_assessments")
+    .insert({
+      club_id: auth.user.clubId,
+      player_id: assessmentData.player_id,
+      injury_id: assessmentData.injury_id || null,
+      date: assessmentData.date,
+      injury_type: assessmentData.injury_type,
+      tested_limb: assessmentData.tested_limb,
+      evaluator_name: assessmentData.evaluator_name,
+      doctor_signature: assessmentData.doctor_signature,
+      protocol_source: assessmentData.protocol_source,
+      phase_clearance: assessmentData.phase_clearance,
+      overall_lsi_percent: assessmentData.overall_lsi_percent,
+      criteria_met: Boolean(assessmentData.criteria_met),
+      status: assessmentData.status,
+      doctor_verdict: assessmentData.doctor_verdict,
+      notes: assessmentData.notes || null,
+      data: record,
+    } as any)
+    .select("id")
+    .single();
 
   if (error) return { error: error.message };
+
+  const savedRecord: LsiAssessmentRecord = {
+    ...record,
+    id: inserted?.id || record.id,
+  };
 
   if (assessmentData.injury_id) {
     revalidatePath(`/injuries/${assessmentData.injury_id}`);
@@ -75,5 +62,5 @@ export async function saveLsiAssessmentAction(
   revalidatePath(`/players/${assessmentData.player_id}`);
   revalidatePath("/rtp");
 
-  return { success: true, record };
+  return { success: true, record: savedRecord };
 }

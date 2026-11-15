@@ -7,10 +7,12 @@ import {
   PHASE_TYPICAL_INJURIES,
   METHOD_LABELS,
   RECOMMENDED_AGE_RANGE,
+  type BioBandingPlayerInput,
   type GrowthPhase,
   type RiskZone,
   type MethodName,
 } from "@/lib/phv-calculator";
+import BioBandingSection from "@/components/growth/BioBandingSection";
 
 // ─── Типи з БД ─────────────────────────────────────────────
 
@@ -205,6 +207,20 @@ export default async function GrowthDashboard({
 
   const availableTeams = allTeams ?? [];
 
+  const bioBandingInputs: BioBandingPlayerInput[] = withData.map((p) => ({
+    id: p.id,
+    firstName: p.first_name,
+    lastName: p.last_name,
+    position: p.position,
+    teamName: (p.teams as any)?.name ?? null,
+    sex: p.sex,
+    chronologicalAge: p.latest!.age_at_measurement,
+    consensusOffset: p.latest!.consensus_offset,
+    consensusPhvAge: p.latest!.consensus_phv_age,
+    heightVelocity: p.latest!.height_velocity,
+    riskZone: p.latest!.risk_zone,
+  }));
+
   return (
     <div className="min-h-screen bg-transparent text-slate-100 p-4 sm:p-6 md:p-8">
       <div className="max-w-6xl mx-auto space-y-6">
@@ -287,6 +303,13 @@ export default async function GrowthDashboard({
             <div className="text-3xl font-black font-mono text-amber-400">{stats.inPhv}</div>
           </div>
         </div>
+
+        {/* Біо-бандинг (групи дозрівання) */}
+        <BioBandingSection
+          players={bioBandingInputs}
+          teams={availableTeams.map((t) => t.name)}
+          initialTeam={selectedTeam}
+        />
 
         {/* PHV-зона */}
         {stats.inPhv > 0 && (

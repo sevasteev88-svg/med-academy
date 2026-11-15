@@ -130,72 +130,51 @@ export async function saveScreeningAction(
     created_at: new Date().toISOString(),
   };
 
-  const payload = `[SCREENING] ${JSON.stringify(record)}`;
-
-  // Отримуємо або створюємо системний запис у injuries для уникнення порушення NOT NULL constraint
-  let targetInjuryId: string | null = null;
-  const { data: activeInjuries } = await supabase
-    .from("injuries")
+  // Зберігаємо безпосередньо у таблицю player_screenings (без фіктивної травми в injuries)
+  const { data: inserted, error } = await supabase
+    .from("player_screenings")
+    .insert({
+      club_id: auth.user.clubId,
+      player_id: record.player_id,
+      date: record.date,
+      season: record.season,
+      examiner_doctor: record.examiner_doctor,
+      overall_status: record.overall_status,
+      valid_until: record.valid_until || null,
+      cardio_clearance: Boolean(record.cardio_clearance),
+      restrictions_notes: record.restrictions_notes,
+      data: record,
+    } as any)
     .select("id")
-    .eq("player_id", record.player_id)
-    .order("date_of_injury", { ascending: false })
-    .limit(1);
-
-  if (activeInjuries && activeInjuries.length > 0) {
-    targetInjuryId = activeInjuries[0].id;
-  } else {
-    const { data: newInjury, error: createInjErr } = await supabase
-      .from("injuries")
-      .insert({
-        club_id: auth.user.clubId,
-        player_id: record.player_id,
-        date_of_injury: record.date,
-        injury_type: "illness",
-        location: "other",
-        severity: "minor",
-        status: "closed",
-        description: "Передсезонний скринінг / Медогляд",
-        vas_score: 0,
-      } as any)
-      .select("id")
-      .single();
-
-    if (!createInjErr && newInjury) {
-      targetInjuryId = newInjury.id;
-    }
-  }
-
-  // Зберігаємо у відкриту категорію логів
-  const { error } = await supabase.from("injury_logs").insert({
-    club_id: auth.user.clubId,
-    injury_id: targetInjuryId,
-    date: record.date,
-    category: "examination",
-    note: payload,
-  } as any);
+    .single();
 
   if (error) return { error: error.message };
+
+  const savedRecord: PreSeasonScreening = {
+    ...record,
+    id: inserted?.id || record.id,
+  };
 
   await logAudit({
     action: "save_screening",
     entity: "screening",
-    entityId: record.id,
-    playerId: record.player_id,
+    entityId: savedRecord.id,
+    playerId: savedRecord.player_id,
     meta: {
-      date: record.date,
-      season: record.season,
-      overall_status: record.overall_status,
-      ecg: record.cardio_ecg_rest,
+      date: savedRecord.date,
+      season: savedRecord.season,
+      overall_status: savedRecord.overall_status,
+      ecg: savedRecord.cardio_ecg_rest,
     },
     userId: auth.user.id,
     clubId: auth.user.clubId,
   });
 
-  revalidatePath(`/players/${record.player_id}`);
+  revalidatePath(`/players/${savedRecord.player_id}`);
   revalidatePath("/players");
   revalidatePath("/availability");
   revalidatePath("/reports/matchday");
   revalidatePath("/coach-briefing");
 
-  return { success: true, screening: record };
+  return { success: true, screening: savedRecord };
 }

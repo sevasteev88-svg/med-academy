@@ -1,10 +1,12 @@
 "use server";
 
 import { createClient } from "@/utils/supabase/server";
-import { assertDoctor } from "@/lib/auth";
+import { assertAuth, assertDoctor, assertTeamStaff } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { revalidatePath } from "next/cache";
 import { resolveOfflineConflict, buildConflictAuditMeta } from "@/lib/offline-conflict";
+import { saveTeamTrainingAction } from "@/actions/training-session-actions";
+import { calculateWellnessReadiness, type WellnessScore } from "@/types/wellness";
 import type { OfflineOutboxItem, SyncBatchResult } from "@/types/offline";
 
 /**
@@ -14,7 +16,7 @@ import type { OfflineOutboxItem, SyncBatchResult } from "@/types/offline";
 export async function syncOfflineBatchAction(
   items: OfflineOutboxItem[]
 ): Promise<{ success: boolean; result?: SyncBatchResult; error?: string }> {
-  const auth = await assertDoctor();
+  const auth = await assertAuth();
   if ("error" in auth) {
     return { success: false, error: auth.error };
   }
@@ -37,6 +39,12 @@ export async function syncOfflineBatchAction(
 
     try {
       if (item.type === "injury") {
+        const docAuth = await assertDoctor();
+        if ("error" in docAuth) {
+          failed++;
+          details.push({ id: item.id, type: "injury", success: false, error: docAuth.error });
+          continue;
+        }
         // Синхронізація форми «Фіксувати травму»
         const injuryId = payload.id || item.id;
         const { data: existing } = await supabase
@@ -106,18 +114,70 @@ export async function syncOfflineBatchAction(
         succeeded++;
         details.push({ id: item.id, type: "injury", success: true });
       } else if (item.type === "wellness") {
+        const playerId = payload.player_id || payload.playerId;
+        if (!playerId) {
+          failed++;
+          details.push({ id: item.id, type: "wellness", success: false, error: "Не вказано гравця" });
+          continue;
+        }
+
+        const { data: playerRow } = await supabase
+          .from("players")
+          .select("team_id")
+          .eq("id", playerId)
+          .maybeSingle();
+
+        if (user.role === "coach" && !playerRow?.team_id) {
+          failed++;
+          details.push({
+            id: item.id,
+            type: "wellness",
+            success: false,
+            error: "Недостатньо прав. Гравець не закріплений за командою.",
+          });
+          continue;
+        }
+
+        const staffAuth = await assertTeamStaff(playerRow?.team_id || undefined);
+        if ("error" in staffAuth) {
+          failed++;
+          details.push({ id: item.id, type: "wellness", success: false, error: staffAuth.error });
+          continue;
+        }
+
+        const sleepQuality = (payload.sleep_quality ?? payload.sleepQuality ?? 4) as WellnessScore;
+        const fatigue = (payload.fatigue ?? payload.fatigue_level ?? payload.fatigueLevel ?? 4) as WellnessScore;
+        const soreness = (payload.soreness ?? payload.muscle_soreness ?? payload.muscleSoreness ?? 4) as WellnessScore;
+        const stress = (payload.stress ?? payload.stress_level ?? payload.stressLevel ?? 4) as WellnessScore;
+        const date = payload.date || item.client_timestamp.split("T")[0];
+
+        const normalizedEntry = {
+          player_id: playerId,
+          date,
+          sleep_quality: sleepQuality,
+          fatigue,
+          soreness,
+          stress,
+          pain: payload.pain ?? false,
+          pain_vas: payload.pain_vas ?? null,
+          pain_locations: payload.pain_locations ?? [],
+          illness: payload.illness ?? false,
+          comment: payload.comment ?? payload.notes ?? null,
+          source: payload.source ?? "staff",
+        };
+
         // Синхронізація форми самопочуття (wellness)
         const { data: existing } = await supabase
           .from("wellness_entries")
           .select("*")
-          .eq("player_id", payload.player_id)
-          .eq("date", payload.date)
+          .eq("player_id", playerId)
+          .eq("date", date)
           .maybeSingle();
 
         if (existing) {
           const resolution = resolveOfflineConflict({
             entityType: "wellness",
-            clientPayload: payload,
+            clientPayload: normalizedEntry,
             clientTimestamp: item.client_timestamp,
             serverPayload: existing,
             serverTimestamp: existing.updated_at || existing.created_at,
@@ -129,7 +189,7 @@ export async function syncOfflineBatchAction(
             await supabase
               .from("wellness_entries")
               .update({
-                ...payload,
+                ...normalizedEntry,
                 updated_at: new Date().toISOString(),
               })
               .eq("id", existing.id);
@@ -140,39 +200,97 @@ export async function syncOfflineBatchAction(
               action: "offline_conflict_resolved",
               entity: "wellness",
               entityId: existing.id,
-              playerId: payload.player_id,
+              playerId,
               userId: user.id,
               clubId: user.clubId,
               meta: buildConflictAuditMeta({
                 entityType: "wellness",
                 resolution,
                 entityId: existing.id,
-                playerId: payload.player_id,
+                playerId,
               }),
             });
           }
         } else {
           await supabase.from("wellness_entries").insert({
-            ...payload,
+            ...normalizedEntry,
             club_id: user.clubId,
+            submitted_at: item.client_timestamp,
             created_at: item.client_timestamp,
             updated_at: item.client_timestamp,
           });
         }
 
+        // Синхронно оновлюємо wellness_surveys для планшетного кіоску
+        const readiness = calculateWellnessReadiness({
+          sleep_quality: sleepQuality,
+          fatigue_level: fatigue,
+          muscle_soreness: soreness,
+          stress_level: stress,
+        });
+        await supabase.from("wellness_surveys").upsert(
+          {
+            id: payload.id || item.id,
+            club_id: user.clubId,
+            player_id: playerId,
+            date,
+            sleep_quality: sleepQuality,
+            fatigue_level: fatigue,
+            muscle_soreness: soreness,
+            stress_level: stress,
+            total_score: readiness.total_score,
+            readiness_status: readiness.readiness_status,
+            notes: normalizedEntry.comment,
+            created_at: item.client_timestamp,
+          } as any,
+          { onConflict: "player_id, date" } as any
+        );
+
         succeeded++;
         details.push({ id: item.id, type: "wellness", success: true });
       } else if (item.type === "workload") {
-        // Синхронізація навантаження (session-RPE)
-        await supabase.from("training_load_records").insert({
-          ...payload,
-          club_id: user.clubId,
-          created_at: item.client_timestamp,
-        });
+        const teamId = payload.teamId || payload.team_id;
+        if (!teamId) {
+          failed++;
+          details.push({
+            id: item.id,
+            type: "workload",
+            success: false,
+            error: "Не вказано команду для синхронізації навантаження",
+          });
+          continue;
+        }
+
+        const staffAuth = await assertTeamStaff(teamId);
+        if ("error" in staffAuth) {
+          failed++;
+          details.push({ id: item.id, type: "workload", success: false, error: staffAuth.error });
+          continue;
+        }
+
+        if (Array.isArray(payload.players)) {
+          const trainRes = await saveTeamTrainingAction(payload);
+          if (!trainRes.success) {
+            throw new Error(trainRes.error || "Помилка збереження тренування");
+          }
+        } else {
+          // Синхронізація одиничного навантаження (session-RPE)
+          await supabase.from("training_load_records").insert({
+            ...payload,
+            club_id: user.clubId,
+            created_at: item.client_timestamp,
+          });
+        }
 
         succeeded++;
         details.push({ id: item.id, type: "workload", success: true });
       } else if (item.type === "prescription") {
+        const docAuth = await assertDoctor();
+        if ("error" in docAuth) {
+          failed++;
+          details.push({ id: item.id, type: "prescription", success: false, error: docAuth.error });
+          continue;
+        }
         // Синхронізація призначень медикаментів (аптека)
         await supabase.from("medical_treatments").insert({
           ...payload,

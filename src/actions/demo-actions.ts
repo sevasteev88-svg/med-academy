@@ -205,40 +205,49 @@ export async function resetDemoClubAction(): Promise<{
 
     const existingPlayerIds = (existingPlayers || []).map((p) => p.id);
 
+    // Видаляємо логи травм клубу
+    const { data: existingInjuries } = await admin
+      .from("injuries")
+      .select("id")
+      .eq("club_id", DEMO_CLUB_ID);
+
+    const existingInjuryIds = (existingInjuries || []).map((i) => i.id);
+    if (existingInjuryIds.length > 0) {
+      await admin.from("injury_logs").delete().in("injury_id", existingInjuryIds);
+    }
+
     if (existingPlayerIds.length > 0) {
-      // Видаляємо логи травм
-      const { data: existingInjuries } = await admin
-        .from("injuries")
-        .select("id")
-        .eq("club_id", DEMO_CLUB_ID);
-
-      const existingInjuryIds = (existingInjuries || []).map((i) => i.id);
-      if (existingInjuryIds.length > 0) {
-        await admin.from("injury_logs").delete().in("injury_id", existingInjuryIds);
-      }
-
-      // Також видаляємо скринінги, прив'язані через note '[SCREENING]'
-      await admin.from("wellness_entries").delete().in("player_id", existingPlayerIds);
       await admin.from("wellness_surveys").delete().in("player_id", existingPlayerIds);
       await admin.from("anthropometry_logs").delete().in("player_id", existingPlayerIds);
       await admin.from("workload_sessions").delete().in("player_id", existingPlayerIds);
-      await admin.from("player_subscriptions").delete().eq("club_id", DEMO_CLUB_ID);
-      await admin.from("guardians").delete().eq("club_id", DEMO_CLUB_ID);
-      await admin.from("injuries").delete().eq("club_id", DEMO_CLUB_ID);
-      await admin.from("players").delete().eq("club_id", DEMO_CLUB_ID);
+
+      // Якщо користувач створив додаткових гравців, яких немає у стандартному наборі DEMO_PLAYERS:
+      const defaultDemoPlayerIds = new Set(DEMO_PLAYERS.map((p) => p.id));
+      const customPlayerIds = existingPlayerIds.filter((id) => !defaultDemoPlayerIds.has(id));
+      if (customPlayerIds.length > 0) {
+        const { error: delCustomErr } = await admin.from("players").delete().in("id", customPlayerIds);
+        if (delCustomErr) {
+          // Якщо гравець захищений audit_log або іншим зв'язком - архівуємо його
+          await admin.from("players").update({ archived_at: new Date().toISOString() }).in("id", customPlayerIds);
+        }
+      }
     }
 
+    await admin.from("player_screenings").delete().eq("club_id", DEMO_CLUB_ID);
+    await admin.from("player_subscriptions").delete().eq("club_id", DEMO_CLUB_ID);
+    await admin.from("guardians").delete().eq("club_id", DEMO_CLUB_ID);
+    await admin.from("injuries").delete().eq("club_id", DEMO_CLUB_ID);
     await admin.from("pharmacy_items").delete().eq("club_id", DEMO_CLUB_ID);
     await admin.from("exposures").delete().eq("club_id", DEMO_CLUB_ID);
-    await admin.from("teams").delete().eq("club_id", DEMO_CLUB_ID);
+    await admin.from("match_rosters").delete().eq("club_id", DEMO_CLUB_ID);
 
-    // 3. Вставка 3 команд
-    const { error: teamsErr } = await admin.from("teams").insert(DEMO_TEAMS);
+    // 3. Синхронізація (upsert) 3 команд (запобігає duplicate key teams_pkey)
+    const { error: teamsErr } = await admin.from("teams").upsert(DEMO_TEAMS);
     if (teamsErr) {
       return { success: false, error: `Помилка створення команд: ${teamsErr.message}` };
     }
 
-    // 4. Вставка 26 гравців
+    // 4. Синхронізація (upsert) 26 гравців (запобігає duplicate key players_pkey та каскадним конфліктам з audit_log)
     const playersToInsert = DEMO_PLAYERS.map((p, idx) => ({
       id: p.id,
       club_id: DEMO_CLUB_ID,
@@ -253,7 +262,7 @@ export async function resetDemoClubAction(): Promise<{
       archived_at: null,
     }));
 
-    let { error: playersErr } = await admin.from("players").insert(playersToInsert);
+    let { error: playersErr } = await admin.from("players").upsert(playersToInsert);
 
     // Якщо в тестовій базі задано український текстовий constraint:
     if (playersErr && playersErr.message.includes("chk_player_canonical_position")) {
@@ -270,7 +279,7 @@ export async function resetDemoClubAction(): Promise<{
         portal_token: `demo-portal-${p.id.replace(/-/g, "").slice(-12)}-${idx}`,
         archived_at: null,
       }));
-      const retryRes = await admin.from("players").insert(fallbackPlayers);
+      const retryRes = await admin.from("players").upsert(fallbackPlayers);
       playersErr = retryRes.error;
     }
 
@@ -432,31 +441,48 @@ export async function resetDemoClubAction(): Promise<{
       });
     }
 
-    // Додаємо передсезонні скринінги (screening) для всіх 26 гравців
+    // Додаємо передсезонні скринінги (player_screenings) для всіх 26 гравців
+    const demoScreeningsToInsert: any[] = [];
     for (const p of DEMO_PLAYERS) {
       // Гравці #5 (Кравченко) та #19 (Сидоренко) мають статус provisional (умовний допуск, 45 хв)
       const isRestricted = p.id === DEMO_PLAYERS[4].id || p.id === DEMO_PLAYERS[18].id;
+      const overallStatus = isRestricted ? "provisional" : "cleared";
+      const restrictionsNotes = isRestricted
+        ? "Умовний допуск: обмеження навантаження до 45 хв на етапі адаптації."
+        : "Повний допуск до участі у тренуваннях та офіційних матчах сезону 2026/2027.";
+
       const screeningPayload = {
         player_id: p.id,
-        screening_date: "2026-07-10",
+        season: "2026/2027",
+        date: "2026-07-10",
         valid_until: "2027-07-10",
-        clearance_status: isRestricted ? "provisional" : "approved",
-        examiner: "Д-р Андрій Коваленко",
-        cardiac_clearance: true,
+        overall_status: overallStatus,
+        examiner_doctor: "Д-р Андрій Коваленко",
+        cardio_clearance: true,
+        cardio_ecg_rest: "normal",
+        cardio_echo: "normal",
         musculoskeletal_clearance: true,
         fms_score: isRestricted ? 13 : 17,
         y_balance_composite: isRestricted ? 88.5 : 98.2,
-        notes: isRestricted
-          ? "Умовний допуск: обмеження навантаження до 45 хв на етапі адаптації."
-          : "Повний допуск до участі у тренуваннях та офіційних матчах сезону 2026/2027.",
+        restrictions_notes: restrictionsNotes,
       };
 
-      rtpLogsToInsert.push({
+      demoScreeningsToInsert.push({
         club_id: DEMO_CLUB_ID,
+        player_id: p.id,
         date: "2026-07-10",
-        author: "Д-р Андрій Коваленко",
-        note: `[SCREENING] ${JSON.stringify(screeningPayload)}`,
+        season: "2026/2027",
+        examiner_doctor: "Д-р Андрій Коваленко",
+        overall_status: overallStatus,
+        valid_until: "2027-07-10",
+        cardio_clearance: true,
+        restrictions_notes: restrictionsNotes,
+        data: screeningPayload,
       });
+    }
+
+    if (demoScreeningsToInsert.length > 0) {
+      await admin.from("player_screenings").insert(demoScreeningsToInsert);
     }
 
     if (rtpLogsToInsert.length > 0) {
@@ -592,15 +618,19 @@ export async function resetDemoClubAction(): Promise<{
     await admin.from("exposures").insert(exposuresRows);
 
     // Оновлюємо кеш шляхів
-    revalidatePath("/");
-    revalidatePath("/players");
-    revalidatePath("/availability");
-    revalidatePath("/rtp");
-    revalidatePath("/injuries");
-    revalidatePath("/pharmacy");
-    revalidatePath("/growth");
-    revalidatePath("/team/readiness");
-    revalidatePath("/team/subscriptions");
+    try {
+      revalidatePath("/");
+      revalidatePath("/players");
+      revalidatePath("/availability");
+      revalidatePath("/rtp");
+      revalidatePath("/injuries");
+      revalidatePath("/pharmacy");
+      revalidatePath("/growth");
+      revalidatePath("/team/readiness");
+      revalidatePath("/team/subscriptions");
+    } catch {
+      // Ігноруємо помилки revalidatePath при запуску поза контекстом Next.js запиту
+    }
 
     return {
       success: true,

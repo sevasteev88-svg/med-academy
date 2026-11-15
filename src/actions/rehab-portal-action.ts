@@ -485,62 +485,67 @@ export async function getAuthorizedPlayerCabinetData() {
   }
 
   // 5. План ЛФК (гравець бачить ТІЛЬКИ затверджені лікарем плани зі статусом "approved")
-  const { data: customPlanLogs } = await supabase
-    .from("injury_logs")
-    .select("note")
-    .like("note", "[CUSTOM_REHAB_PLAN]%")
+  const { data: customPlanRows } = await supabase
+    .from("rehab_plans")
+    .select("id, player_id, target_injury_id, status, doctor_name, approved_by, approved_at, data, created_at")
+    .eq("player_id", playerId)
+    .eq("status", "approved")
     .order("created_at", { ascending: false })
-    .limit(20);
+    .limit(1);
 
   let customRehabPlan: any = null;
-  if (customPlanLogs && customPlanLogs.length > 0) {
-    for (const log of customPlanLogs) {
-      try {
-        const raw = log.note.replace("[CUSTOM_REHAB_PLAN] ", "");
-        const parsed = JSON.parse(raw);
-        if (parsed.player_id === playerId) {
-          // Якщо план у статусі "draft" — ігноруємо для гравця, шукаємо останній затверджений
-          if (parsed.status === "approved" || parsed.status === undefined) {
-            customRehabPlan = parsed;
-            break;
-          }
-        }
-      } catch {}
-    }
+  if (customPlanRows && customPlanRows.length > 0) {
+    const row = customPlanRows[0] as any;
+    customRehabPlan = {
+      ...((row.data as Record<string, any>) || {}),
+      id: row.data?.id || row.id,
+      player_id: row.player_id,
+      target_injury_id: row.target_injury_id ?? row.data?.target_injury_id,
+      status: row.status,
+      doctor_name: row.doctor_name ?? row.data?.doctor_name,
+      approved_by: row.approved_by ?? row.data?.approved_by,
+      approved_at: row.approved_at ?? row.data?.approved_at,
+      created_at: row.created_at ?? row.data?.created_at,
+    };
   }
 
   // 6. Динаміка минулих чек-інів з міграцією старих шкал (1-5, де 5 = найкраще)
-  const { data: pastCheckinLogs } = await supabase
-    .from("injury_logs")
-    .select("note, date")
-    .like("note", `[REHAB_CHECKIN] %"player_id":"${playerId}"%`)
+  const { data: pastCheckinRows } = await supabase
+    .from("rehab_checkins")
+    .select("date, vas_score, sleep_quality, freshness_level, muscle_soreness, stress_level, data")
+    .eq("player_id", playerId)
     .order("date", { ascending: true })
     .limit(14);
 
-  const pastCheckins: any[] = (pastCheckinLogs || [])
-    .map((l) => {
+  const pastCheckins: any[] = (pastCheckinRows || [])
+    .map((row: any) => {
       try {
-        const raw = l.note.replace("[REHAB_CHECKIN] ", "");
-        const parsed = JSON.parse(raw);
-        if (!parsed) return null;
+        const parsed = (row.data || {}) as any;
 
         // Міграція шкали втоми: якщо є стара fatigue_level (де 1 свіжий, 5 виснажений), перетворюємо на freshness_level (де 5 свіжий)
         const freshness =
-          parsed.freshness_level !== undefined
+          row.freshness_level !== null && row.freshness_level !== undefined
+            ? Number(row.freshness_level)
+            : parsed.freshness_level !== undefined
             ? Number(parsed.freshness_level)
             : parsed.fatigue_level !== undefined
             ? 6 - Number(parsed.fatigue_level)
             : 4;
 
-        const totalScore =
-          Number(parsed.sleep_quality || 0) +
-          freshness +
-          Number(parsed.muscle_soreness || 0) +
-          Number(parsed.stress_level || 0);
+        const sleepQuality = Number(row.sleep_quality ?? parsed.sleep_quality ?? 0);
+        const muscleSoreness = Number(row.muscle_soreness ?? parsed.muscle_soreness ?? 0);
+        const stressLevel = Number(row.stress_level ?? parsed.stress_level ?? 0);
+
+        const totalScore = sleepQuality + freshness + muscleSoreness + stressLevel;
 
         return {
           ...parsed,
+          date: row.date ?? parsed.date,
+          vas_score: row.vas_score ?? parsed.vas_score,
+          sleep_quality: sleepQuality,
           freshness_level: freshness,
+          muscle_soreness: muscleSoreness,
+          stress_level: stressLevel,
           total_score: totalScore,
         };
       } catch {
@@ -550,18 +555,17 @@ export async function getAuthorizedPlayerCabinetData() {
     .filter(Boolean);
 
   // 7. Призначення та нутрицевтики лікаря для формування квестів відновлення
-  const { data: nutritionLogs } = await supabase
-    .from("injury_logs")
-    .select("note")
-    .like("note", `[NUTRITION] %"player_id":"${playerId}"%`)
+  const { data: nutritionRows } = await supabase
+    .from("player_nutrition_profiles")
+    .select("data")
+    .eq("player_id", playerId)
     .order("date", { ascending: false })
     .limit(1);
 
   const prescribedSupplements: Array<{ id: string; name: string; dosage?: string }> = [];
-  if (nutritionLogs && nutritionLogs.length > 0) {
+  if (nutritionRows && nutritionRows.length > 0) {
     try {
-      const raw = nutritionLogs[0].note.replace("[NUTRITION] ", "");
-      const nut = JSON.parse(raw);
+      const nut = (nutritionRows[0].data || {}) as any;
       if (nut.supplements_collagen_vit_c) {
         prescribedSupplements.push({
           id: "collagen",
@@ -767,7 +771,7 @@ export async function submitRehabCheckinAction(data: RehabCheckinData) {
 
   const clubId = (pl as any)?.club_id || DEFAULT_CLUB_ID;
 
-  // Знаходимо цільову травму або створюємо зв'язок (якщо є)
+  // Знаходимо цільову травму (якщо є; фіктивну травму більше не створюємо)
   let targetInjuryId: string | null = (data.injury_id && data.injury_id.trim() !== "") ? data.injury_id.trim() : null;
 
   if (!targetInjuryId) {
@@ -780,34 +784,6 @@ export async function submitRehabCheckinAction(data: RehabCheckinData) {
 
     if (existingInj && existingInj.length > 0 && existingInj[0].id) {
       targetInjuryId = existingInj[0].id;
-    } else {
-      // Створюємо профільний запис травми тільки з усіма обов'язковими NOT-NULL полями (side, mechanism тощо)
-      try {
-        const { data: newInj } = await supabase
-          .from("injuries")
-          .insert({
-            club_id: clubId,
-            player_id: data.player_id,
-            date_of_injury: data.date || new Date().toISOString().split("T")[0],
-            injury_type: "illness",
-            location: "other",
-            side: "none",
-            mechanism: "non_contact",
-            severity: "minor",
-            status: "closed",
-            onset: "acute",
-            occurrence: "new",
-            activity_type: "other",
-            description: "Самозвіти відновлення / Чек-ін",
-            vas_score: data.vas_score ?? 0,
-          } as any)
-          .select("id")
-          .maybeSingle();
-
-        if (newInj && newInj.id) {
-          targetInjuryId = newInj.id;
-        }
-      } catch {}
     }
   }
 
@@ -816,19 +792,22 @@ export async function submitRehabCheckinAction(data: RehabCheckinData) {
     injury_id: targetInjuryId || "",
   };
 
-  // Зберігаємо в injury_logs ТІЛЬКИ якщо є дійсний injury_id (в базі не допускається NULL)
-  if (targetInjuryId) {
-    try {
-      await supabase.from("injury_logs").insert({
-        club_id: clubId,
-        injury_id: targetInjuryId,
-        category: "examination",
-        date: payload.date,
-        note: `[REHAB_CHECKIN] ${JSON.stringify(payload)}`,
-      });
-    } catch (err) {
-      console.warn("[submitRehabCheckinAction] injury_logs insert warning:", err);
-    }
+  // Зберігаємо безпосередньо в rehab_checkins
+  try {
+    await supabase.from("rehab_checkins").insert({
+      club_id: clubId,
+      player_id: data.player_id,
+      injury_id: targetInjuryId || null,
+      date: payload.date,
+      vas_score: payload.vas_score ?? null,
+      sleep_quality: payload.sleep_quality ?? null,
+      freshness_level: payload.freshness_level ?? null,
+      muscle_soreness: payload.muscle_soreness ?? null,
+      stress_level: payload.stress_level ?? null,
+      data: payload,
+    } as any);
+  } catch (err) {
+    console.warn("[submitRehabCheckinAction] rehab_checkins insert warning:", err);
   }
 
   const safeInsertLog = async (category: string, date: string, note: string) => {

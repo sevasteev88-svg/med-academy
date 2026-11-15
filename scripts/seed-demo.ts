@@ -151,35 +151,47 @@ async function runSeed() {
     .eq("club_id", DEMO_CLUB_ID);
 
   const existingPlayerIds = (existingPlayers || []).map((p) => p.id);
-  if (existingPlayerIds.length > 0) {
-    const { data: existingInjuries } = await admin
-      .from("injuries")
-      .select("id")
-      .eq("club_id", DEMO_CLUB_ID);
 
-    const existingInjuryIds = (existingInjuries || []).map((i) => i.id);
-    if (existingInjuryIds.length > 0) {
-      await admin.from("injury_logs").delete().in("injury_id", existingInjuryIds);
-    }
+  const { data: existingInjuries } = await admin
+    .from("injuries")
+    .select("id")
+    .eq("club_id", DEMO_CLUB_ID);
 
-    await admin.from("wellness_entries").delete().in("player_id", existingPlayerIds);
-    await admin.from("anthropometry_logs").delete().in("player_id", existingPlayerIds);
-    await admin.from("workload_sessions").delete().in("player_id", existingPlayerIds);
-    await admin.from("player_subscriptions").delete().eq("club_id", DEMO_CLUB_ID);
-    await admin.from("guardians").delete().eq("club_id", DEMO_CLUB_ID);
-    await admin.from("injuries").delete().eq("club_id", DEMO_CLUB_ID);
-    await admin.from("players").delete().eq("club_id", DEMO_CLUB_ID);
+  const existingInjuryIds = (existingInjuries || []).map((i) => i.id);
+  if (existingInjuryIds.length > 0) {
+    await admin.from("injury_logs").delete().in("injury_id", existingInjuryIds);
   }
 
+  if (existingPlayerIds.length > 0) {
+    await admin.from("wellness_surveys").delete().in("player_id", existingPlayerIds);
+    await admin.from("anthropometry_logs").delete().in("player_id", existingPlayerIds);
+    await admin.from("workload_sessions").delete().in("player_id", existingPlayerIds);
+
+    const defaultDemoPlayerIds = new Set(DEMO_PLAYERS.map((p) => p.id));
+    const customPlayerIds = existingPlayerIds.filter((id) => !defaultDemoPlayerIds.has(id));
+    if (customPlayerIds.length > 0) {
+      const { error: delCustomErr } = await admin.from("players").delete().in("id", customPlayerIds);
+      if (delCustomErr) {
+        await admin.from("players").update({ archived_at: new Date().toISOString() }).in("id", customPlayerIds);
+      }
+    }
+  }
+
+  await admin.from("player_subscriptions").delete().eq("club_id", DEMO_CLUB_ID);
+  await admin.from("guardians").delete().eq("club_id", DEMO_CLUB_ID);
+  await admin.from("injuries").delete().eq("club_id", DEMO_CLUB_ID);
   await admin.from("pharmacy_items").delete().eq("club_id", DEMO_CLUB_ID);
   await admin.from("exposures").delete().eq("club_id", DEMO_CLUB_ID);
-  await admin.from("teams").delete().eq("club_id", DEMO_CLUB_ID);
 
-  // 4. Вставка 3 команд
-  await admin.from("teams").insert(DEMO_TEAMS);
-  console.log("✅ Створено 3 команди (U-19, U-17, U-15)");
+  // 4. Синхронізація 3 команд
+  const { error: tErr } = await admin.from("teams").upsert(DEMO_TEAMS);
+  if (tErr) {
+    console.error("❌ Помилка створення команд:", tErr.message);
+  } else {
+    console.log("✅ Створено/оновлено 3 команди (U-19, U-17, U-15)");
+  }
 
-  // 5. Вставка 26 гравців
+  // 5. Синхронізація 26 гравців
   const playersToInsert = DEMO_PLAYERS.map((p, idx) => ({
     id: p.id,
     club_id: DEMO_CLUB_ID,
@@ -194,11 +206,11 @@ async function runSeed() {
     archived_at: null,
   }));
 
-  const { error: pErr } = await admin.from("players").insert(playersToInsert);
+  const { error: pErr } = await admin.from("players").upsert(playersToInsert);
   if (pErr) {
     console.error("❌ Помилка вставки гравців:", pErr.message);
   } else {
-    console.log("✅ Створено 26 вигаданих гравців");
+    console.log("✅ Створено/оновлено 26 вигаданих гравців");
   }
 
   // 5b. B2B2C Підписки батьків (21 активна, 2 квоти, 3 очікують оплати)

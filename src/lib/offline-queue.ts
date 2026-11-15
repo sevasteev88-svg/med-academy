@@ -6,6 +6,34 @@
 import type { OfflineOutboxItem } from "@/types/offline.ts";
 import { encryptClinicalPayload, decryptClinicalPayload } from "./offline-crypto.ts";
 
+export const OFFLINE_SAVED_MESSAGE =
+  "Збережено офлайн. Синхронізується автоматично при відновленні мережі";
+
+export function isBrowserOffline(): boolean {
+  return typeof navigator !== "undefined" && navigator.onLine === false;
+}
+
+export function isNetworkError(error: unknown): boolean {
+  if (isBrowserOffline()) return true;
+  if (error instanceof TypeError) return true;
+  const msg =
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+      ? error
+      : "";
+  return /network|fetch|failed to fetch|offline|timeout|econnrefused|load failed|networkerror/i.test(
+    msg
+  );
+}
+
+export function generateOfflineItemId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `offline_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
 const DB_NAME = "medacademy_offline_db";
 const DB_VERSION = 1;
 const STORE_NAME = "outbox";

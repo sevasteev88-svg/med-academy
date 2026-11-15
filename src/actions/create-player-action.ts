@@ -72,12 +72,19 @@ async function savePlayerInitialAnamnesisAndAnthro(
     };
 
     try {
-      await supabase.from("injury_logs").insert({
+      await supabase.from("player_anamnesis").insert({
         club_id: clubId,
-        category: "note",
+        player_id: playerId,
         date: new Date().toISOString().split("T")[0],
-        note: `[INITIAL_ANAMNESIS] ${JSON.stringify(anamnesisPayload)}`,
-      });
+        jersey_number: anamnesisPayload.jersey_number,
+        phone: anamnesisPayload.phone,
+        blood_type: anamnesisPayload.blood_type,
+        allergies: anamnesisPayload.allergies,
+        past_injuries: anamnesisPayload.past_injuries,
+        initial_height: anamnesisPayload.initial_height,
+        initial_weight: anamnesisPayload.initial_weight,
+        data: anamnesisPayload,
+      } as any);
     } catch (err) {
       console.warn("Помилка збереження первинного анамнезу:", err);
     }

@@ -61,6 +61,16 @@ export async function getPlayerAvailability(
   }
 
   // 2. Паралельно отримуємо логи RTP та скринінгів
+  let screeningsQuery = supabase
+    .from("player_screenings")
+    .select("id, player_id, date, season, examiner_doctor, overall_status, valid_until, cardio_clearance, restrictions_notes, data, created_at")
+    .order("date", { ascending: false })
+    .limit(500);
+
+  if (clubId) {
+    screeningsQuery = screeningsQuery.eq("club_id", clubId);
+  }
+
   const [playersRes, rtpLogsRes, screeningLogsRes] = await Promise.all([
     playersQuery,
     supabase
@@ -69,12 +79,7 @@ export async function getPlayerAvailability(
       .like("note", "[RTP_PHASE]%")
       .order("created_at", { ascending: false })
       .limit(500),
-    supabase
-      .from("injury_logs")
-      .select("note, date, created_at")
-      .like("note", "[SCREENING]%")
-      .order("created_at", { ascending: false })
-      .limit(500),
+    screeningsQuery,
   ]);
 
   const rawPlayers = playersRes.data || [];
@@ -91,16 +96,24 @@ export async function getPlayerAvailability(
     } catch {}
   }
 
-  // Парсимо останні скринінги для кожного гравця
+  // Отримуємо останні скринінги для кожного гравця з player_screenings
   const latestScreeningsMap = new Map<string, PreSeasonScreening>();
-  for (const log of screeningLogsRes.data || []) {
-    try {
-      const raw = log.note.replace("[SCREENING] ", "");
-      const parsed = JSON.parse(raw) as PreSeasonScreening;
-      if (parsed && parsed.player_id && !latestScreeningsMap.has(parsed.player_id)) {
-        latestScreeningsMap.set(parsed.player_id, parsed);
-      }
-    } catch {}
+  for (const row of (screeningLogsRes.data || []) as any[]) {
+    if (row.player_id && !latestScreeningsMap.has(row.player_id)) {
+      latestScreeningsMap.set(row.player_id, {
+        ...((row.data as PreSeasonScreening) || {}),
+        id: row.data?.id || row.id,
+        player_id: row.player_id,
+        date: row.date,
+        season: row.season ?? row.data?.season,
+        examiner_doctor: row.examiner_doctor ?? row.data?.examiner_doctor,
+        overall_status: row.overall_status ?? row.data?.overall_status,
+        valid_until: row.valid_until ?? row.data?.valid_until,
+        cardio_clearance: row.cardio_clearance ?? row.data?.cardio_clearance,
+        restrictions_notes: row.restrictions_notes ?? row.data?.restrictions_notes,
+        created_at: row.created_at ?? row.data?.created_at,
+      });
+    }
   }
 
   // 3. Розрахунок доступності для кожного гравця (правило 5: дедуплікація)

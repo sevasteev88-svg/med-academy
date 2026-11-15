@@ -14,6 +14,10 @@ import {
 } from "@/types/lsi";
 import { saveLsiAssessmentAction } from "@/actions/save-lsi-assessment-action";
 import { INJURY_TYPE_UA } from "@/lib/constants";
+import {
+  getPreSeasonHealthyLimbReference,
+  type PreSeasonScreening,
+} from "@/types/screening";
 
 type Props = {
   playerId: string;
@@ -23,6 +27,7 @@ type Props = {
   playerWeightKg?: number | null;
   defaultInjuryType?: string;
   defaultSide?: "left" | "right" | "bilateral";
+  preSeasonScreenings?: PreSeasonScreening[];
 };
 
 export default function LsiSymmetryAssessmentCard({
@@ -33,6 +38,7 @@ export default function LsiSymmetryAssessmentCard({
   playerWeightKg,
   defaultInjuryType,
   defaultSide,
+  preSeasonScreenings,
 }: Props) {
   const [records, setRecords] = useState<LsiAssessmentRecord[]>(initialRecords);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -69,6 +75,13 @@ export default function LsiSymmetryAssessmentCard({
 
   const [isPending, startTransition] = useTransition();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const healthyBaselineRef = preSeasonScreenings
+    ? getPreSeasonHealthyLimbReference(
+        preSeasonScreenings,
+        testedLimb || defaultSide
+      )
+    : null;
 
   // Parsed body weight
   const currentBodyWeight = parseFloat(bodyWeightKgInput) || (playerWeightKg ?? null);
@@ -280,6 +293,45 @@ export default function LsiSymmetryAssessmentCard({
           <span>{isFormOpen ? "✕ Закрити" : "➕ Провести LSI тест"}</span>
         </button>
       </div>
+
+      {/* Передсезонний бейзлайн здорової ноги (додатковий орієнтир для RTP) */}
+      {healthyBaselineRef && (
+        <div className="p-3.5 rounded-xl bg-sky-950/30 border border-sky-500/30 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <div className="font-bold text-sky-300 flex items-center gap-1.5">
+              <span>🧭</span>
+              <span>
+                Передсезонний бейзлайн здорової ноги (
+                {healthyBaselineRef.healthySide === "left" ? "Ліва" : "Права"} ·{" "}
+                {healthyBaselineRef.baselineDate})
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              Додатковий орієнтир для RTP, щоб не порівнювати лише з ослабленою за час простою протилежною ногою
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-3 font-mono text-xs text-white shrink-0">
+            {healthyBaselineRef.wbltCm != null && (
+              <span className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-700">
+                WBLT: <strong>{healthyBaselineRef.wbltCm} см</strong>
+              </span>
+            )}
+            {healthyBaselineRef.hamstringsDeg != null && (
+              <span className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-700">
+                Ham 90/90: <strong>{healthyBaselineRef.hamstringsDeg}°</strong>
+              </span>
+            )}
+            {healthyBaselineRef.thomasTest !== "not_done" && (
+              <span className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-700">
+                Томас:{" "}
+                <strong>
+                  {healthyBaselineRef.thomasTest === "normal" ? "норм" : "спазм"}
+                </strong>
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* FORM: NEW ASSESSMENT */}
       {isFormOpen && (

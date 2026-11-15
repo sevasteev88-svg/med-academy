@@ -41,26 +41,39 @@ export default async function MatchdayProtocolPage() {
   const initialTeamName = teamNames[0] || (rawTeams[0]?.name ?? "U19");
 
   // 2. Отримуємо всі скринінги клубу для деталізації ЕКГ
-  const { data: screeningLogs } = await supabase
-    .from("injury_logs")
-    .select("note, date")
-    .like("note", "[SCREENING]%")
+  const clubId = user?.clubId || undefined;
+  let screeningsQuery = supabase
+    .from("player_screenings")
+    .select("id, player_id, date, season, examiner_doctor, overall_status, valid_until, cardio_clearance, restrictions_notes, data, created_at")
     .order("date", { ascending: false });
+
+  if (clubId) {
+    screeningsQuery = screeningsQuery.eq("club_id", clubId);
+  }
+
+  const { data: screeningRows } = await screeningsQuery;
 
   const latestScreeningsMap = new Map<string, PreSeasonScreening>();
 
-  (screeningLogs || []).forEach((log) => {
-    try {
-      const rawJson = log.note.replace("[SCREENING] ", "");
-      const sc = JSON.parse(rawJson) as PreSeasonScreening;
-      if (sc && sc.player_id && !latestScreeningsMap.has(sc.player_id)) {
-        latestScreeningsMap.set(sc.player_id, sc);
-      }
-    } catch {}
+  (screeningRows || []).forEach((row: any) => {
+    if (row.player_id && !latestScreeningsMap.has(row.player_id)) {
+      latestScreeningsMap.set(row.player_id, {
+        ...((row.data as PreSeasonScreening) || {}),
+        id: row.data?.id || row.id,
+        player_id: row.player_id,
+        date: row.date,
+        season: row.season ?? row.data?.season,
+        examiner_doctor: row.examiner_doctor ?? row.data?.examiner_doctor,
+        overall_status: row.overall_status ?? row.data?.overall_status,
+        valid_until: row.valid_until ?? row.data?.valid_until,
+        cardio_clearance: row.cardio_clearance ?? row.data?.cardio_clearance,
+        restrictions_notes: row.restrictions_notes ?? row.data?.restrictions_notes,
+        created_at: row.created_at ?? row.data?.created_at,
+      });
+    }
   });
 
   // 3. Отримуємо налаштування клубу для протоколу
-  const clubId = user?.clubId || undefined;
   const protocolSettings: MatchdayProtocolClubSettings =
     await getMatchdayProtocolSettingsAction(clubId);
 

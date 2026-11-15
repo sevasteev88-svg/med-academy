@@ -24,24 +24,34 @@ export default async function EditPlayerPage({
     .select("id, name, category")
     .order("sort_order", { ascending: true });
 
-  const { data: anamnesisLogs } = await supabase
-    .from("injury_logs")
-    .select("note")
-    .like("note", "[INITIAL_ANAMNESIS]%")
+  const { data: anamnesisRows } = await supabase
+    .from("player_anamnesis")
+    .select("*")
+    .eq("player_id", id)
     .order("created_at", { ascending: false })
-    .limit(20);
+    .limit(1);
 
-  const initialAnamnesis = (anamnesisLogs || [])
-    .map((l) => {
-      try {
-        const rawJson = l.note.replace("[INITIAL_ANAMNESIS] ", "").replace("[INITIAL_ANAMNESIS]", "").trim();
-        const parsed = JSON.parse(rawJson);
-        return parsed.player_id === id ? parsed : null;
-      } catch {
-        return null;
+  const latestAnamnesisRow = anamnesisRows?.[0] as any;
+  const initialAnamnesis = latestAnamnesisRow
+    ? {
+        ...((latestAnamnesisRow.data as Record<string, any>) || {}),
+        player_id: latestAnamnesisRow.player_id,
+        jersey_number: latestAnamnesisRow.jersey_number ?? latestAnamnesisRow.data?.jersey_number ?? null,
+        phone: latestAnamnesisRow.phone ?? latestAnamnesisRow.data?.phone ?? null,
+        blood_type: latestAnamnesisRow.blood_type ?? latestAnamnesisRow.data?.blood_type ?? null,
+        allergies: latestAnamnesisRow.allergies ?? latestAnamnesisRow.data?.allergies ?? null,
+        past_injuries: latestAnamnesisRow.past_injuries ?? latestAnamnesisRow.data?.past_injuries ?? null,
+        initial_height:
+          latestAnamnesisRow.initial_height != null
+            ? Number(latestAnamnesisRow.initial_height)
+            : latestAnamnesisRow.data?.initial_height ?? null,
+        initial_weight:
+          latestAnamnesisRow.initial_weight != null
+            ? Number(latestAnamnesisRow.initial_weight)
+            : latestAnamnesisRow.data?.initial_weight ?? null,
+        created_at: latestAnamnesisRow.created_at,
       }
-    })
-    .find(Boolean) || null;
+    : null;
 
   return (
     <div className="min-h-screen bg-background text-slate-200 p-5 md:p-8">

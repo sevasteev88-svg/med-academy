@@ -11,30 +11,29 @@ import type { PlayerCustomRehabPlan } from "@/types/exercise-library";
 export async function getPlayerRehabPlanAction(playerId: string): Promise<PlayerCustomRehabPlan | null> {
   const supabase = await createClient();
 
-  const { data: logs, error } = await supabase
-    .from("injury_logs")
-    .select("note, created_at")
-    .like("note", "[CUSTOM_REHAB_PLAN]%")
+  const { data: rows, error } = await supabase
+    .from("rehab_plans")
+    .select("id, player_id, target_injury_id, status, doctor_name, approved_by, approved_at, data, created_at")
+    .eq("player_id", playerId)
     .order("created_at", { ascending: false })
-    .limit(20);
+    .limit(1);
 
-  if (error || !logs || logs.length === 0) {
+  if (error || !rows || rows.length === 0) {
     return null;
   }
 
-  for (const log of logs) {
-    try {
-      const raw = log.note.replace("[CUSTOM_REHAB_PLAN] ", "");
-      const parsed = JSON.parse(raw) as PlayerCustomRehabPlan;
-      if (parsed.player_id === playerId) {
-        return parsed;
-      }
-    } catch {
-      continue;
-    }
-  }
-
-  return null;
+  const row = rows[0] as any;
+  return {
+    ...((row.data as PlayerCustomRehabPlan) || {}),
+    id: row.data?.id || row.id,
+    player_id: row.player_id,
+    target_injury_id: row.target_injury_id ?? row.data?.target_injury_id,
+    status: row.status ?? row.data?.status ?? "approved",
+    doctor_name: row.doctor_name ?? row.data?.doctor_name,
+    approved_by: row.approved_by ?? row.data?.approved_by,
+    approved_at: row.approved_at ?? row.data?.approved_at,
+    created_at: row.created_at ?? row.data?.created_at,
+  };
 }
 
 /**
@@ -58,64 +57,32 @@ export async function savePlayerRehabPlanAction(planData: Omit<PlayerCustomRehab
     created_at: new Date().toISOString(),
   };
 
-  const payload = `[CUSTOM_REHAB_PLAN] ${JSON.stringify(plan)}`;
-
-  // Отримуємо або створюємо системну травму для зв'язку
-  let targetInjuryId: string | null = planData.target_injury_id || null;
-
-  if (!targetInjuryId) {
-    const { data: existingInj } = await supabase
-      .from("injuries")
-      .select("id")
-      .eq("player_id", planData.player_id)
-      .in("status", ["active", "rehabilitation"])
-      .order("date_of_injury", { ascending: false })
-      .limit(1);
-
-    if (existingInj && existingInj.length > 0) {
-      targetInjuryId = existingInj[0].id;
-    } else {
-      const { data: anyInj } = await supabase
-        .from("injuries")
-        .select("id")
-        .eq("player_id", planData.player_id)
-        .order("date_of_injury", { ascending: false })
-        .limit(1);
-
-      if (anyInj && anyInj.length > 0) {
-        targetInjuryId = anyInj[0].id;
-      } else {
-        const { data: newInj } = await supabase
-          .from("injuries")
-          .insert({
-            player_id: planData.player_id,
-            date_of_injury: new Date().toISOString().split("T")[0],
-            injury_type: "illness",
-            location: "other",
-            severity: "minor",
-            status: "closed",
-            description: "План ЛФК / Реабілітація",
-            vas_score: 0,
-          } as any)
-          .select("id")
-          .single();
-
-        if (newInj) targetInjuryId = newInj.id;
-      }
-    }
-  }
-
-  const { error } = await supabase.from("injury_logs").insert({
-    injury_id: targetInjuryId,
-    date: new Date().toISOString().split("T")[0],
-    category: "procedure",
-    note: payload,
-  } as any);
+  // Зберігаємо безпосередньо в rehab_plans (без фіктивної травми в injuries)
+  const { data: inserted, error } = await supabase
+    .from("rehab_plans")
+    .insert({
+      club_id: auth.user.clubId,
+      player_id: planData.player_id,
+      target_injury_id: planData.target_injury_id || null,
+      date: new Date().toISOString().split("T")[0],
+      status: plan.status,
+      doctor_name: plan.doctor_name || null,
+      approved_by: plan.approved_by || null,
+      approved_at: plan.approved_at || null,
+      data: plan,
+    } as any)
+    .select("id")
+    .single();
 
   if (error) return { error: error.message };
+
+  const savedPlan: PlayerCustomRehabPlan = {
+    ...plan,
+    id: inserted?.id || plan.id,
+  };
 
   revalidatePath(`/players/${planData.player_id}`);
   revalidatePath("/rehab-portal");
 
-  return { success: true, plan };
+  return { success: true, plan: savedPlan };
 }

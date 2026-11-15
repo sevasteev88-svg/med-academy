@@ -18,6 +18,13 @@ import {
 } from "@/types/workload";
 import { saveTeamTrainingAction } from "@/actions/training-session-actions";
 import { sendPostSessionRemindersAction } from "@/actions/telegram-actions";
+import {
+  enqueueOfflineItem,
+  generateOfflineItemId,
+  isBrowserOffline,
+  isNetworkError,
+  OFFLINE_SAVED_MESSAGE,
+} from "@/lib/offline-queue";
 
 type Props = {
   initialTeam: { id: string; name: string } | null;
@@ -261,7 +268,7 @@ export default function CoachTrainingClient({
     }
 
     startTransition(async () => {
-      const res = await saveTeamTrainingAction({
+      const trainingPayload = {
         teamId: selectedTeamId,
         date,
         sessionType,
@@ -278,25 +285,60 @@ export default function CoachTrainingClient({
           rpeScore: p.rpeScore,
           notes: p.notes || null,
         })),
-      });
+      };
 
-      if (!res.success) {
-        setNotification({ type: "error", message: res.error || "Помилка збереження" });
-      } else {
-        setJustSaved(true);
-        setTimeout(() => setJustSaved(false), 5000);
-        const timeNow = new Date().toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" });
-        const tgMsg =
-          res.telegramSentCount && res.telegramSentCount > 0
-            ? ` Надіслано ${res.telegramSentCount} сповіщень футболістам у Telegram.`
-            : "";
-        const successMsg = `Тренування успішно збережено о ${timeNow}! Присутніх: ${res.presentCount}, відсутніх: ${res.absentCount}.${tgMsg}`;
-        setNotification({
-          type: "success",
-          message: successMsg,
+      const saveOffline = async () => {
+        await enqueueOfflineItem({
+          id: generateOfflineItemId(),
+          type: "workload",
+          client_timestamp: new Date().toISOString(),
+          plain_payload: trainingPayload,
         });
-        setLastSavedToast(`Збережено о ${timeNow} (${res.presentCount} гравців, ${totalAu} AU)${tgMsg}`);
+        setNotification({ type: "success", message: OFFLINE_SAVED_MESSAGE });
+        setLastSavedToast(OFFLINE_SAVED_MESSAGE);
         setTimeout(() => setLastSavedToast(null), 5000);
+      };
+
+      if (isBrowserOffline()) {
+        try {
+          await saveOffline();
+        } catch {
+          setNotification({ type: "error", message: "Помилка збереження в офлайн-чергу" });
+        }
+        return;
+      }
+
+      try {
+        const res = await saveTeamTrainingAction(trainingPayload);
+
+        if (!res.success) {
+          setNotification({ type: "error", message: res.error || "Помилка збереження" });
+        } else {
+          setJustSaved(true);
+          setTimeout(() => setJustSaved(false), 5000);
+          const timeNow = new Date().toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" });
+          const tgMsg =
+            res.telegramSentCount && res.telegramSentCount > 0
+              ? ` Надіслано ${res.telegramSentCount} сповіщень футболістам у Telegram.`
+              : "";
+          const successMsg = `Тренування успішно збережено о ${timeNow}! Присутніх: ${res.presentCount}, відсутніх: ${res.absentCount}.${tgMsg}`;
+          setNotification({
+            type: "success",
+            message: successMsg,
+          });
+          setLastSavedToast(`Збережено о ${timeNow} (${res.presentCount} гравців, ${totalAu} AU)${tgMsg}`);
+          setTimeout(() => setLastSavedToast(null), 5000);
+        }
+      } catch (err) {
+        if (isNetworkError(err)) {
+          try {
+            await saveOffline();
+          } catch {
+            setNotification({ type: "error", message: "Помилка збереження в офлайн-чергу" });
+          }
+        } else {
+          setNotification({ type: "error", message: "Помилка збереження тренування" });
+        }
       }
     });
   }

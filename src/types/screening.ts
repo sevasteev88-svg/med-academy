@@ -153,3 +153,192 @@ export const SCREENING_RANGES = {
   ferritin: { min: 1, max: 1500, label: "Феритин (1–1500 нг/мл)" },
   vitaminD: { min: 1, max: 250, label: "Вітамін D (1–250 нг/мл)" },
 };
+
+export interface ScreeningBaselineComparison {
+  hasBaseline: boolean;
+  baselineDate: string;
+  baselineSeason: string;
+  latestDate: string;
+  latestSeason: string;
+  wbltLeftDelta: number | null;
+  wbltRightDelta: number | null;
+  wbltAsymmetryLatest: number | null;
+  wbltAsymmetryBaseline: number | null;
+  hamstringsLeftDelta: number | null;
+  hamstringsRightDelta: number | null;
+  hamstringsAsymmetryLatest: number | null;
+  hamstringsAsymmetryBaseline: number | null;
+  hasFlexibilityDecline: boolean;
+  hasAsymmetryWorsening: boolean;
+  phvClinicalAlert: string | null;
+  phvRecommendation: string | null;
+}
+
+function round1(val: number): number {
+  return Math.round(val * 10) / 10;
+}
+
+function calcDiff(a: number | null | undefined, b: number | null | undefined): number | null {
+  if (a == null || b == null) return null;
+  return round1(a - b);
+}
+
+function calcAbsDiff(a: number | null | undefined, b: number | null | undefined): number | null {
+  if (a == null || b == null) return null;
+  return round1(Math.abs(a - b));
+}
+
+/**
+ * Порівнює останній скринінг із передсезонним бейзлайном цього ж гравця
+ * та формує клінічний алерт при фазі PHV + погіршенні гнучкості/асиметрії.
+ */
+export function compareScreeningWithBaseline(
+  latest: PreSeasonScreening,
+  baseline: PreSeasonScreening | null | undefined,
+  growthPhase?: "pre_phv" | "phv" | "post_phv" | null
+): ScreeningBaselineComparison {
+  const hasBaseline = Boolean(baseline && baseline.id !== latest.id);
+  const base = hasBaseline ? baseline! : latest;
+
+  const wbltLeftDelta = hasBaseline
+    ? calcDiff(latest.ortho_ankle_lunge_wblt_left, base.ortho_ankle_lunge_wblt_left)
+    : null;
+  const wbltRightDelta = hasBaseline
+    ? calcDiff(latest.ortho_ankle_lunge_wblt_right, base.ortho_ankle_lunge_wblt_right)
+    : null;
+
+  const wbltAsymmetryLatest = calcAbsDiff(
+    latest.ortho_ankle_lunge_wblt_left,
+    latest.ortho_ankle_lunge_wblt_right
+  );
+  const wbltAsymmetryBaseline = hasBaseline
+    ? calcAbsDiff(base.ortho_ankle_lunge_wblt_left, base.ortho_ankle_lunge_wblt_right)
+    : null;
+
+  const hamstringsLeftDelta = hasBaseline
+    ? calcDiff(latest.ortho_hamstrings_90_90_left, base.ortho_hamstrings_90_90_left)
+    : null;
+  const hamstringsRightDelta = hasBaseline
+    ? calcDiff(latest.ortho_hamstrings_90_90_right, base.ortho_hamstrings_90_90_right)
+    : null;
+
+  const hamstringsAsymmetryLatest = calcAbsDiff(
+    latest.ortho_hamstrings_90_90_left,
+    latest.ortho_hamstrings_90_90_right
+  );
+  const hamstringsAsymmetryBaseline = hasBaseline
+    ? calcAbsDiff(base.ortho_hamstrings_90_90_left, base.ortho_hamstrings_90_90_right)
+    : null;
+
+  // Погіршення гнучкості: зменшення WBLT >= 1.0 см або збільшення дефіциту hamstrings >= 5°
+  const wbltDeclined =
+    (wbltLeftDelta != null && wbltLeftDelta <= -1.0) ||
+    (wbltRightDelta != null && wbltRightDelta <= -1.0) ||
+    (latest.ortho_ankle_lunge_wblt_left != null && latest.ortho_ankle_lunge_wblt_left < 10) ||
+    (latest.ortho_ankle_lunge_wblt_right != null && latest.ortho_ankle_lunge_wblt_right < 10);
+
+  const hamstringsDeclined =
+    (hamstringsLeftDelta != null && hamstringsLeftDelta >= 5) ||
+    (hamstringsRightDelta != null && hamstringsRightDelta >= 5) ||
+    (latest.ortho_hamstrings_90_90_left != null && latest.ortho_hamstrings_90_90_left > 20) ||
+    (latest.ortho_hamstrings_90_90_right != null && latest.ortho_hamstrings_90_90_right > 20);
+
+  const hasFlexibilityDecline = wbltDeclined || hamstringsDeclined;
+
+  // Погіршення асиметрії: >= 2.0 см (WBLT) або >= 5° (Hamstrings)
+  const wbltAsymWorse =
+    wbltAsymmetryLatest != null &&
+    wbltAsymmetryLatest >= 2.0 &&
+    (wbltAsymmetryBaseline == null || wbltAsymmetryLatest > wbltAsymmetryBaseline);
+
+  const hamstringsAsymWorse =
+    hamstringsAsymmetryLatest != null &&
+    hamstringsAsymmetryLatest >= 5 &&
+    (hamstringsAsymmetryBaseline == null ||
+      hamstringsAsymmetryLatest > hamstringsAsymmetryBaseline);
+
+  const hasAsymmetryWorsening = wbltAsymWorse || hamstringsAsymWorse;
+
+  let phvClinicalAlert: string | null = null;
+  let phvRecommendation: string | null = null;
+
+  if (growthPhase === "phv" && (hasFlexibilityDecline || hasAsymmetryWorsening)) {
+    phvClinicalAlert =
+      "Клінічний алерт (PHV + Скринінг): гравець у піковій фазі стрибка росту має зниження гнучкості або зростання асиметрії порівняно з передсезонним бейзлайном.";
+    phvRecommendation =
+      "Рекомендація: знизити обсяг пліометрики та максимальних спринтів на 20–30%, додати щоденну мобілізацію гомілкостопа (WBLT) та контроль хамстрінгів.";
+  }
+
+  return {
+    hasBaseline,
+    baselineDate: base.date,
+    baselineSeason: base.season,
+    latestDate: latest.date,
+    latestSeason: latest.season,
+    wbltLeftDelta,
+    wbltRightDelta,
+    wbltAsymmetryLatest,
+    wbltAsymmetryBaseline,
+    hamstringsLeftDelta,
+    hamstringsRightDelta,
+    hamstringsAsymmetryLatest,
+    hamstringsAsymmetryBaseline,
+    hasFlexibilityDecline,
+    hasAsymmetryWorsening,
+    phvClinicalAlert,
+    phvRecommendation,
+  };
+}
+
+export interface PreSeasonHealthyLimbReference {
+  baselineDate: string;
+  baselineSeason: string;
+  healthySide: "left" | "right";
+  wbltCm: number | null;
+  hamstringsDeg: number | null;
+  thomasTest: ThomasTestResult;
+}
+
+/**
+ * Повертає передсезонні показники здорової (нетравмованої) ноги як додатковий орієнтир для RTP/LSI.
+ */
+export function getPreSeasonHealthyLimbReference(
+  screenings: PreSeasonScreening[],
+  injuredSide?: "left" | "right" | "bilateral"
+): PreSeasonHealthyLimbReference | null {
+  if (!screenings || screenings.length === 0) return null;
+  // Найдавніший скринінг у списку (відсортовано від новіших до старіших) — передсезонний бейзлайн
+  const sorted = [...screenings].sort(
+    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+  );
+  const baseline = sorted[0];
+
+  const healthySide: "left" | "right" =
+    injuredSide === "left" ? "right" : injuredSide === "right" ? "left" : "right";
+
+  const wbltCm =
+    healthySide === "left"
+      ? baseline.ortho_ankle_lunge_wblt_left
+      : baseline.ortho_ankle_lunge_wblt_right;
+  const hamstringsDeg =
+    healthySide === "left"
+      ? baseline.ortho_hamstrings_90_90_left
+      : baseline.ortho_hamstrings_90_90_right;
+  const thomasTest =
+    healthySide === "left"
+      ? baseline.ortho_thomas_test_left
+      : baseline.ortho_thomas_test_right;
+
+  if (wbltCm == null && hamstringsDeg == null && thomasTest === "not_done") {
+    return null;
+  }
+
+  return {
+    baselineDate: baseline.date,
+    baselineSeason: baseline.season,
+    healthySide,
+    wbltCm,
+    hamstringsDeg,
+    thomasTest,
+  };
+}

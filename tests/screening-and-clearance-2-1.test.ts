@@ -4,6 +4,8 @@ import {
   calcFootballSeason,
   isScreeningValid,
   SCREENING_RANGES,
+  compareScreeningWithBaseline,
+  getPreSeasonHealthyLimbReference,
   type PreSeasonScreening,
 } from "../src/types/screening.ts";
 import { DEFAULT_PROTOCOL_SETTINGS } from "../src/types/protocol.ts";
@@ -121,6 +123,94 @@ describe("Етап 2.1 — Скринінг і допуск", () => {
         unscreened.map((p) => p.id),
         ["p3", "p4"]
       );
+    });
+  });
+
+  describe("6. Порівняння з передсезонним бейзлайном, PHV-алерт та орієнтир для RTP", () => {
+    const createMockScreening = (
+      overrides: Partial<PreSeasonScreening>
+    ): PreSeasonScreening => ({
+      id: "scr-1",
+      player_id: "p-1",
+      season: "2026/2027",
+      date: "2026-07-10",
+      examiner_doctor: "Др. Іванов",
+      cardio_ecg_rest: "normal",
+      cardio_echo: "normal",
+      cardio_bp_systolic: 115,
+      cardio_bp_diastolic: 75,
+      cardio_hr_rest: 60,
+      cardio_clearance: true,
+      ortho_thomas_test_left: "normal",
+      ortho_thomas_test_right: "normal",
+      ortho_hamstrings_90_90_left: 10,
+      ortho_hamstrings_90_90_right: 10,
+      ortho_ankle_lunge_wblt_left: 12,
+      ortho_ankle_lunge_wblt_right: 12,
+      ortho_beighton_hypermobility_score: 2,
+      ortho_previous_surgeries: null,
+      lab_hemoglobin: 140,
+      lab_ferritin: 55,
+      lab_vitamin_d: 40,
+      overall_status: "cleared",
+      restrictions_notes: null,
+      valid_until: "2027-07-10",
+      created_at: "2026-07-10T10:00:00Z",
+      ...overrides,
+    });
+
+    it("рахує дельту WBLT/Hamstrings/асиметрії та генерує клінічний алерт у фазі PHV", () => {
+      const baseline = createMockScreening({
+        id: "scr-base",
+        date: "2026-07-10",
+        ortho_ankle_lunge_wblt_left: 12.0,
+        ortho_ankle_lunge_wblt_right: 12.0,
+        ortho_hamstrings_90_90_left: 10,
+        ortho_hamstrings_90_90_right: 10,
+      });
+
+      const latest = createMockScreening({
+        id: "scr-latest",
+        date: "2026-11-10",
+        ortho_ankle_lunge_wblt_left: 9.0,
+        ortho_ankle_lunge_wblt_right: 11.5,
+        ortho_hamstrings_90_90_left: 18,
+        ortho_hamstrings_90_90_right: 12,
+      });
+
+      const cmp = compareScreeningWithBaseline(latest, baseline, "phv");
+      assert.equal(cmp.hasBaseline, true);
+      assert.equal(cmp.wbltLeftDelta, -3.0);
+      assert.equal(cmp.wbltAsymmetryLatest, 2.5);
+      assert.equal(cmp.hamstringsLeftDelta, 8);
+      assert.equal(cmp.hasFlexibilityDecline, true);
+      assert.equal(cmp.hasAsymmetryWorsening, true);
+      assert.ok(cmp.phvClinicalAlert?.includes("PHV"));
+      assert.ok(cmp.phvRecommendation?.includes("пліометрики"));
+    });
+
+    it("getPreSeasonHealthyLimbReference повертає передсезонні показники здорової ноги для RTP", () => {
+      const baseline = createMockScreening({
+        id: "scr-base",
+        date: "2026-07-10",
+        ortho_ankle_lunge_wblt_left: 11.5,
+        ortho_ankle_lunge_wblt_right: 12.5,
+        ortho_hamstrings_90_90_left: 14,
+        ortho_hamstrings_90_90_right: 10,
+      });
+      const latest = createMockScreening({
+        id: "scr-latest",
+        date: "2026-11-10",
+        ortho_ankle_lunge_wblt_left: 9.0,
+        ortho_ankle_lunge_wblt_right: 11.0,
+      });
+
+      const ref = getPreSeasonHealthyLimbReference([latest, baseline], "left");
+      assert.ok(ref);
+      assert.equal(ref.healthySide, "right");
+      assert.equal(ref.baselineDate, "2026-07-10");
+      assert.equal(ref.wbltCm, 12.5);
+      assert.equal(ref.hamstringsDeg, 10);
     });
   });
 });

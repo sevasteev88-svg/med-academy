@@ -14,7 +14,14 @@ import {
   removeOfflineItem,
   clearOfflineQueue,
   getOfflineQueueCount,
+  isNetworkError,
+  generateOfflineItemId,
+  OFFLINE_SAVED_MESSAGE,
 } from "../src/lib/offline-queue.ts";
+import {
+  canRoleSyncOfflineMutation,
+  isMedicalOfflineMutation,
+} from "../src/lib/offline-permissions.ts";
 import type { OfflineOutboxItem } from "../src/types/offline.ts";
 
 describe("5.6 Офлайн-режим та голосові нотатки (PWA & Web Speech API)", () => {
@@ -183,6 +190,82 @@ describe("5.6 Офлайн-режим та голосові нотатки (PWA 
       const validOutboxTypes = ["injury", "wellness", "workload", "prescription"];
       assert.ok(!validOutboxTypes.includes("audio" as any));
       assert.ok(!validOutboxTypes.includes("voice_recording" as any));
+    });
+  });
+
+  describe("5. Полеві форми (травма, тренування, велнес-кіоск) та права синхронізації", () => {
+    it("enqueueOfflineItem зберігає тренування (workload) та велнес (wellness) у зашифрованій черзі", async () => {
+      await clearOfflineQueue();
+
+      const workloadId = generateOfflineItemId();
+      await enqueueOfflineItem({
+        id: workloadId,
+        type: "workload",
+        client_timestamp: new Date().toISOString(),
+        plain_payload: {
+          teamId: "team-u17",
+          date: "2026-11-14",
+          sessionType: "training_team",
+          defaultMinutes: 75,
+          defaultRpe: 6,
+          players: [{ playerId: "p-1", isPresent: true, minutes: 75, rpeScore: 6 }],
+        },
+      });
+
+      const wellnessId = generateOfflineItemId();
+      await enqueueOfflineItem({
+        id: wellnessId,
+        type: "wellness",
+        client_timestamp: new Date().toISOString(),
+        plain_payload: {
+          id: wellnessId,
+          player_id: "p-1",
+          date: "2026-11-14",
+          sleep_quality: 4,
+          fatigue: 4,
+          soreness: 3,
+          stress: 5,
+          source: "staff",
+        },
+      });
+
+      assert.equal(await getOfflineQueueCount(), 2);
+      const queue = await getOfflineQueue();
+      const workloadItem = queue.find((q) => q.id === workloadId);
+      const wellnessItem = queue.find((q) => q.id === wellnessId);
+
+      assert.ok(workloadItem);
+      assert.equal(workloadItem.plain_payload.teamId, "team-u17");
+      assert.ok(wellnessItem);
+      assert.equal(wellnessItem.plain_payload.player_id, "p-1");
+
+      await clearOfflineQueue();
+    });
+
+    it("isNetworkError коректно розпізнає мережеві збої та ігнорує бізнес-помилки", () => {
+      assert.equal(isNetworkError(new TypeError("Failed to fetch")), true);
+      assert.equal(isNetworkError(new Error("NetworkError when attempting to fetch resource")), true);
+      assert.equal(isNetworkError(new Error("Оберіть локалізацію травми")), false);
+      assert.equal(
+        OFFLINE_SAVED_MESSAGE,
+        "Збережено офлайн. Синхронізується автоматично при відновленні мережі"
+      );
+    });
+
+    it("права синхронізації: тренер може синхронізувати workload і wellness, а медичні сутності — лише лікар/адмін", () => {
+      assert.equal(isMedicalOfflineMutation("injury"), true);
+      assert.equal(isMedicalOfflineMutation("prescription"), true);
+      assert.equal(isMedicalOfflineMutation("workload"), false);
+      assert.equal(isMedicalOfflineMutation("wellness"), false);
+
+      assert.equal(canRoleSyncOfflineMutation("coach", "workload"), true);
+      assert.equal(canRoleSyncOfflineMutation("coach", "wellness"), true);
+      assert.equal(canRoleSyncOfflineMutation("coach", "injury"), false);
+      assert.equal(canRoleSyncOfflineMutation("coach", "prescription"), false);
+
+      assert.equal(canRoleSyncOfflineMutation("doctor", "injury"), true);
+      assert.equal(canRoleSyncOfflineMutation("doctor", "prescription"), true);
+      assert.equal(canRoleSyncOfflineMutation("admin", "workload"), true);
     });
   });
 });

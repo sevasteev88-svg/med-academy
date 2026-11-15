@@ -207,13 +207,7 @@ export async function prescribeTreatmentWithStockAction(
     }
   }
 
-  // 2. Визначаємо валідний targetInjuryId для збереження в injury_logs
-  let targetInjuryId = treatmentData.injury_id;
-  if (!targetInjuryId) {
-    targetInjuryId = await getOrCreateSystemInjuryId(supabase, auth.user.clubId, treatmentData.player_id);
-  }
-
-  // 3. Створюємо запис лікування гравця
+  // 2. Створюємо запис лікування гравця безпосередньо в medical_treatments (без фіктивної травми)
   const generatedId = `rx_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const entry: MedicalTreatmentEntry = {
     ...treatmentData,
@@ -223,33 +217,35 @@ export async function prescribeTreatmentWithStockAction(
     units_deducted: quantityToDeduct > 0 ? quantityToDeduct : null,
   };
 
-  const payload = `[TREATMENT] ${JSON.stringify(entry)}`;
-
-  // Визначаємо валідну категорію log_category (prescription, procedure)
-  let dbCategory: "prescription" | "procedure" = "prescription";
-  if (
-    treatmentData.category === "injection" ||
-    treatmentData.category === "taping" ||
-    treatmentData.category === "physiotherapy"
-  ) {
-    dbCategory = "procedure";
-  }
-
-  const { data: insertedLog, error: treatmentError } = await supabase
-    .from("injury_logs")
+  const { data: insertedTreatment, error: treatmentError } = await supabase
+    .from("medical_treatments")
     .insert({
       club_id: auth.user.clubId,
-      injury_id: targetInjuryId,
+      player_id: treatmentData.player_id,
+      injury_id: treatmentData.injury_id || null,
       date: treatmentData.date,
-      category: dbCategory,
-      note: payload,
+      category: treatmentData.category,
+      title: treatmentData.title,
+      dosage_or_params: treatmentData.dosage_or_params || null,
+      duration_days: treatmentData.duration_days ?? null,
+      duration_note: treatmentData.duration_note || null,
+      reason: treatmentData.reason || null,
+      doctor_name: treatmentData.doctor_name,
+      wada_status: treatmentData.wada_status,
+      doctor_wada_confirmed: Boolean(treatmentData.doctor_wada_confirmed),
+      doctor_confirmation_note: treatmentData.doctor_confirmation_note || null,
+      notes: treatmentData.notes || null,
+      pharmacy_item_id: pharmacyItemId || null,
+      units_deducted: quantityToDeduct > 0 ? quantityToDeduct : null,
+      legacy_entry_id: generatedId,
+      data: entry,
     } as any)
     .select("id")
     .single();
 
   if (treatmentError) return { error: treatmentError.message };
 
-  entry.log_id = insertedLog?.id;
+  entry.log_id = insertedTreatment?.id;
 
   await logAudit({
     action: "prescribe_treatment",
@@ -287,29 +283,45 @@ export async function deleteTreatmentAndRollbackStockAction(treatmentId: string)
 
   const supabase = await createClient();
 
-  // Знаходимо запис у injury_logs
-  const { data: logs, error: findError } = await supabase
-    .from("injury_logs")
-    .select("id, note, injury_id")
-    .like("note", `[TREATMENT] %"id":"${treatmentId}"%`)
-    .limit(1);
+  // Знаходимо запис у medical_treatments (підтримуємо як UUID, так і legacy_entry_id rx_...)
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(treatmentId);
+  let findQuery = supabase
+    .from("medical_treatments")
+    .select("*")
+    .eq("club_id", auth.user.clubId);
 
-  if (findError || !logs || logs.length === 0) {
+  findQuery = isUuid
+    ? findQuery.or(`id.eq.${treatmentId},legacy_entry_id.eq.${treatmentId}`)
+    : findQuery.eq("legacy_entry_id", treatmentId);
+
+  const { data: targetRow, error: findError } = await findQuery.limit(1).maybeSingle();
+
+  if (findError || !targetRow) {
     return { error: "Запис призначення не знайдено в базі даних" };
   }
 
-  const targetLog = logs[0];
-  let treatmentEntry: MedicalTreatmentEntry | null = null;
-  try {
-    const rawJson = targetLog.note.replace("[TREATMENT] ", "");
-    treatmentEntry = JSON.parse(rawJson);
-  } catch {
-    return { error: "Помилка структури запису призначення" };
-  }
-
-  if (!treatmentEntry) {
-    return { error: "Не вдалося розпарсити дані призначення" };
-  }
+  const treatmentEntry: MedicalTreatmentEntry = {
+    ...((targetRow.data as MedicalTreatmentEntry) || {}),
+    id: targetRow.legacy_entry_id || targetRow.id,
+    log_id: targetRow.id,
+    injury_id: targetRow.injury_id,
+    player_id: targetRow.player_id,
+    date: targetRow.date,
+    category: targetRow.category,
+    title: targetRow.title,
+    dosage_or_params: targetRow.dosage_or_params,
+    duration_days: targetRow.duration_days,
+    duration_note: targetRow.duration_note,
+    reason: targetRow.reason,
+    doctor_name: targetRow.doctor_name,
+    wada_status: targetRow.wada_status,
+    doctor_wada_confirmed: targetRow.doctor_wada_confirmed,
+    doctor_confirmation_note: targetRow.doctor_confirmation_note,
+    notes: targetRow.notes,
+    pharmacy_item_id: targetRow.pharmacy_item_id,
+    units_deducted: targetRow.units_deducted != null ? Number(targetRow.units_deducted) : null,
+    created_at: targetRow.created_at,
+  };
 
   let rolledBackUnits = 0;
   let newStockList: PharmacyItem[] | undefined;
@@ -338,9 +350,9 @@ export async function deleteTreatmentAndRollbackStockAction(treatmentId: string)
 
   // Видаляємо запис призначення
   const { error: deleteError } = await supabase
-    .from("injury_logs")
+    .from("medical_treatments")
     .delete()
-    .eq("id", targetLog.id);
+    .eq("id", targetRow.id);
 
   if (deleteError) return { error: deleteError.message };
 
