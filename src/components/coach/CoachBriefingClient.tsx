@@ -5,6 +5,8 @@ import Link from "next/link";
 import Card from "@/components/ui/Card";
 import { POSITION_LABELS } from "@/lib/constants";
 import { sendTelegramDigestAction } from "@/actions/send-telegram-digest-action";
+import CoachParentAlertsBanner from "@/components/coach/CoachParentAlertsBanner";
+import type { CoachParentAlertItem } from "@/types/parent-portal";
 
 export interface BriefingPlayer {
   id: string;
@@ -26,9 +28,10 @@ export interface BriefingPlayer {
 export interface CoachBriefingProps {
   teams: { id: string; name: string }[];
   players: BriefingPlayer[];
+  parentAlerts?: CoachParentAlertItem[];
 }
 
-export default function CoachBriefingClient({ teams, players }: CoachBriefingProps) {
+export default function CoachBriefingClient({ teams, players, parentAlerts = [] }: CoachBriefingProps) {
   const [selectedTeam, setSelectedTeam] = useState<string>(
     teams.length === 1 ? teams[0].id : "all"
   );
@@ -284,6 +287,12 @@ export default function CoachBriefingClient({ teams, players }: CoachBriefingPro
             </button>
           </div>
         </div>
+
+        {/* Повідомлення від батьків (за останні 48 год) */}
+        <CoachParentAlertsBanner
+          initialAlerts={parentAlerts}
+          selectedTeamId={selectedTeam}
+        />
 
         {/* AI Briefing Summary Box */}
         {(aiLoading || aiSummary) && (

@@ -1,6 +1,6 @@
 export type WellnessScore = 1 | 2 | 3 | 4 | 5;
 
-export type WellnessEntrySource = "player" | "kiosk" | "staff";
+export type WellnessEntrySource = "player" | "kiosk" | "staff" | "parent_portal";
 
 export interface WellnessEntry {
   id: string;

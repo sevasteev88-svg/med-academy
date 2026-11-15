@@ -7,6 +7,7 @@ import { createAdminClient } from "@/utils/supabase/admin";
 import { assertTeamStaff, DEFAULT_CLUB_ID } from "@/lib/auth";
 import { canUserAccessTeam } from "@/lib/team-access";
 import { logAudit } from "@/lib/audit";
+import { getClubDate, getClubTimezone } from "@/lib/club-timezone";
 import {
   ALL_CONSENT_SCOPES,
   CONSENT_SCOPE_META,
@@ -23,12 +24,15 @@ import { CONCUSSION_GRTP_STAGES, type ConcussionStageNumber } from "@/types/conc
 import type { PreSeasonScreening } from "@/types/screening";
 import type { RtpPhaseLog } from "@/types/rtp";
 import type { ConsentScope } from "@/types/database";
-import type {
-  ParentMessageCategory,
-  ParentMessageRecord,
-  ParentPortalData,
-  ParentPortalTokenInfo,
-  ParentRehabExerciseItem,
+import {
+  isParentWellnessAllowedForAge,
+  maskParentMessageForCoach,
+  type CoachParentAlertItem,
+  type ParentMessageCategory,
+  type ParentMessageRecord,
+  type ParentPortalData,
+  type ParentPortalTokenInfo,
+  type ParentRehabExerciseItem,
 } from "@/types/parent-portal";
 
 function hashToken(raw: string): string {
@@ -475,6 +479,26 @@ export async function getParentPortalDataAction(
     ? new Date(screeningValidUntil).getTime() < Date.now()
     : false;
 
+  // Для дітей < 14 років перевіряємо, чи заповнено сьогодні ранковий чекін (wellness_surveys)
+  let wellnessToday: ParentPortalData["wellnessToday"] = undefined;
+  if (isParentWellnessAllowedForAge(age)) {
+    const timezone = await getClubTimezone(tokenRow.club_id);
+    const today = getClubDate(timezone);
+    const { data: todaySurvey } = await admin
+      .from("wellness_surveys")
+      .select("id, created_at")
+      .eq("player_id", tokenRow.player_id)
+      .eq("date", today)
+      .maybeSingle();
+
+    wellnessToday = {
+      isUnder14: true,
+      alreadySubmitted: Boolean(todaySurvey),
+      date: today,
+      submittedAt: (todaySurvey as any)?.created_at || null,
+    };
+  }
+
   return {
     data: {
       tokenId: tokenRow.id,
@@ -526,6 +550,7 @@ export async function getParentPortalDataAction(
         missingScopes,
       },
       messages: (messagesRes.data || []) as ParentMessageRecord[],
+      wellnessToday,
     },
   };
 }
@@ -654,8 +679,9 @@ export async function submitParentMessageAction(input: {
       category: input.category,
       message: cleanMsg.slice(0, 600),
       is_read_by_staff: false,
+      is_read_by_coach: false,
     })
-    .select("id, player_id, category, message, is_read_by_staff, created_at")
+    .select("id, player_id, category, message, is_read_by_staff, is_read_by_coach, created_at")
     .single();
 
   if (error || !inserted) {
@@ -673,5 +699,269 @@ export async function submitParentMessageAction(input: {
   });
 
   revalidatePath(`/players/${tokenRow.player_id}`);
+  revalidatePath("/coach-briefing");
+  revalidatePath("/team/readiness");
   return { success: true, record: inserted as ParentMessageRecord };
+}
+
+/**
+ * Повертає повідомлення від батьків за останні 48 годин для тренера
+ * із дотриманням лікарської таємниці (фільтрує по доступних командах та маскує меддеталі).
+ */
+export async function getCoachParentAlertsAction(): Promise<{
+  alerts: CoachParentAlertItem[];
+  error?: string;
+}> {
+  const auth = await assertTeamStaff();
+  if ("error" in auth) {
+    return { alerts: [], error: auth.error };
+  }
+
+  const admin = createAdminClient();
+  const clubId = auth.user.clubId || DEFAULT_CLUB_ID;
+  const sinceIso = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+
+  const { data: rows, error } = await admin
+    .from("parent_messages")
+    .select(
+      "id, player_id, category, message, is_read_by_coach, created_at, players ( id, first_name, last_name, team_id, teams ( name ) )"
+    )
+    .eq("club_id", clubId)
+    .eq("is_read_by_coach", false)
+    .neq("category", "question")
+    .gte("created_at", sinceIso)
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  if (error || !rows) {
+    return { alerts: [], error: error?.message };
+  }
+
+  const alerts: CoachParentAlertItem[] = [];
+  for (const row of rows as any[]) {
+    const player = row.players;
+    const teamId: string | null = player?.team_id || null;
+    if (!canUserAccessTeam(auth.user, teamId)) continue;
+
+    const masked = maskParentMessageForCoach(
+      row.category as ParentMessageCategory,
+      row.message || ""
+    );
+    if (!masked.visible || !masked.category || masked.displayText === undefined) continue;
+
+    const fullName = player
+      ? `${player.last_name || ""} ${player.first_name || ""}`.trim() || "Гравець"
+      : "Гравець";
+
+    alerts.push({
+      id: row.id,
+      playerId: row.player_id,
+      playerName: fullName,
+      teamId,
+      teamName: player?.teams?.name || "Команда",
+      category: masked.category,
+      displayText: masked.displayText,
+      isMasked: Boolean(masked.isMasked),
+      createdAt: row.created_at,
+    });
+  }
+
+  return { alerts };
+}
+
+/**
+ * Позначає повідомлення від батьків як прочитані тренером (окремо від прапорця лікаря is_read_by_staff).
+ */
+export async function markParentMessagesReadByCoachAction(
+  messageIds: string[]
+): Promise<{ success?: boolean; error?: string }> {
+  const auth = await assertTeamStaff();
+  if ("error" in auth) {
+    return { error: auth.error };
+  }
+
+  const cleanIds = Array.from(
+    new Set((messageIds || []).filter((id) => typeof id === "string" && id.trim().length > 0))
+  );
+  if (cleanIds.length === 0) {
+    return { success: true };
+  }
+
+  const admin = createAdminClient();
+  const clubId = auth.user.clubId || DEFAULT_CLUB_ID;
+
+  const { data: rows } = await admin
+    .from("parent_messages")
+    .select("id, players ( team_id )")
+    .eq("club_id", clubId)
+    .in("id", cleanIds);
+
+  const allowedIds = (rows || [])
+    .filter((r: any) => canUserAccessTeam(auth.user, r.players?.team_id || null))
+    .map((r: any) => r.id as string);
+
+  if (allowedIds.length === 0) {
+    return { success: true };
+  }
+
+  const { error } = await admin
+    .from("parent_messages")
+    .update({ is_read_by_coach: true })
+    .eq("club_id", clubId)
+    .in("id", allowedIds);
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  revalidatePath("/coach-briefing");
+  revalidatePath("/team/readiness");
+  return { success: true };
+}
+
+/**
+ * Ранкове самопочуття (Wellness) від батьків для гравців молодше 14 років (< 14).
+ * Записує у wellness_surveys з позначкою source='parent_portal' та filled_by='parent'.
+ */
+export async function submitParentWellnessAction(input: {
+  rawToken: string;
+  sleepQuality: number;
+  sleepHours?: number | null;
+  fatigue: number;
+  soreness: number;
+  pain: boolean;
+  painLocations?: string[] | null;
+  illness?: boolean;
+  notes?: string | null;
+}): Promise<{ success?: boolean; date?: string; error?: string }> {
+  if (!input.rawToken || input.rawToken.trim().length < 16) {
+    return { error: "Недійсне посилання сімейного доступу." };
+  }
+
+  const scores = [input.sleepQuality, input.fatigue, input.soreness];
+  if (scores.some((s) => !Number.isInteger(s) || s < 1 || s > 5)) {
+    return { error: "Оцінки самопочуття мають бути цілими числами від 1 до 5." };
+  }
+
+  const admin = createAdminClient();
+  const tokenHash = hashToken(input.rawToken);
+
+  const { data: tokenRow } = await admin
+    .from("parent_portal_tokens")
+    .select("id, club_id, player_id, is_active")
+    .eq("token_hash", tokenHash)
+    .maybeSingle();
+
+  if (!tokenRow || !tokenRow.is_active) {
+    return { error: "Посилання сімейного доступу недійсне або відкликане." };
+  }
+
+  const { data: player } = await admin
+    .from("players")
+    .select("id, club_id, date_of_birth")
+    .eq("id", tokenRow.player_id)
+    .maybeSingle();
+
+  if (!player) {
+    return { error: "Профіль гравця не знайдено." };
+  }
+
+  const age = calcAgeYears(player.date_of_birth);
+  if (!isParentWellnessAllowedForAge(age)) {
+    return {
+      error: "Ранковий чекін через кабінет батьків доступний лише для гравців молодше 14 років.",
+    };
+  }
+
+  const clubId = player.club_id || tokenRow.club_id || DEFAULT_CLUB_ID;
+  const timezone = await getClubTimezone(clubId);
+  const today = getClubDate(timezone);
+
+  const { data: existingSurvey } = await admin
+    .from("wellness_surveys")
+    .select("id")
+    .eq("player_id", tokenRow.player_id)
+    .eq("date", today)
+    .maybeSingle();
+
+  if (existingSurvey) {
+    return { error: "Сьогоднішній чекін вже заповнено." };
+  }
+
+  const stressLevel = 4;
+  const totalScore =
+    Number(input.sleepQuality) +
+    Number(input.fatigue) +
+    Number(input.soreness) +
+    stressLevel;
+  const readinessStatus =
+    totalScore >= 16 ? "optimal" : totalScore >= 12 ? "warning" : "risk";
+
+  const painLocations =
+    input.pain && Array.isArray(input.painLocations)
+      ? input.painLocations.filter((l) => typeof l === "string" && l.trim().length > 0)
+      : [];
+
+  const sleepHours =
+    input.sleepHours !== undefined &&
+    input.sleepHours !== null &&
+    Number.isFinite(Number(input.sleepHours))
+      ? Math.max(0, Math.min(24, Number(input.sleepHours)))
+      : null;
+
+  const extraDetails = {
+    sleep_hours: sleepHours,
+    pain: Boolean(input.pain),
+    pain_locations: painLocations,
+    illness: Boolean(input.illness),
+    comment: input.notes?.trim() ? input.notes.trim().slice(0, 500) : null,
+    source: "parent_portal",
+    filled_by: "parent",
+  };
+
+  const surveyId = crypto.randomUUID();
+  const { error: insertErr } = await admin.from("wellness_surveys").insert({
+    id: surveyId,
+    club_id: clubId,
+    player_id: tokenRow.player_id,
+    date: today,
+    sleep_quality: input.sleepQuality,
+    fatigue_level: input.fatigue,
+    muscle_soreness: input.soreness,
+    stress_level: stressLevel,
+    soreness_location: painLocations[0] || null,
+    total_score: totalScore,
+    readiness_status: readinessStatus,
+    filled_by: "parent",
+    notes: JSON.stringify(extraDetails),
+    created_at: new Date().toISOString(),
+  } as any);
+
+  if (insertErr) {
+    if (insertErr.code === "23505") {
+      return { error: "Сьогоднішній чекін вже заповнено." };
+    }
+    return { error: `Не вдалося зберегти ранковий чекін: ${insertErr.message}` };
+  }
+
+  // Без витоку медичних деталей у meta
+  await logAudit({
+    action: "parent_wellness_submit",
+    entity: "wellness_surveys",
+    entityId: surveyId,
+    playerId: tokenRow.player_id,
+    clubId,
+    allowPublic: true,
+    meta: {
+      source: "parent_portal",
+      filled_by: "parent",
+      date: today,
+    },
+  });
+
+  revalidatePath("/team/readiness");
+  revalidatePath("/coach-briefing");
+  revalidatePath(`/players/${tokenRow.player_id}`);
+
+  return { success: true, date: today };
 }

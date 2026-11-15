@@ -17,6 +17,8 @@ import type { TeamComplianceStats } from "@/types/wellness";
 import { acknowledgeReadinessAction } from "@/actions/readiness-actions";
 import { sendMorningWellnessRemindersAction } from "@/actions/telegram-actions";
 import { DoctorPlayerReadinessModal } from "./DoctorPlayerReadinessModal";
+import CoachParentAlertsBanner from "@/components/coach/CoachParentAlertsBanner";
+import type { CoachParentAlertItem } from "@/types/parent-portal";
 
 interface Props {
   initialPlayers: PlayerReadinessResult[];
@@ -26,6 +28,7 @@ interface Props {
   userRole: "coach" | "doctor" | "admin";
   config: ClubReadinessConfig;
   teamCompliance?: TeamComplianceStats;
+  parentAlerts?: CoachParentAlertItem[];
 }
 
 export default function CoachReadinessClient({
@@ -36,6 +39,7 @@ export default function CoachReadinessClient({
   userRole,
   config,
   teamCompliance,
+  parentAlerts = [],
 }: Props) {
   const [players, setPlayers] = useState<PlayerReadinessResult[]>(initialPlayers);
   const [selectedTeamId, setSelectedTeamId] = useState(currentTeamId);
@@ -219,6 +223,12 @@ export default function CoachReadinessClient({
           <span>Пам&apos;ятка «Як користуватись» →</span>
         </Link>
       </div>
+
+      {/* Повідомлення від батьків (за останні 48 год) */}
+      <CoachParentAlertsBanner
+        initialAlerts={parentAlerts}
+        selectedTeamId={selectedTeamId}
+      />
 
       {/* 8.5 КОМАНДНА СТАТИСТИКА ЗАПОВНЕННЯ (COMPLIANCE RATE) */}
       {teamCompliance && (

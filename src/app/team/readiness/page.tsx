@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getTeamReadinessAction } from "@/actions/readiness-actions";
+import { getCoachParentAlertsAction } from "@/actions/parent-portal-actions";
 import CoachReadinessClient from "@/components/readiness/CoachReadinessClient";
 import CoachWeeklyTelegramModal from "@/components/reports/CoachWeeklyTelegramModal";
 
@@ -10,10 +11,13 @@ export default async function TeamReadinessPage({
 }) {
   const { teamId, date } = await searchParams;
 
-  const result = await getTeamReadinessAction({
-    teamId,
-    date,
-  });
+  const [result, parentAlertsRes] = await Promise.all([
+    getTeamReadinessAction({
+      teamId,
+      date,
+    }),
+    getCoachParentAlertsAction(),
+  ]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-6 md:p-8">
@@ -94,6 +98,7 @@ export default async function TeamReadinessPage({
             userRole={result.userRole}
             config={result.config}
             teamCompliance={result.teamCompliance}
+            parentAlerts={parentAlertsRes.alerts}
           />
         )}
       </div>

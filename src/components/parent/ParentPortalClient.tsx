@@ -10,6 +10,7 @@ import {
 import {
   submitParentConsentsAction,
   submitParentMessageAction,
+  submitParentWellnessAction,
 } from "@/actions/parent-portal-actions";
 import {
   PARENT_MESSAGE_CATEGORY_META,
@@ -17,6 +18,7 @@ import {
   type ParentMessageRecord,
   type ParentPortalData,
 } from "@/types/parent-portal";
+import { PAIN_LOCATIONS_LIST } from "@/types/wellness";
 import type { ConsentScope } from "@/types/database";
 
 type Props = {
@@ -57,6 +59,23 @@ export default function ParentPortalClient({ rawToken, initialData }: Props) {
     initialData.messages
   );
   const [msgFeedback, setMsgFeedback] = useState<{
+    type: "ok" | "err";
+    text: string;
+  } | null>(null);
+
+  // Стан ранкового самопочуття (лише для дітей < 14 років)
+  const [wellnessSubmitted, setWellnessSubmitted] = useState<boolean>(
+    Boolean(initialData.wellnessToday?.alreadySubmitted)
+  );
+  const [sleepQuality, setSleepQuality] = useState<number>(4);
+  const [sleepHours, setSleepHours] = useState<string>("9");
+  const [fatigue, setFatigue] = useState<number>(4);
+  const [soreness, setSoreness] = useState<number>(4);
+  const [hasPain, setHasPain] = useState<boolean>(false);
+  const [painLocations, setPainLocations] = useState<string[]>([]);
+  const [hasIllness, setHasIllness] = useState<boolean>(false);
+  const [wellnessNotes, setWellnessNotes] = useState<string>("");
+  const [wellnessFeedback, setWellnessFeedback] = useState<{
     type: "ok" | "err";
     text: string;
   } | null>(null);
@@ -179,6 +198,40 @@ export default function ParentPortalClient({ rawToken, initialData }: Props) {
       setMsgFeedback({
         type: "ok",
         text: "Повідомлення надіслано лікарю клубу.",
+      });
+    });
+  };
+
+  const togglePainLocation = (locId: string) => {
+    setPainLocations((prev) =>
+      prev.includes(locId) ? prev.filter((id) => id !== locId) : [...prev, locId]
+    );
+  };
+
+  const handleSubmitWellness = (e: React.FormEvent) => {
+    e.preventDefault();
+    setWellnessFeedback(null);
+    startTransition(async () => {
+      const parsedHours = sleepHours.trim() ? Number(sleepHours) : null;
+      const res = await submitParentWellnessAction({
+        rawToken,
+        sleepQuality,
+        sleepHours: parsedHours !== null && Number.isFinite(parsedHours) ? parsedHours : null,
+        fatigue,
+        soreness,
+        pain: hasPain,
+        painLocations: hasPain ? painLocations : [],
+        illness: hasIllness,
+        notes: wellnessNotes.trim() || null,
+      });
+      if (res.error) {
+        setWellnessFeedback({ type: "err", text: res.error });
+        return;
+      }
+      setWellnessSubmitted(true);
+      setWellnessFeedback({
+        type: "ok",
+        text: "Ранковий чекін збережено. Дякуємо!",
       });
     });
   };
@@ -482,6 +535,195 @@ export default function ParentPortalClient({ rawToken, initialData }: Props) {
                 </span>
               </div>
             </section>
+
+            {/* Ранкове самопочуття дитини (ТІЛЬКИ для гравців < 14 років) */}
+            {data.player.age < 14 && (
+              <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-3 print:hidden">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div>
+                    <h2 className="text-sm font-black text-white flex items-center gap-1.5">
+                      <span>🌤️</span> Ранкове самопочуття дитини (заповнюють батьки)
+                    </h2>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Короткий ранковий чекін допомагає лікарю та тренеру адаптувати навантаження.
+                    </p>
+                  </div>
+                </div>
+
+                {wellnessSubmitted ? (
+                  <div className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/35 text-xs font-bold text-emerald-300">
+                    ✓ Сьогоднішній чекін вже заповнено
+                  </div>
+                ) : (
+                  <form onSubmit={handleSubmitWellness} className="space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+                          Якість сну (1 — погано, 5 — чудово)
+                        </label>
+                        <div className="grid grid-cols-5 gap-1">
+                          {[1, 2, 3, 4, 5].map((n) => (
+                            <button
+                              key={n}
+                              type="button"
+                              onClick={() => setSleepQuality(n)}
+                              className={`py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer ${
+                                sleepQuality === n
+                                  ? "bg-sky-600/30 border-sky-500 text-white"
+                                  : "bg-slate-950 border-slate-800 text-slate-400 hover:text-white"
+                              }`}
+                            >
+                              {n}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+                          Тривалість сну (год)
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={24}
+                          step={0.5}
+                          value={sleepHours}
+                          onChange={(e) => setSleepHours(e.target.value)}
+                          placeholder="Напр.: 9"
+                          className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-sky-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+                          Бадьорість (1 — виснажений, 5 — бадьорий)
+                        </label>
+                        <div className="grid grid-cols-5 gap-1">
+                          {[1, 2, 3, 4, 5].map((n) => (
+                            <button
+                              key={n}
+                              type="button"
+                              onClick={() => setFatigue(n)}
+                              className={`py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer ${
+                                fatigue === n
+                                  ? "bg-sky-600/30 border-sky-500 text-white"
+                                  : "bg-slate-950 border-slate-800 text-slate-400 hover:text-white"
+                              }`}
+                            >
+                              {n}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+                          М&apos;язи / крепатура (1 — сильний біль, 5 — свіжі)
+                        </label>
+                        <div className="grid grid-cols-5 gap-1">
+                          {[1, 2, 3, 4, 5].map((n) => (
+                            <button
+                              key={n}
+                              type="button"
+                              onClick={() => setSoreness(n)}
+                              className={`py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer ${
+                                soreness === n
+                                  ? "bg-sky-600/30 border-sky-500 text-white"
+                                  : "bg-slate-950 border-slate-800 text-slate-400 hover:text-white"
+                              }`}
+                            >
+                              {n}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-4 pt-1">
+                      <label className="flex items-center gap-2 text-xs text-slate-200 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={hasPain}
+                          onChange={(e) => setHasPain(e.target.checked)}
+                          className="h-4 w-4 rounded accent-amber-500"
+                        />
+                        <span>Є біль або дискомфорт</span>
+                      </label>
+
+                      <label className="flex items-center gap-2 text-xs text-slate-200 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={hasIllness}
+                          onChange={(e) => setHasIllness(e.target.checked)}
+                          className="h-4 w-4 rounded accent-rose-500"
+                        />
+                        <span>Є ознаки нездужання / застуди</span>
+                      </label>
+                    </div>
+
+                    {hasPain && (
+                      <div className="space-y-1.5 pt-1">
+                        <div className="text-[11px] font-semibold text-slate-400">
+                          Де саме болить? (оберіть зони)
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {PAIN_LOCATIONS_LIST.map((loc) => {
+                            const selected = painLocations.includes(loc.id);
+                            return (
+                              <button
+                                key={loc.id}
+                                type="button"
+                                onClick={() => togglePainLocation(loc.id)}
+                                className={`px-2 py-1 rounded-lg text-[11px] font-semibold border transition cursor-pointer ${
+                                  selected
+                                    ? "bg-amber-500/20 border-amber-500/50 text-amber-200"
+                                    : "bg-slate-950 border-slate-800 text-slate-400 hover:text-white"
+                                }`}
+                              >
+                                {loc.icon} {loc.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    <div>
+                      <input
+                        type="text"
+                        value={wellnessNotes}
+                        onChange={(e) => setWellnessNotes(e.target.value)}
+                        placeholder="Коротка примітка (за бажанням, напр. погано спав)"
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-sky-500"
+                      />
+                    </div>
+
+                    {wellnessFeedback && (
+                      <div
+                        className={`p-2.5 rounded-xl text-xs font-semibold ${
+                          wellnessFeedback.type === "ok"
+                            ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+                            : "bg-rose-500/15 text-rose-300 border border-rose-500/30"
+                        }`}
+                      >
+                        {wellnessFeedback.text}
+                      </div>
+                    )}
+
+                    <div className="flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={isPending}
+                        className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold transition cursor-pointer"
+                      >
+                        {isPending ? "Збереження..." : "Зберегти ранковий чекін"}
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </section>
+            )}
 
             {/* Пам'ятка при струсі мозку (якщо активний) */}
             {data.concussionCare.isActive && (

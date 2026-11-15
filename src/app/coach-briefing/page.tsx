@@ -1,6 +1,7 @@
 import { createClient } from "@/utils/supabase/server";
 import { getCurrentUser, DEFAULT_CLUB_ID } from "@/lib/auth";
 import { getPlayerAvailability } from "@/lib/availability";
+import { getCoachParentAlertsAction } from "@/actions/parent-portal-actions";
 import CoachBriefingClient, { BriefingPlayer } from "@/components/coach/CoachBriefingClient";
 
 export default async function CoachBriefingPage() {
@@ -45,8 +46,11 @@ export default async function CoachBriefingPage() {
     teams = teams.filter((t) => coachTeams.includes(t.id));
   }
 
-  // 2. Єдине джерело доступності гравців
-  const availabilityReport = await getPlayerAvailability(user?.clubId);
+  // 2. Єдине джерело доступності гравців та повідомлення від батьків (за 48 год)
+  const [availabilityReport, parentAlertsRes] = await Promise.all([
+    getPlayerAvailability(user?.clubId),
+    getCoachParentAlertsAction(),
+  ]);
 
   let briefingPlayers: BriefingPlayer[] = availabilityReport.players.map((p) => ({
     id: p.id,
@@ -69,5 +73,11 @@ export default async function CoachBriefingPage() {
     briefingPlayers = briefingPlayers.filter((p) => coachTeams.includes(p.team_id));
   }
 
-  return <CoachBriefingClient teams={teams} players={briefingPlayers} />;
+  return (
+    <CoachBriefingClient
+      teams={teams}
+      players={briefingPlayers}
+      parentAlerts={parentAlertsRes.alerts}
+    />
+  );
 }
