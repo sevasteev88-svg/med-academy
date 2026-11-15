@@ -104,6 +104,50 @@ export function normalizePosition(raw?: string | null): CanonicalPosition | stri
 }
 
 /**
+ * Конвертація позиції у значення PostgreSQL enum `player_position` (GK, CB, LB, RB, CDM, CAM, LW, RW, ST, CF).
+ */
+export function toDbPositionEn(pos?: string | null): string {
+  if (!pos) return "CDM";
+  const p = pos.trim().toUpperCase();
+  const map: Record<string, string> = {
+    ВР: "GK",
+    ВОРОТАР: "GK",
+    ЦЗ: "CB",
+    ЗХ: "CB",
+    ЛЗ: "LB",
+    ПЗ: "RB",
+    ПРЗ: "RB",
+    ОП: "CDM",
+    ЦОП: "CDM",
+    ЦПЗ: "CDM",
+    ЦП: "CDM",
+    ЦАП: "CAM",
+    АПЗ: "CAM",
+    АП: "CAM",
+    ЛВ: "LW",
+    ПВ: "RW",
+    НП: "ST",
+    ЦН: "ST",
+    ФОРВАРД: "ST",
+    НАПАДНИК: "ST",
+    GK: "GK",
+    CB: "CB",
+    LB: "LB",
+    RB: "RB",
+    CDM: "CDM",
+    DM: "CDM",
+    CM: "CDM",
+    CAM: "CAM",
+    AM: "CAM",
+    LW: "LW",
+    RW: "RW",
+    ST: "ST",
+    CF: "CF",
+  };
+  return map[p] || "CDM";
+}
+
+/**
  * Безпечне виведення скорочення позиції (завжди українською)
  */
 export function formatPosition(pos?: string | null): string {

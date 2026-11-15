@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { assertDoctor } from "@/lib/auth";
 import { generateRandom6DigitPin, generatePortalToken, hashPin } from "@/lib/player-auth";
 import { logAudit } from "@/lib/audit";
-import { normalizePosition } from "@/lib/dictionaries";
+import { normalizePosition, toDbPositionEn } from "@/lib/dictionaries";
 import type { PlayerMedicalAnamnesis } from "@/types/player-anamnesis";
 
 export type CreatePlayerState = {
@@ -118,47 +118,46 @@ export async function createPlayerAction(
   const pinHash = await hashPin(initialPin);
   const portalToken = generatePortalToken();
 
-  const insertPayload: any = {
+  const insertWithPositionFallback = async (payload: Record<string, unknown>) => {
+    const first = await supabase
+      .from("players")
+      .insert({ ...payload, position: toDbPositionEn(position) })
+      .select("id")
+      .single();
+
+    if (first.error?.message?.includes("chk_player_canonical_position")) {
+      return supabase
+        .from("players")
+        .insert({ ...payload, position: normalizePosition(position) })
+        .select("id")
+        .single();
+    }
+
+    return first;
+  };
+
+  const basePayload = {
     club_id: auth.user.clubId,
     team_id: teamId,
     first_name: firstName.trim(),
     last_name: lastName.trim(),
     date_of_birth: dateOfBirth,
     sex: sex === "female" ? "female" : "male",
-    position: normalizePosition(position),
     dominant_leg: dominantLeg || "right",
     dominant_arm: dominantArm || "right",
+  };
+
+  const { data: newPlayer, error } = await insertWithPositionFallback({
+    ...basePayload,
     portal_token: portalToken,
     pin_hash: pinHash,
     must_change_pin: true,
     failed_attempts: 0,
-  };
-
-  const { data: newPlayer, error } = await supabase
-    .from("players")
-    .insert(insertPayload)
-    .select("id")
-    .single();
+  });
 
   if (error) {
     // Якщо колонок ще немає в схемі, пробуємо зберегти без pin_hash у таблиці players і пишемо в логи
-    const fallbackPayload = {
-      club_id: auth.user.clubId,
-      team_id: teamId,
-      first_name: firstName.trim(),
-      last_name: lastName.trim(),
-      date_of_birth: dateOfBirth,
-      sex: sex === "female" ? "female" : "male",
-      position: normalizePosition(position),
-      dominant_leg: dominantLeg || "right",
-      dominant_arm: dominantArm || "right",
-    };
-
-    const { data: fallbackPlayer, error: fallbackErr } = await supabase
-      .from("players")
-      .insert(fallbackPayload)
-      .select("id")
-      .single();
+    const { data: fallbackPlayer, error: fallbackErr } = await insertWithPositionFallback(basePayload);
 
     if (fallbackErr || !fallbackPlayer) {
       return { error: fallbackErr ? fallbackErr.message : error.message };

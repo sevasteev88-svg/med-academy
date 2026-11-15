@@ -22,6 +22,30 @@ export default function AddPlayerForm({ teams }: { teams: Team[] }) {
     {}
   );
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [formValues, setFormValues] = useState({
+    teamId: "",
+    lastName: "",
+    firstName: "",
+    dateOfBirth: "",
+    sex: "male",
+    position: "",
+    dominantLeg: "right",
+    dominantArm: "right",
+    jerseyNumber: "",
+    phone: "",
+    height: "",
+    weight: "",
+    bloodType: "",
+    allergies: "",
+    pastInjuries: "",
+  });
+
+  const handleFieldChange =
+    (field: keyof typeof formValues) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+      const value = e.target.value;
+      setFormValues((prev) => ({ ...prev, [field]: value }));
+    };
 
   useEffect(() => {
     if (state.success && state.generatedPin) {
@@ -37,7 +61,13 @@ export default function AddPlayerForm({ teams }: { teams: Team[] }) {
       <Card className="p-6">
         <form action={formAction} className="space-y-5">
           {/* Команда */}
-          <Select label="Команда *" name="teamId" required>
+          <Select
+            label="Команда *"
+            name="teamId"
+            required
+            value={formValues.teamId}
+            onChange={handleFieldChange("teamId")}
+          >
             <option value="">Оберіть команду</option>
             {youth.length > 0 && (
               <optgroup label={TEAM_CATEGORY_UA.youth}>
@@ -57,21 +87,54 @@ export default function AddPlayerForm({ teams }: { teams: Team[] }) {
 
           {/* ПІБ */}
           <div className="grid grid-cols-2 gap-3">
-            <Input label="Прізвище *" name="lastName" required placeholder="Іванов" />
-            <Input label="Ім'я *" name="firstName" required placeholder="Олександр" />
+            <Input
+              label="Прізвище *"
+              name="lastName"
+              required
+              placeholder="Іванов"
+              value={formValues.lastName}
+              onChange={handleFieldChange("lastName")}
+            />
+            <Input
+              label="Ім'я *"
+              name="firstName"
+              required
+              placeholder="Олександр"
+              value={formValues.firstName}
+              onChange={handleFieldChange("firstName")}
+            />
           </div>
 
           {/* Дата народження + Стать */}
           <div className="grid grid-cols-2 gap-3">
-            <Input label="Дата народження *" name="dateOfBirth" type="date" required />
-            <Select label="Стать *" name="sex" required defaultValue="male">
+            <Input
+              label="Дата народження *"
+              name="dateOfBirth"
+              type="date"
+              required
+              value={formValues.dateOfBirth}
+              onChange={handleFieldChange("dateOfBirth")}
+            />
+            <Select
+              label="Стать *"
+              name="sex"
+              required
+              value={formValues.sex}
+              onChange={handleFieldChange("sex")}
+            >
               <option value="male">Хлопець</option>
               <option value="female">Дівчина</option>
             </Select>
           </div>
 
           {/* Позиція */}
-          <Select label="Позиція *" name="position" required>
+          <Select
+            label="Позиція *"
+            name="position"
+            required
+            value={formValues.position}
+            onChange={handleFieldChange("position")}
+          >
             <option value="">Оберіть позицію</option>
             {CANONICAL_POSITIONS.map((code) => (
               <option key={code} value={code}>
@@ -82,12 +145,22 @@ export default function AddPlayerForm({ teams }: { teams: Team[] }) {
 
           {/* Ведучі нога / рука */}
           <div className="grid grid-cols-2 gap-3">
-            <Select label="Ведуча нога" name="dominantLeg" defaultValue="right">
+            <Select
+              label="Ведуча нога"
+              name="dominantLeg"
+              value={formValues.dominantLeg}
+              onChange={handleFieldChange("dominantLeg")}
+            >
               {sides.map((s) => (
                 <option key={s.value} value={s.value}>{s.label}</option>
               ))}
             </Select>
-            <Select label="Ведуча рука" name="dominantArm" defaultValue="right">
+            <Select
+              label="Ведуча рука"
+              name="dominantArm"
+              value={formValues.dominantArm}
+              onChange={handleFieldChange("dominantArm")}
+            >
               {sides.map((s) => (
                 <option key={s.value} value={s.value}>{s.label}</option>
               ))}
@@ -108,12 +181,16 @@ export default function AddPlayerForm({ teams }: { teams: Team[] }) {
                 min={1}
                 max={99}
                 placeholder="напр. 10"
+                value={formValues.jerseyNumber}
+                onChange={handleFieldChange("jerseyNumber")}
               />
               <Input
                 label="Контактний телефон"
                 name="phone"
                 type="tel"
                 placeholder="+380..."
+                value={formValues.phone}
+                onChange={handleFieldChange("phone")}
               />
             </div>
           </div>
@@ -132,6 +209,8 @@ export default function AddPlayerForm({ teams }: { teams: Team[] }) {
                 type="number"
                 step="0.1"
                 placeholder="напр. 178"
+                value={formValues.height}
+                onChange={handleFieldChange("height")}
               />
               <Input
                 label="Вага при вступі (кг)"
@@ -139,11 +218,18 @@ export default function AddPlayerForm({ teams }: { teams: Team[] }) {
                 type="number"
                 step="0.1"
                 placeholder="напр. 68.5"
+                value={formValues.weight}
+                onChange={handleFieldChange("weight")}
               />
             </div>
 
             {/* Група крові */}
-            <Select label="Група крові та Rh-фактор" name="bloodType" defaultValue="">
+            <Select
+              label="Група крові та Rh-фактор"
+              name="bloodType"
+              value={formValues.bloodType}
+              onChange={handleFieldChange("bloodType")}
+            >
               {BLOOD_TYPES.map((bt) => (
                 <option key={bt.value} value={bt.value}>
                   {bt.label}
@@ -156,6 +242,8 @@ export default function AddPlayerForm({ teams }: { teams: Team[] }) {
               label="Алергії та протипоказання до препаратів"
               name="allergies"
               placeholder="напр. Пеніцилін, НПЗЗ, цитрусові, сезонна алергія"
+              value={formValues.allergies}
+              onChange={handleFieldChange("allergies")}
             />
 
             {/* Анамнез травм */}
@@ -164,6 +252,8 @@ export default function AddPlayerForm({ teams }: { teams: Team[] }) {
               name="pastInjuries"
               rows={3}
               placeholder="Опишіть перенесені операції або важкі травми до клубу (напр. 2023 — пластика ПКС правого коліна, 2024 — перелом ключиці)"
+              value={formValues.pastInjuries}
+              onChange={handleFieldChange("pastInjuries")}
             />
           </div>
 

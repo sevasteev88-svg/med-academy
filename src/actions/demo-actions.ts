@@ -4,7 +4,7 @@ import { createAdminClient } from "@/utils/supabase/admin";
 import { createClient } from "@/utils/supabase/server";
 import { getCurrentUser } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
-import { normalizePosition } from "@/lib/dictionaries";
+import { normalizePosition, toDbPositionEn } from "@/lib/dictionaries";
 import {
   DEMO_CLUB_ID,
   DEMO_CLUB_NAME,
@@ -16,40 +16,6 @@ import {
   DEMO_INJURIES,
   DEMO_PHARMACY_ITEMS,
 } from "@/lib/demo-generator";
-
-function toDbPositionEn(pos?: string | null): string {
-  if (!pos) return "CDM";
-  const p = pos.trim().toUpperCase();
-  const map: Record<string, string> = {
-    ВР: "GK",
-    ЦЗ: "CB",
-    ЛЗ: "LB",
-    ПЗ: "RB",
-    ОП: "CDM",
-    ЦОП: "CDM",
-    ЦП: "CDM",
-    ЦАП: "CAM",
-    АП: "CAM",
-    ЛВ: "LW",
-    ПВ: "RW",
-    НП: "ST",
-    ЦН: "ST",
-    GK: "GK",
-    CB: "CB",
-    LB: "LB",
-    RB: "RB",
-    CDM: "CDM",
-    DM: "CDM",
-    CM: "CDM",
-    CAM: "CAM",
-    AM: "CAM",
-    LW: "LW",
-    RW: "RW",
-    ST: "ST",
-    CF: "CF",
-  };
-  return map[p] || "CDM";
-}
 
 /**
  * Перевірка, чи поточний користувач працює в Демо-клубі
