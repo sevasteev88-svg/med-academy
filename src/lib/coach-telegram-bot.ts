@@ -9,8 +9,24 @@ import {
 import { sendMorningWellnessRemindersAction } from "@/actions/telegram-actions";
 import type { CoachTelegramBinding } from "@/types/telegram";
 import type { TrainingSessionType, RpeScore } from "@/types/workload";
+import { getClubTelegramConfig } from "@/lib/club-telegram";
 
-const botToken = () => process.env.TELEGRAM_BOT_TOKEN || "";
+async function resolveCoachBotToken(chatId: string): Promise<string> {
+  try {
+    const supabase = createAdminClient();
+    const { data } = await supabase
+      .from("coach_telegram_bindings")
+      .select("club_id")
+      .eq("telegram_chat_id", chatId)
+      .eq("status", "active")
+      .limit(1)
+      .maybeSingle();
+    const { botToken } = await getClubTelegramConfig(data?.club_id);
+    return botToken;
+  } catch {
+    return process.env.TELEGRAM_BOT_TOKEN || "";
+  }
+}
 
 function getPublicAppUrl(): string {
   const envAppUrl = process.env.NEXT_PUBLIC_APP_URL || "";
@@ -38,7 +54,7 @@ async function sendOrEditMessage(params: {
   text: string;
   replyMarkup?: any;
 }) {
-  const token = botToken();
+  const token = await resolveCoachBotToken(params.chatId);
   if (!token) return;
 
   if (params.messageId) {
@@ -73,8 +89,8 @@ async function sendOrEditMessage(params: {
   } catch {}
 }
 
-async function answerCallback(callbackQueryId: string, text?: string) {
-  const token = botToken();
+async function answerCallback(callbackQueryId: string, text?: string, chatId?: string) {
+  const token = chatId ? await resolveCoachBotToken(chatId) : (process.env.TELEGRAM_BOT_TOKEN || "");
   if (!token) return;
   try {
     await fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {

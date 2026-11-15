@@ -6,6 +6,7 @@ import { createAdminClient } from "@/utils/supabase/admin";
 import { assertTeamStaff, assertDoctor, DEFAULT_CLUB_ID } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { getTelegramBotUsername, hashTokenSha256 } from "@/lib/telegram-auth";
+import { getClubTelegramConfig } from "@/lib/club-telegram";
 import type { CoachTelegramBinding, CoachTelegramSessionDraft } from "@/types/telegram";
 import type { TrainingSessionType, RpeScore } from "@/types/workload";
 
@@ -90,7 +91,7 @@ export async function createCoachTelegramBindingLinkAction(coachUserId: string) 
     }
 
     // 4. Формуємо deep-link виду: https://t.me/<bot>?start=coach_<token>
-    const botUsername = getTelegramBotUsername();
+    const { botUsername } = await getClubTelegramConfig(targetClubId);
     const deepLink = `https://t.me/${botUsername}?start=coach_${rawToken}`;
 
     const qrDataUrl = await QRCode.toDataURL(deepLink, {
@@ -263,7 +264,14 @@ export async function sendCoachMorningDigestAction(params: {
       if (anyTeam) assignedTeams = [anyTeam];
     }
 
-    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+    const { data: coachClubMember } = await supabase
+      .from("club_members")
+      .select("club_id")
+      .eq("user_id", params.coachUserId)
+      .limit(1)
+      .maybeSingle();
+
+    const { botToken } = await getClubTelegramConfig(coachClubMember?.club_id);
     if (!botToken) {
       return { success: false, error: "TELEGRAM_BOT_TOKEN не налаштовано" };
     }
@@ -457,7 +465,13 @@ export async function finalizeCoachTrainingSession(
   draft: CoachTelegramSessionDraft
 ) {
   const supabase = createAdminClient();
-  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  const { data: coachClubMember } = await supabase
+    .from("club_members")
+    .select("club_id")
+    .eq("user_id", coachUserId)
+    .limit(1)
+    .maybeSingle();
+  const { botToken } = await getClubTelegramConfig(coachClubMember?.club_id);
 
   try {
     const targetDate = draft.date || new Date().toISOString().split("T")[0];

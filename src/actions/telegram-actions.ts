@@ -7,6 +7,7 @@ import { getClubDate, getClubTimezone } from "@/lib/club-timezone";
 import { getPlayerConsentSummary } from "@/lib/consents";
 import { logAudit } from "@/lib/audit";
 import { sendClubMessage } from "@/lib/messaging-adapter";
+import { getClubTelegramConfig } from "@/lib/club-telegram";
 import {
   generateTelegramBindingToken,
   hashTokenSha256,
@@ -143,7 +144,8 @@ export async function createTelegramBindingLinkAction(playerId: string) {
       },
     });
 
-    const deepLink = buildTelegramDeepLink(rawToken);
+    const { botUsername } = await getClubTelegramConfig(user.clubId);
+    const deepLink = buildTelegramDeepLink(rawToken, botUsername);
     const qrDataUrl = await QRCode.toDataURL(deepLink, {
       errorCorrectionLevel: "M",
       margin: 1,
@@ -285,7 +287,8 @@ export async function getPlayerTelegramStatusAction(playerId: string): Promise<{
  * - /status — перевірка статусу
  */
 export async function processTelegramWebhookUpdateAction(
-  update: TelegramWebhookUpdate
+  update: TelegramWebhookUpdate,
+  overrideClubId?: string
 ): Promise<{ success: boolean; replyText?: string; error?: string }> {
   try {
     const supabase = createAdminClient();
@@ -342,7 +345,7 @@ export async function processTelegramWebhookUpdateAction(
     }
     const chatId = String(message.chat.id);
     const username = message.from?.username || message.chat.username || null;
-    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+    const { botToken } = await getClubTelegramConfig(overrideClubId);
 
     // Функція відправки відповіді у Telegram
     async function reply(replyMsg: string) {
@@ -1613,7 +1616,7 @@ export async function sendDoctorRecommendationAction(params: {
 
     // 2. Якщо є Telegram - відправляємо повідомлення (без email, з прямим телефоном та посиланням на Telegram)
     let sentToTelegram = false;
-    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+    const { botToken } = await getClubTelegramConfig(user?.clubId);
     if (chatId && botToken) {
       try {
         const messageText =
