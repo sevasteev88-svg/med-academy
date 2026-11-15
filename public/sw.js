@@ -1,11 +1,10 @@
-const CACHE_NAME = "med-academy-v1";
+const CACHE_NAME = "med-academy-v2";
 const STATIC_ASSETS = [
   "/",
   "/manifest.json",
   "/icon-192.png",
   "/icon-512.png",
-  "/apple-touch-icon.png",
-  "/logo-chr.png"
+  "/apple-touch-icon.png"
 ];
 
 self.addEventListener("install", (event) => {

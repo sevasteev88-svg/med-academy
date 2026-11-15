@@ -40,7 +40,7 @@ const getCurrentClubInfo = cache(async () => {
 });
 
 export async function generateMetadata(): Promise<Metadata> {
-  const { clubName } = await getCurrentClubInfo();
+  const { clubName, clubLogoUrl } = await getCurrentClubInfo();
   const title = clubName
     ? `Медичний штаб · ${clubName}`
     : "Медичний штаб · Спортивна Академія";
@@ -54,16 +54,21 @@ export async function generateMetadata(): Promise<Metadata> {
       statusBarStyle: "black-translucent",
       title: clubName || "MedAcademy",
     },
-    icons: {
-      icon: [
-        { url: "/favicon.ico", sizes: "any" },
-        { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
-        { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
-      ],
-      apple: [
-        { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
-      ],
-    },
+    icons: clubLogoUrl
+      ? {
+          icon: [{ url: clubLogoUrl }],
+          apple: [{ url: clubLogoUrl }],
+        }
+      : {
+          icon: [
+            { url: "/favicon.ico", sizes: "any" },
+            { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+            { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+          ],
+          apple: [
+            { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+          ],
+        },
   };
 }
 
