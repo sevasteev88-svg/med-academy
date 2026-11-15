@@ -1,6 +1,7 @@
 import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import MfaSetupCard from "@/components/auth/MfaSetupCard";
+import ChangePasswordCard from "@/components/auth/ChangePasswordCard";
 import Link from "next/link";
 
 export const metadata = {
@@ -41,6 +42,9 @@ export default async function SecuritySettingsPage() {
           </div>
         </div>
       </div>
+
+      {/* Change Password Card */}
+      <ChangePasswordCard userEmail={user.email} />
 
       {/* MFA Card */}
       <MfaSetupCard userRole={user.role} />
