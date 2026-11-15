@@ -8,11 +8,11 @@ export default function RegisterPage() {
       <div className="w-full max-w-md space-y-6">
         <div className="text-center">
           <Image
-            src="/logo-chr.png"
+            src="/icon-192.png"
             alt="MedAcademy"
             width={64}
             height={64}
-            className="mx-auto rounded-full ring-2 ring-brand-blue/30 mb-4"
+            className="mx-auto rounded-2xl ring-2 ring-brand-blue/30 mb-4"
           />
           <h1 className="text-xl font-bold text-white">Реєстрація обмежена</h1>
           <p className="text-xs text-slate-400 mt-1">Клубна система спортивної медицини та тренерського штабу</p>
