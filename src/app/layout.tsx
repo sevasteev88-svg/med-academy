@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { cache } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import AppNav from "@/components/layout/AppNav";
@@ -19,26 +20,52 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export const metadata: Metadata = {
-  title: "Медичний штаб · Спортивна Академія",
-  description: "Медичний дашборд для спортивного лікаря-травматолога",
-  manifest: "/manifest.json",
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "black-translucent",
-    title: "MedAcademy",
-  },
-  icons: {
-    icon: [
-      { url: "/favicon.ico", sizes: "any" },
-      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
-      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
-    ],
-    apple: [
-      { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
-    ],
-  },
-};
+const getCurrentClubInfo = cache(async () => {
+  const user = await getCurrentUser();
+  let clubName: string | undefined;
+  let clubLogoUrl: string | undefined;
+
+  if (user?.clubId) {
+    const supabase = await createClient();
+    const { data: club } = await supabase
+      .from("clubs")
+      .select("name, logo_url")
+      .eq("id", user.clubId)
+      .maybeSingle();
+    if (club?.name) clubName = club.name;
+    if (club?.logo_url) clubLogoUrl = club.logo_url;
+  }
+
+  return { user, clubName, clubLogoUrl };
+});
+
+export async function generateMetadata(): Promise<Metadata> {
+  const { clubName } = await getCurrentClubInfo();
+  const title = clubName
+    ? `Медичний штаб · ${clubName}`
+    : "Медичний штаб · Спортивна Академія";
+
+  return {
+    title,
+    description: "Медичний дашборд для спортивного лікаря-травматолога",
+    manifest: "/manifest.json",
+    appleWebApp: {
+      capable: true,
+      statusBarStyle: "black-translucent",
+      title: clubName || "MedAcademy",
+    },
+    icons: {
+      icon: [
+        { url: "/favicon.ico", sizes: "any" },
+        { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+        { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+      ],
+      apple: [
+        { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+      ],
+    },
+  };
+}
 
 export const viewport: Viewport = {
   themeColor: "#070A13",
@@ -52,20 +79,7 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const user = await getCurrentUser();
-  let clubName = "MedAcademy";
-  let clubLogoUrl: string | undefined;
-
-  if (user?.clubId) {
-    const supabase = await createClient();
-    const { data: club } = await supabase
-      .from("clubs")
-      .select("name, logo_url")
-      .eq("id", user.clubId)
-      .maybeSingle();
-    if (club?.name) clubName = club.name;
-    if (club?.logo_url) clubLogoUrl = club.logo_url;
-  }
+  const { user, clubName, clubLogoUrl } = await getCurrentClubInfo();
 
   return (
     <html
