@@ -1,13 +1,14 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { changeFirstLoginPasswordAction, type AuthState } from "@/actions/auth-actions";
+import { changeFirstLoginPasswordAction, logoutAction, type AuthState } from "@/actions/auth-actions";
 
 const INITIAL_STATE: AuthState = {};
 
 export default function ForcePasswordChangeModal({ userEmail }: { userEmail: string }) {
   const router = useRouter();
+  const [dismissed, setDismissed] = useState(false);
   const [state, formAction, isPending] = useActionState(changeFirstLoginPasswordAction, INITIAL_STATE);
 
   useEffect(() => {
@@ -16,7 +17,7 @@ export default function ForcePasswordChangeModal({ userEmail }: { userEmail: str
     }
   }, [state.success, router]);
 
-  if (state.success) return null;
+  if (state.success || dismissed) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-md p-4">
@@ -79,6 +80,24 @@ export default function ForcePasswordChangeModal({ userEmail }: { userEmail: str
             {isPending ? "Збереження..." : "Зберегти новий пароль"}
           </button>
         </form>
+
+        <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-xs">
+          <button
+            type="button"
+            onClick={() => setDismissed(true)}
+            className="text-slate-400 hover:text-slate-200 transition-colors"
+          >
+            Змінити пізніше
+          </button>
+          <form action={logoutAction}>
+            <button
+              type="submit"
+              className="text-rose-400 hover:text-rose-300 transition-colors"
+            >
+              Вийти з акаунту
+            </button>
+          </form>
+        </div>
       </div>
     </div>
   );
