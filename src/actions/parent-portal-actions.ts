@@ -467,7 +467,7 @@ export async function getParentPortalDataAction(
         evidence: { signer_name: state.signerName || undefined },
       };
     }
-    return !state?.allowed;
+    return state?.status !== "granted";
   });
 
   const age = calcAgeYears(player.date_of_birth);
@@ -642,6 +642,9 @@ export async function submitParentConsentsAction(input: {
   });
 
   revalidatePath(`/players/${tokenRow.player_id}`);
+  revalidatePath("/team/readiness");
+  revalidatePath("/availability");
+  revalidatePath("/coach-briefing");
   return { success: true, grantedCount: rowsToInsert.length };
 }
 
@@ -960,6 +963,7 @@ export async function submitParentWellnessAction(input: {
   });
 
   revalidatePath("/team/readiness");
+  revalidatePath("/availability");
   revalidatePath("/coach-briefing");
   revalidatePath(`/players/${tokenRow.player_id}`);
 
