@@ -126,7 +126,7 @@ export async function sendParentPassportReminderAction(params: {
       daysLeft,
       expiryDateStr,
       paymentUrl,
-      planAmountUah: sub ? Number(sub.amount_uah) : 150,
+      planAmountUah: sub ? Number(sub.amount_uah) : 200,
     });
 
     const isExplicitSimulate = params.simulate === true;

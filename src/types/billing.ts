@@ -11,7 +11,8 @@ export type SubscriptionStatus =
   | "comped";    // Безкоштовний доступ / стипендіат від керівництва
 
 export type BillingPlanCode =
-  | "monthly_150_uah"   // 150 грн / місяць
+  | "monthly_200_uah"   // 200 грн / місяць
+  | "monthly_150_uah"   // legacy: 150 грн / місяць
   | "annual_1500_uah";  // 1 500 грн / рік (10 місяців)
 
 export type PaymentProvider =
@@ -29,9 +30,9 @@ export const DEFAULT_MONOBANK_JAR_URL = "https://send.monobank.ua/jar/jzGthBnmx"
 
 export const PRICING_PLANS = {
   MONTHLY: {
-    code: "monthly_150_uah" as BillingPlanCode,
+    code: "monthly_200_uah" as BillingPlanCode,
     name: "Щомісячний план",
-    amountUah: 150,
+    amountUah: 200,
     interval: "month" as const,
     description: "Персональний паспорт здоров'я та щоденний моніторинг",
   },

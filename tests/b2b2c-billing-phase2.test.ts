@@ -14,15 +14,15 @@ test("Фаза 2 — Білінг B2B2C, Еквайринг (WayForPay / Mono) �
   await t.test("1. Перевірка параметрів чекауту для батьків", () => {
     const dummyPlayerId = "879967e4-3a2c-4695-a23a-2db88dd68712"; // Амбрусієнко
 
-    const monthlyPlan = getPlanConfig("monthly_150_uah");
-    assert.equal(monthlyPlan.amountUah, 150);
+    const monthlyPlan = getPlanConfig("monthly_200_uah");
+    assert.equal(monthlyPlan.amountUah, 200);
     assert.equal(monthlyPlan.interval, "month");
 
     const annualPlan = getPlanConfig("annual_1500_uah");
     assert.equal(annualPlan.amountUah, 1500);
     assert.equal(annualPlan.interval, "year");
 
-    const orderRef = generateOrderReference(dummyPlayerId, "monthly_150_uah");
+    const orderRef = generateOrderReference(dummyPlayerId, "monthly_200_uah");
     assert.ok(orderRef.startsWith("MED-MTH-"));
   });
 

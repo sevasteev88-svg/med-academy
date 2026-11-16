@@ -153,7 +153,7 @@ export function buildPassportReminderTelegramMessage(params: {
     statusPhrase = `через ${daysWord}${params.expiryDateStr ? ` (${params.expiryDateStr})` : ""} закінчується термін дії цифрового медичного паспорта гравця.`;
   }
 
-  const amountText = params.planAmountUah ? `${params.planAmountUah} грн` : "150 грн/міс";
+  const amountText = params.planAmountUah ? `${params.planAmountUah} грн` : "200 грн/міс";
 
   return [
     `⚽ <b>ФК «${params.clubName}» — Паспорт здоров'я</b>`,
@@ -228,7 +228,7 @@ export function simulateParentPassportReminder(params: {
     daysLeft,
     expiryDateStr,
     paymentUrl,
-    planAmountUah: subscription?.amountUah || 150,
+    planAmountUah: subscription?.amountUah || 200,
   });
 
   const reminderId = `rem_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;

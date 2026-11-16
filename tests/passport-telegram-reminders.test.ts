@@ -74,7 +74,7 @@ test("Етап 3 — Telegram-нагадування батькам про за�
       daysLeft: -16,
       expiryDateStr: "2026-10-15",
       paymentUrl: "https://send.monobank.ua/jar/jzGthBnmx",
-      planAmountUah: 150,
+      planAmountUah: 200,
     });
 
     // Перевірка змісту
@@ -82,7 +82,7 @@ test("Етап 3 — Telegram-нагадування батькам про за�
     assert.ok(msg.includes("Назар Лисенко"), "Містить ім'я футболіста");
     assert.ok(msg.includes("Демо Академія"), "Містить назву клубу");
     assert.ok(msg.includes("https://send.monobank.ua/jar/jzGthBnmx"), "Містить платіжне посилання");
-    assert.ok(msg.includes("150 грн"), "Містить суму тарифу");
+    assert.ok(msg.includes("200 грн"), "Містить суму тарифу");
 
     // Захист лікарської таємниці: жодних клінічних даних!
     assert.doesNotMatch(msg, /травм|розрив|діагноз|мрт|узд|біль|укол/i);

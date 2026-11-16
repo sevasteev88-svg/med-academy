@@ -20,6 +20,7 @@ import {
 } from "@/types/parent-portal";
 import { PAIN_LOCATIONS_LIST } from "@/types/wellness";
 import type { ConsentScope } from "@/types/database";
+import ParentWellnessQuiz from "./ParentWellnessQuiz";
 
 type Props = {
   rawToken: string;
@@ -64,6 +65,7 @@ export default function ParentPortalClient({ rawToken, initialData }: Props) {
   } | null>(null);
 
   // Стан ранкового самопочуття (лише для дітей < 14 років)
+  const [wellnessMode, setWellnessMode] = useState<"quiz" | "form">("quiz");
   const [wellnessSubmitted, setWellnessSubmitted] = useState<boolean>(
     Boolean(initialData.wellnessToday?.alreadySubmitted)
   );
@@ -548,12 +550,62 @@ export default function ParentPortalClient({ rawToken, initialData }: Props) {
                       Короткий ранковий чекін допомагає лікарю та тренеру адаптувати навантаження.
                     </p>
                   </div>
+
+                  {!wellnessSubmitted && (
+                    <div className="inline-flex rounded-xl bg-slate-950 p-1 border border-slate-800">
+                      <button
+                        type="button"
+                        onClick={() => setWellnessMode("quiz")}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                          wellnessMode === "quiz"
+                            ? "bg-sky-500/20 text-sky-300 border border-sky-500/40"
+                            : "text-slate-400 hover:text-white border border-transparent"
+                        }`}
+                      >
+                        📋 Квіз (як у гравця)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setWellnessMode("form")}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                          wellnessMode === "form"
+                            ? "bg-sky-500/20 text-sky-300 border border-sky-500/40"
+                            : "text-slate-400 hover:text-white border border-transparent"
+                        }`}
+                      >
+                        📝 Швидка форма
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {wellnessSubmitted ? (
                   <div className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/35 text-xs font-bold text-emerald-300">
                     ✓ Сьогоднішній чекін вже заповнено
                   </div>
+                ) : wellnessMode === "quiz" ? (
+                  <ParentWellnessQuiz
+                    playerFirstName={data.player.firstName}
+                    sleepQuality={sleepQuality}
+                    setSleepQuality={setSleepQuality}
+                    sleepHours={sleepHours}
+                    setSleepHours={setSleepHours}
+                    fatigue={fatigue}
+                    setFatigue={setFatigue}
+                    soreness={soreness}
+                    setSoreness={setSoreness}
+                    hasPain={hasPain}
+                    setHasPain={setHasPain}
+                    painLocations={painLocations}
+                    onTogglePainLocation={togglePainLocation}
+                    hasIllness={hasIllness}
+                    setHasIllness={setHasIllness}
+                    wellnessNotes={wellnessNotes}
+                    setWellnessNotes={setWellnessNotes}
+                    wellnessFeedback={wellnessFeedback}
+                    isPending={isPending}
+                    onSubmit={handleSubmitWellness}
+                  />
                 ) : (
                   <form onSubmit={handleSubmitWellness} className="space-y-3">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

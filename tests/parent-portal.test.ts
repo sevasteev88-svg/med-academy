@@ -106,6 +106,8 @@ test("Parent Portal: migration adds is_read_by_coach and filled_by, and UI wires
   );
   assert.ok(portalClient.includes("data.player.age < 14"));
   assert.ok(portalClient.includes("✓ Сьогоднішній чекін вже заповнено"));
+  assert.ok(portalClient.includes("ParentWellnessQuiz"));
+  assert.ok(portalClient.includes("wellnessMode"));
 
   const briefingClient = fs.readFileSync(
     path.join(process.cwd(), "src/components/coach/CoachBriefingClient.tsx"),

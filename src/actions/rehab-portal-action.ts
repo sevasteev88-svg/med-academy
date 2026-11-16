@@ -640,8 +640,8 @@ export async function getAuthorizedPlayerCabinetData() {
       subscriptionDetails = {
         status: "unpaid",
         isActive: false,
-        amount_uah: 150,
-        plan_code: "monthly_150_uah",
+        amount_uah: 200,
+        plan_code: "monthly_200_uah",
       };
     }
   } catch {

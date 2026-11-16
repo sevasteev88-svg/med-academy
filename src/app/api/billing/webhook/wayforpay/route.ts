@@ -106,7 +106,7 @@ export async function POST(request: NextRequest) {
 
       // 4. Оновлення статусу підписки гравця
       if (isSuccess && tx.player_id) {
-        // Визначаємо тривалість за сумою (1500 грн = рік, 150 грн = місяць)
+        // Визначаємо тривалість за сумою (1500 грн = рік, 200 грн = місяць)
         const isAnnual = Number(tx.amount_uah) >= 1400;
         const interval = isAnnual ? "year" : "month";
         const nextPeriodEnd = calculateNextPeriodEnd(interval);
@@ -118,8 +118,8 @@ export async function POST(request: NextRequest) {
             club_id: tx.club_id,
             player_id: tx.player_id,
             status: "active" as SubscriptionStatus,
-            plan_code: isAnnual ? "annual_1500_uah" : "monthly_150_uah",
-            amount_uah: isAnnual ? 1500.0 : 150.0,
+            plan_code: isAnnual ? "annual_1500_uah" : "monthly_200_uah",
+            amount_uah: isAnnual ? 1500.0 : 200.0,
             billing_interval: interval,
             current_period_start: new Date().toISOString(),
             current_period_end: nextPeriodEnd.toISOString(),

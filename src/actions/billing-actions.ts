@@ -245,8 +245,8 @@ export async function grantCompedSubscriptionAction(params: {
       club_id: player.club_id,
       player_id: params.playerId,
       status: "comped",
-      plan_code: "monthly_150_uah",
-      amount_uah: 150.0,
+      plan_code: "monthly_200_uah",
+      amount_uah: 200.0,
       billing_interval: "month",
       current_period_start: new Date().toISOString(),
       current_period_end: periodEnd,
@@ -502,7 +502,7 @@ export async function getTeamSubscriptionsAction(params?: {
     if (isActive) {
       if (status === "active") {
         activePaidCount++;
-        totalMonthlyRevenueUah += sub?.billing_interval === "year" ? Math.round(1500 / 12) : 150;
+        totalMonthlyRevenueUah += sub?.billing_interval === "year" ? Math.round(1500 / 12) : 200;
       } else if (status === "comped") {
         compedCount++;
       }

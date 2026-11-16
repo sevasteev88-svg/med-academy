@@ -722,7 +722,7 @@ export interface DemoSubscription {
   club_id: string;
   player_id: string;
   status: "active" | "comped" | "unpaid" | "trialing" | "past_due" | "canceled";
-  plan_code: "monthly_150_uah" | "annual_1500_uah";
+  plan_code: "monthly_200_uah" | "annual_1500_uah";
   amount_uah: number;
   currency: string;
   billing_interval: "month" | "year";
@@ -769,8 +769,8 @@ export const DEMO_SUBSCRIPTIONS: DemoSubscription[] = [
     club_id: DEMO_CLUB_ID,
     player_id: DEMO_PLAYERS[1].id, // Коваленко Максим
     status: "active",
-    plan_code: "monthly_150_uah",
-    amount_uah: 150,
+    plan_code: "monthly_200_uah",
+    amount_uah: 200,
     currency: "UAH",
     billing_interval: "month",
     current_period_start: "2026-10-15T00:00:00Z",
@@ -787,8 +787,8 @@ export const DEMO_SUBSCRIPTIONS: DemoSubscription[] = [
     club_id: DEMO_CLUB_ID,
     player_id: DEMO_PLAYERS[2].id, // Бондаренко Артем
     status: "active",
-    plan_code: "monthly_150_uah",
-    amount_uah: 150,
+    plan_code: "monthly_200_uah",
+    amount_uah: 200,
     currency: "UAH",
     billing_interval: "month",
     current_period_start: "2026-11-10T00:00:00Z",
@@ -805,8 +805,8 @@ export const DEMO_SUBSCRIPTIONS: DemoSubscription[] = [
     club_id: DEMO_CLUB_ID,
     player_id: DEMO_PLAYERS[3].id, // Ткаченко Дмитро
     status: "active",
-    plan_code: "monthly_150_uah",
-    amount_uah: 150,
+    plan_code: "monthly_200_uah",
+    amount_uah: 200,
     currency: "UAH",
     billing_interval: "month",
     current_period_start: "2026-11-12T00:00:00Z",
@@ -823,8 +823,8 @@ export const DEMO_SUBSCRIPTIONS: DemoSubscription[] = [
     club_id: DEMO_CLUB_ID,
     player_id: DEMO_PLAYERS[4].id, // Кравченко Владислав
     status: "active",
-    plan_code: "monthly_150_uah",
-    amount_uah: 150,
+    plan_code: "monthly_200_uah",
+    amount_uah: 200,
     currency: "UAH",
     billing_interval: "month",
     current_period_start: "2026-11-18T00:00:00Z",
@@ -841,8 +841,8 @@ export const DEMO_SUBSCRIPTIONS: DemoSubscription[] = [
     club_id: DEMO_CLUB_ID,
     player_id: DEMO_PLAYERS[5].id, // Олійник Богдан
     status: "active",
-    plan_code: "monthly_150_uah",
-    amount_uah: 150,
+    plan_code: "monthly_200_uah",
+    amount_uah: 200,
     currency: "UAH",
     billing_interval: "month",
     current_period_start: "2026-11-05T00:00:00Z",
@@ -877,8 +877,8 @@ export const DEMO_SUBSCRIPTIONS: DemoSubscription[] = [
     club_id: DEMO_CLUB_ID,
     player_id: DEMO_PLAYERS[7].id, // Поліщук Ілля
     status: "active",
-    plan_code: "monthly_150_uah",
-    amount_uah: 150,
+    plan_code: "monthly_200_uah",
+    amount_uah: 200,
     currency: "UAH",
     billing_interval: "month",
     current_period_start: "2026-10-14T00:00:00Z",
@@ -895,8 +895,8 @@ export const DEMO_SUBSCRIPTIONS: DemoSubscription[] = [
     club_id: DEMO_CLUB_ID,
     player_id: DEMO_PLAYERS[8].id, // Лисенко Назар (ОЧІКУЄ ОПЛАТИ / SOFT-LOCK)
     status: "unpaid",
-    plan_code: "monthly_150_uah",
-    amount_uah: 150,
+    plan_code: "monthly_200_uah",
+    amount_uah: 200,
     currency: "UAH",
     billing_interval: "month",
     current_period_start: "2026-09-15T00:00:00Z",
@@ -914,8 +914,8 @@ export const DEMO_SUBSCRIPTIONS: DemoSubscription[] = [
     club_id: DEMO_CLUB_ID,
     player_id: DEMO_PLAYERS[9].id, // Руденко Ярослав
     status: "active",
-    plan_code: "monthly_150_uah",
-    amount_uah: 150,
+    plan_code: "monthly_200_uah",
+    amount_uah: 200,
     currency: "UAH",
     billing_interval: "month",
     current_period_start: "2026-11-20T00:00:00Z",
@@ -952,8 +952,8 @@ export const DEMO_SUBSCRIPTIONS: DemoSubscription[] = [
     club_id: DEMO_CLUB_ID,
     player_id: DEMO_PLAYERS[11].id, // Петренко Тимофій
     status: "active",
-    plan_code: "monthly_150_uah",
-    amount_uah: 150,
+    plan_code: "monthly_200_uah",
+    amount_uah: 200,
     currency: "UAH",
     billing_interval: "month",
     current_period_start: "2026-11-08T00:00:00Z",
@@ -970,8 +970,8 @@ export const DEMO_SUBSCRIPTIONS: DemoSubscription[] = [
     club_id: DEMO_CLUB_ID,
     player_id: DEMO_PLAYERS[12].id, // Марченко Денис
     status: "active",
-    plan_code: "monthly_150_uah",
-    amount_uah: 150,
+    plan_code: "monthly_200_uah",
+    amount_uah: 200,
     currency: "UAH",
     billing_interval: "month",
     current_period_start: "2026-11-16T00:00:00Z",
@@ -988,8 +988,8 @@ export const DEMO_SUBSCRIPTIONS: DemoSubscription[] = [
     club_id: DEMO_CLUB_ID,
     player_id: DEMO_PLAYERS[13].id, // Савченко Микита
     status: "active",
-    plan_code: "monthly_150_uah",
-    amount_uah: 150,
+    plan_code: "monthly_200_uah",
+    amount_uah: 200,
     currency: "UAH",
     billing_interval: "month",
     current_period_start: "2026-11-03T00:00:00Z",
@@ -1006,8 +1006,8 @@ export const DEMO_SUBSCRIPTIONS: DemoSubscription[] = [
     club_id: DEMO_CLUB_ID,
     player_id: DEMO_PLAYERS[14].id, // Клименко Роман
     status: "active",
-    plan_code: "monthly_150_uah",
-    amount_uah: 150,
+    plan_code: "monthly_200_uah",
+    amount_uah: 200,
     currency: "UAH",
     billing_interval: "month",
     current_period_start: "2026-11-22T00:00:00Z",
@@ -1024,8 +1024,8 @@ export const DEMO_SUBSCRIPTIONS: DemoSubscription[] = [
     club_id: DEMO_CLUB_ID,
     player_id: DEMO_PLAYERS[15].id, // Павленко Кирило (ОЧІКУЄ ОПЛАТИ / SOFT-LOCK)
     status: "unpaid",
-    plan_code: "monthly_150_uah",
-    amount_uah: 150,
+    plan_code: "monthly_200_uah",
+    amount_uah: 200,
     currency: "UAH",
     billing_interval: "month",
     current_period_start: "2026-09-20T00:00:00Z",
@@ -1043,8 +1043,8 @@ export const DEMO_SUBSCRIPTIONS: DemoSubscription[] = [
     club_id: DEMO_CLUB_ID,
     player_id: DEMO_PLAYERS[16].id, // Ковальчук Євген
     status: "active",
-    plan_code: "monthly_150_uah",
-    amount_uah: 150,
+    plan_code: "monthly_200_uah",
+    amount_uah: 200,
     currency: "UAH",
     billing_interval: "month",
     current_period_start: "2026-11-11T00:00:00Z",
@@ -1061,8 +1061,8 @@ export const DEMO_SUBSCRIPTIONS: DemoSubscription[] = [
     club_id: DEMO_CLUB_ID,
     player_id: DEMO_PLAYERS[17].id, // Гриценко Остап
     status: "active",
-    plan_code: "monthly_150_uah",
-    amount_uah: 150,
+    plan_code: "monthly_200_uah",
+    amount_uah: 200,
     currency: "UAH",
     billing_interval: "month",
     current_period_start: "2026-11-17T00:00:00Z",
@@ -1079,8 +1079,8 @@ export const DEMO_SUBSCRIPTIONS: DemoSubscription[] = [
     club_id: DEMO_CLUB_ID,
     player_id: DEMO_PLAYERS[18].id, // Сидоренко Захар
     status: "active",
-    plan_code: "monthly_150_uah",
-    amount_uah: 150,
+    plan_code: "monthly_200_uah",
+    amount_uah: 200,
     currency: "UAH",
     billing_interval: "month",
     current_period_start: "2026-11-25T00:00:00Z",
@@ -1117,8 +1117,8 @@ export const DEMO_SUBSCRIPTIONS: DemoSubscription[] = [
     club_id: DEMO_CLUB_ID,
     player_id: DEMO_PLAYERS[20].id, // Пономаренко Святослав
     status: "active",
-    plan_code: "monthly_150_uah",
-    amount_uah: 150,
+    plan_code: "monthly_200_uah",
+    amount_uah: 200,
     currency: "UAH",
     billing_interval: "month",
     current_period_start: "2026-11-09T00:00:00Z",
@@ -1153,8 +1153,8 @@ export const DEMO_SUBSCRIPTIONS: DemoSubscription[] = [
     club_id: DEMO_CLUB_ID,
     player_id: DEMO_PLAYERS[22].id, // Романенко Тарас
     status: "active",
-    plan_code: "monthly_150_uah",
-    amount_uah: 150,
+    plan_code: "monthly_200_uah",
+    amount_uah: 200,
     currency: "UAH",
     billing_interval: "month",
     current_period_start: "2026-11-19T00:00:00Z",
@@ -1171,8 +1171,8 @@ export const DEMO_SUBSCRIPTIONS: DemoSubscription[] = [
     club_id: DEMO_CLUB_ID,
     player_id: DEMO_PLAYERS[23].id, // Дяченко Павло (ОЧІКУЄ ОПЛАТИ / SOFT-LOCK)
     status: "unpaid",
-    plan_code: "monthly_150_uah",
-    amount_uah: 150,
+    plan_code: "monthly_200_uah",
+    amount_uah: 200,
     currency: "UAH",
     billing_interval: "month",
     current_period_start: "2026-09-25T00:00:00Z",
@@ -1190,8 +1190,8 @@ export const DEMO_SUBSCRIPTIONS: DemoSubscription[] = [
     club_id: DEMO_CLUB_ID,
     player_id: DEMO_PLAYERS[24].id, // Литвиненко Андрій
     status: "active",
-    plan_code: "monthly_150_uah",
-    amount_uah: 150,
+    plan_code: "monthly_200_uah",
+    amount_uah: 200,
     currency: "UAH",
     billing_interval: "month",
     current_period_start: "2026-11-24T00:00:00Z",
@@ -1208,8 +1208,8 @@ export const DEMO_SUBSCRIPTIONS: DemoSubscription[] = [
     club_id: DEMO_CLUB_ID,
     player_id: DEMO_PLAYERS[25].id, // Захарченко Вадим
     status: "active",
-    plan_code: "monthly_150_uah",
-    amount_uah: 150,
+    plan_code: "monthly_200_uah",
+    amount_uah: 200,
     currency: "UAH",
     billing_interval: "month",
     current_period_start: "2026-11-27T00:00:00Z",

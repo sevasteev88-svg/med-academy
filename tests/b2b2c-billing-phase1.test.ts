@@ -11,10 +11,10 @@ import {
 } from "../src/lib/billing.ts";
 
 test("Фаза 1 — B2B2C Білінг та Підписки MedAcademy", async (t) => {
-  await t.test("1. Тарифи та ціноутворення (150 грн/міс та 1500 грн/рік)", () => {
+  await t.test("1. Тарифи та ціноутворення (200 грн/міс та 1500 грн/рік)", () => {
     // Щомісячний тариф
-    assert.equal(PRICING_PLANS.MONTHLY.amountUah, 150);
-    assert.equal(PRICING_PLANS.MONTHLY.code, "monthly_150_uah");
+    assert.equal(PRICING_PLANS.MONTHLY.amountUah, 200);
+    assert.equal(PRICING_PLANS.MONTHLY.code, "monthly_200_uah");
     assert.equal(PRICING_PLANS.MONTHLY.interval, "month");
 
     // Річний тариф (10 місяців + 2 у подарунок)
@@ -24,7 +24,7 @@ test("Фаза 1 — B2B2C Білінг та Підписки MedAcademy", async
     assert.equal(PRICING_PLANS.ANNUAL.discountMonths, 2);
 
     // Перевірка конфігуратора планів
-    assert.equal(getPlanConfig("monthly_150_uah").amountUah, 150);
+    assert.equal(getPlanConfig("monthly_200_uah").amountUah, 200);
     assert.equal(getPlanConfig("annual_1500_uah").amountUah, 1500);
   });
 
@@ -101,7 +101,7 @@ test("Фаза 1 — B2B2C Білінг та Підписки MedAcademy", async
 
   await t.test("3. Генерація унікального номера замовлення (orderReference)", () => {
     const playerId = "c9a0b123-4567-89ab-cdef-0123456789ab";
-    const refMonthly = generateOrderReference(playerId, "monthly_150_uah");
+    const refMonthly = generateOrderReference(playerId, "monthly_200_uah");
     const refAnnual = generateOrderReference(playerId, "annual_1500_uah");
 
     assert.match(refMonthly, /^MED-MTH-[0-9a-f]{8}-[A-Z0-9]+$/);
@@ -124,7 +124,7 @@ test("Фаза 1 — B2B2C Білінг та Підписки MedAcademy", async
 
   await t.test("5. Криптографічний підпис WayForPay HMAC-MD5", () => {
     const secret = "flk3409refn54t54t*FNJret";
-    const fields = ["test_merchant", "medacademy.app", "ORDER-123", "1761912000", "150", "UAH", "Підписка MedAcademy", "1", "150"];
+    const fields = ["test_merchant", "medacademy.app", "ORDER-123", "1761912000", "200", "UAH", "Підписка MedAcademy", "1", "200"];
     const sig = generateWayForPaySignature(fields, secret);
     assert.equal(typeof sig, "string");
     assert.equal(sig.length, 32); // MD5 hex

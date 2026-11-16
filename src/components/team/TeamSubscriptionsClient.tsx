@@ -81,7 +81,7 @@ export default function TeamSubscriptionsClient({
 
   // Стан для модалки оплати
   const [payTargetPlayer, setPayTargetPlayer] = useState<PlayerSubItem | null>(null);
-  const [payPlan, setPayPlan] = useState<BillingPlanCode>("monthly_150_uah");
+  const [payPlan, setPayPlan] = useState<BillingPlanCode>("monthly_200_uah");
   const [payMethod, setPayMethod] = useState("Переказ на картку Monobank");
 
   // Стан для модалки квоти
@@ -144,7 +144,7 @@ export default function TeamSubscriptionsClient({
       if (p.subscription?.isActive) {
         if (p.subscription.status === "active") {
           activePaid++;
-          revenue += p.subscription.billingInterval === "year" ? Math.round(1500 / 12) : 150;
+          revenue += p.subscription.billingInterval === "year" ? Math.round(1500 / 12) : 200;
         } else if (p.subscription.status === "comped") {
           comped++;
         }
@@ -189,7 +189,7 @@ export default function TeamSubscriptionsClient({
               subscription: {
                 status: "active" as SubscriptionStatus,
                 planCode: payPlan,
-                amountUah: isAnn ? 1500 : 150,
+                amountUah: isAnn ? 1500 : 200,
                 billingInterval: isAnn ? "year" : "month",
                 currentPeriodEnd: futureDate.toISOString(),
                 compedReason: payMethod,
@@ -232,8 +232,8 @@ export default function TeamSubscriptionsClient({
               ...p,
               subscription: {
                 status: "comped" as SubscriptionStatus,
-                planCode: "monthly_150_uah",
-                amountUah: 150,
+                planCode: "monthly_200_uah",
+                amountUah: 200,
                 billingInterval: "month",
                 currentPeriodEnd: futureDate,
                 compedReason: finalReason,
@@ -664,7 +664,7 @@ export default function TeamSubscriptionsClient({
                         <td className="py-3 px-3">
                           {isAct ? (
                             <span className="font-semibold text-slate-200">
-                              {sub?.planCode === "annual_1500_uah" ? "1 500 грн / рік" : "150 грн / міс"}
+                              {sub?.planCode === "annual_1500_uah" ? "1 500 грн / рік" : "200 грн / міс"}
                             </span>
                           ) : isCmp ? (
                             <span className="text-emerald-400 font-medium">Безкоштовно</span>
@@ -728,7 +728,7 @@ export default function TeamSubscriptionsClient({
                                 type="button"
                                 onClick={() => {
                                   setPayTargetPlayer(p);
-                                  setPayPlan("monthly_150_uah");
+                                  setPayPlan("monthly_200_uah");
                                 }}
                                 className="px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 font-bold text-[11px] transition-colors"
                                 title="Зарахувати оплату батьків"
@@ -798,15 +798,15 @@ export default function TeamSubscriptionsClient({
               <div className="grid grid-cols-2 gap-2.5">
                 <button
                   type="button"
-                  onClick={() => setPayPlan("monthly_150_uah")}
+                  onClick={() => setPayPlan("monthly_200_uah")}
                   className={`p-3 rounded-2xl border text-left transition-all ${
-                    payPlan === "monthly_150_uah"
+                    payPlan === "monthly_200_uah"
                       ? "bg-sky-500/20 border-sky-500 text-white"
                       : "bg-slate-950 border-slate-800 text-slate-400"
                   }`}
                 >
                   <div className="text-[11px] font-medium text-slate-400">1 місяць</div>
-                  <div className="text-base font-black text-white">150 грн</div>
+                  <div className="text-base font-black text-white">200 грн</div>
                 </button>
 
                 <button
@@ -1049,7 +1049,7 @@ export default function TeamSubscriptionsClient({
                     : -1,
                   expiryDateStr: reminderTargetPlayer.subscription?.currentPeriodEnd?.split("T")[0],
                   paymentUrl: monobankJarUrl || "https://send.monobank.ua/jar/jzGthBnmx",
-                  planAmountUah: reminderTargetPlayer.subscription?.amountUah || 150,
+                  planAmountUah: reminderTargetPlayer.subscription?.amountUah || 200,
                 }).replace(/<[^>]+>/g, "")}
               </div>
             </div>
@@ -1084,7 +1084,7 @@ export default function TeamSubscriptionsClient({
                       : -1,
                     expiryDateStr: reminderTargetPlayer.subscription?.currentPeriodEnd?.split("T")[0],
                     paymentUrl: monobankJarUrl || "https://send.monobank.ua/jar/jzGthBnmx",
-                    planAmountUah: reminderTargetPlayer.subscription?.amountUah || 150,
+                    planAmountUah: reminderTargetPlayer.subscription?.amountUah || 200,
                   }).replace(/<[^>]+>/g, "");
                   navigator.clipboard.writeText(txt);
                   setCopiedText(true);

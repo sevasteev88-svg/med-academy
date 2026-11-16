@@ -44,7 +44,7 @@ export default function PlayerSubscriptionQuotaCard({
   const [isPending, startTransition] = useTransition();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isPayModalOpen, setIsPayModalOpen] = useState(false);
-  const [payPlan, setPayPlan] = useState<BillingPlanCode>("monthly_150_uah");
+  const [payPlan, setPayPlan] = useState<BillingPlanCode>("monthly_200_uah");
   const [payMethod, setPayMethod] = useState("Переказ на картку Monobank");
   const [days, setDays] = useState(90);
   const [reason, setReason] = useState(PRESET_REASONS[0]);
@@ -80,7 +80,7 @@ export default function PlayerSubscriptionQuotaCard({
           status: "active",
           isActive: true,
           planCode: payPlan,
-          amountUah: isAnn ? 1500 : 150,
+          amountUah: isAnn ? 1500 : 200,
           currentPeriodEnd: futureDate.toISOString(),
           compedReason: payMethod,
         });
@@ -106,8 +106,8 @@ export default function PlayerSubscriptionQuotaCard({
         setSub({
           status: "comped",
           isActive: true,
-          planCode: "monthly_150_uah",
-          amountUah: 150,
+          planCode: "monthly_200_uah",
+          amountUah: 200,
           currentPeriodEnd: new Date(Date.now() + days * 86400000).toISOString(),
           compedReason: finalReason,
         });
@@ -258,7 +258,7 @@ export default function PlayerSubscriptionQuotaCard({
             <div className="flex justify-between items-center text-slate-300">
               <span className="text-slate-400">План оплати:</span>
               <span className="font-semibold text-sky-300">
-                {sub?.planCode === "annual_1500_uah" ? "1 500 грн / рік" : "150 грн / місяць"}
+                {sub?.planCode === "annual_1500_uah" ? "1 500 грн / рік" : "200 грн / місяць"}
               </span>
             </div>
             <div className="flex justify-between items-center text-slate-300">
@@ -346,15 +346,15 @@ export default function PlayerSubscriptionQuotaCard({
               <div className="grid grid-cols-2 gap-2.5">
                 <button
                   type="button"
-                  onClick={() => setPayPlan("monthly_150_uah")}
+                  onClick={() => setPayPlan("monthly_200_uah")}
                   className={`p-3 rounded-2xl border text-left transition-all ${
-                    payPlan === "monthly_150_uah"
+                    payPlan === "monthly_200_uah"
                       ? "bg-sky-500/20 border-sky-500 text-white"
                       : "bg-slate-950 border-slate-800 text-slate-400"
                   }`}
                 >
                   <div className="text-[11px] font-medium text-slate-400">1 місяць</div>
-                  <div className="text-base font-black text-white">150 грн</div>
+                  <div className="text-base font-black text-white">200 грн</div>
                 </button>
 
                 <button

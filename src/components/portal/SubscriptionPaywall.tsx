@@ -24,14 +24,14 @@ export default function SubscriptionPaywall({
   subscription,
   onPaymentSuccess,
 }: SubscriptionPaywallProps) {
-  const [selectedPlan, setSelectedPlan] = useState<BillingPlanCode>("monthly_150_uah");
+  const [selectedPlan, setSelectedPlan] = useState<BillingPlanCode>("monthly_200_uah");
   const [isProcessing, startTransition] = useTransition();
   const [payerPhone, setPayerPhone] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [openedJar, setOpenedJar] = useState(false);
 
   const isAnnual = selectedPlan === "annual_1500_uah";
-  const currentAmount = isAnnual ? 1500 : 150;
+  const currentAmount = isAnnual ? 1500 : 200;
 
   const handlePay = () => {
     setErrorMessage(null);
@@ -86,7 +86,7 @@ export default function SubscriptionPaywall({
         {/* Щомісячний */}
         <button
           type="button"
-          onClick={() => setSelectedPlan("monthly_150_uah")}
+          onClick={() => setSelectedPlan("monthly_200_uah")}
           className={`relative text-left p-4 rounded-2xl border transition-all ${
             !isAnnual
               ? "bg-sky-500/15 border-sky-500 shadow-[0_0_15px_rgba(14,165,233,0.2)]"
@@ -95,7 +95,7 @@ export default function SubscriptionPaywall({
         >
           <div className="text-xs font-semibold text-slate-400 mb-1">Щомісячний план</div>
           <div className="text-xl font-black text-white">
-            150 <span className="text-xs font-bold text-slate-400">грн / міс</span>
+            200 <span className="text-xs font-bold text-slate-400">грн / міс</span>
           </div>
           <div className="text-[11px] text-slate-400 mt-1.5">Помісячне списання</div>
         </button>
