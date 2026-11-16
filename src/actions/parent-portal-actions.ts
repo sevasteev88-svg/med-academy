@@ -24,6 +24,8 @@ import { CONCUSSION_GRTP_STAGES, type ConcussionStageNumber } from "@/types/conc
 import type { PreSeasonScreening } from "@/types/screening";
 import type { RtpPhaseLog } from "@/types/rtp";
 import type { ConsentScope } from "@/types/database";
+import { isSubscriptionAccessGranted } from "@/lib/billing";
+import type { SubscriptionStatus } from "@/types/billing";
 import {
   isParentWellnessAllowedForAge,
   maskParentMessageForCoach,
@@ -499,6 +501,20 @@ export async function getParentPortalDataAction(
     };
   }
 
+  const { data: subRow } = await admin
+    .from("player_subscriptions")
+    .select("status, amount_uah, current_period_end, grace_period_ends_at")
+    .eq("player_id", tokenRow.player_id)
+    .maybeSingle();
+
+  const isSubActive = subRow
+    ? isSubscriptionAccessGranted({
+        status: subRow.status as SubscriptionStatus,
+        currentPeriodEnd: subRow.current_period_end,
+        gracePeriodEndsAt: subRow.grace_period_ends_at,
+      })
+    : false;
+
   return {
     data: {
       tokenId: tokenRow.id,
@@ -551,6 +567,13 @@ export async function getParentPortalDataAction(
       },
       messages: (messagesRes.data || []) as ParentMessageRecord[],
       wellnessToday,
+      subscription: {
+        isActive: isSubActive,
+        status: (subRow?.status as SubscriptionStatus) || "unpaid",
+        amountUah: subRow ? Number(subRow.amount_uah) : 200,
+        currentPeriodEnd: subRow?.current_period_end || null,
+        gracePeriodEndsAt: subRow?.grace_period_ends_at || null,
+      },
     },
   };
 }
@@ -873,6 +896,26 @@ export async function submitParentWellnessAction(input: {
   if (!isParentWellnessAllowedForAge(age)) {
     return {
       error: "Ранковий чекін через кабінет батьків доступний лише для гравців молодше 14 років.",
+    };
+  }
+
+  const { data: subRow } = await admin
+    .from("player_subscriptions")
+    .select("status, current_period_end, grace_period_ends_at")
+    .eq("player_id", tokenRow.player_id)
+    .maybeSingle();
+
+  const isSubActive = subRow
+    ? isSubscriptionAccessGranted({
+        status: subRow.status as SubscriptionStatus,
+        currentPeriodEnd: subRow.current_period_end,
+        gracePeriodEndsAt: subRow.grace_period_ends_at,
+      })
+    : false;
+
+  if (!isSubActive) {
+    return {
+      error: "Потрібна активна підписка на паспорт здоров'я для заповнення ранкового чекіну.",
     };
   }
 

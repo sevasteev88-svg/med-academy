@@ -13,7 +13,8 @@ export type SubscriptionStatus =
 export type BillingPlanCode =
   | "monthly_200_uah"   // 200 грн / місяць
   | "monthly_150_uah"   // legacy: 150 грн / місяць
-  | "annual_1500_uah";  // 1 500 грн / рік (10 місяців)
+  | "annual_2000_uah"   // 2 000 грн / рік (10 місяців)
+  | "annual_1500_uah";  // legacy: 1 500 грн / рік
 
 export type PaymentProvider =
   | "wayforpay"
@@ -37,9 +38,9 @@ export const PRICING_PLANS = {
     description: "Персональний паспорт здоров'я та щоденний моніторинг",
   },
   ANNUAL: {
-    code: "annual_1500_uah" as BillingPlanCode,
+    code: "annual_2000_uah" as BillingPlanCode,
     name: "Річний абонемент",
-    amountUah: 1500,
+    amountUah: 2000,
     interval: "year" as const,
     discountMonths: 2,
     description: "10 місяців оплати + 2 місяці у подарунок",

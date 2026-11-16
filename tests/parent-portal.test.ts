@@ -108,6 +108,8 @@ test("Parent Portal: migration adds is_read_by_coach and filled_by, and UI wires
   assert.ok(portalClient.includes("✓ Сьогоднішній чекін вже заповнено"));
   assert.ok(portalClient.includes("ParentWellnessQuiz"));
   assert.ok(portalClient.includes("wellnessMode"));
+  assert.ok(portalClient.includes("SubscriptionPaywall"));
+  assert.ok(portalClient.includes("!data.subscription.isActive"));
 
   const briefingClient = fs.readFileSync(
     path.join(process.cwd(), "src/components/coach/CoachBriefingClient.tsx"),

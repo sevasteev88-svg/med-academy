@@ -21,6 +21,7 @@ import {
 import { PAIN_LOCATIONS_LIST } from "@/types/wellness";
 import type { ConsentScope } from "@/types/database";
 import ParentWellnessQuiz from "./ParentWellnessQuiz";
+import SubscriptionPaywall from "@/components/portal/SubscriptionPaywall";
 
 type Props = {
   rawToken: string;
@@ -289,6 +290,34 @@ export default function ParentPortalClient({ rawToken, initialData }: Props) {
       </header>
 
       <main className="max-w-2xl mx-auto px-4 pt-5 space-y-5">
+        {!data.subscription.isActive ? (
+          <div className="space-y-4">
+            <div className="rounded-2xl bg-amber-500/15 border border-amber-500/40 p-4 text-xs text-amber-200 flex items-start gap-3">
+              <span className="text-lg shrink-0">💳</span>
+              <div className="space-y-1">
+                <div className="font-bold text-amber-100">
+                  Доступ до Сімейного кабінету обмежено до оплати підписки
+                </div>
+                <p className="text-amber-200/80 leading-relaxed">
+                  Після оплати підписки відкриється повний доступ до ранкового квізу самопочуття, статусу допуску, дозволів та зв&apos;язку з лікарем.
+                </p>
+              </div>
+            </div>
+
+            <SubscriptionPaywall
+              playerId={data.player.id}
+              playerName={`${data.player.lastName} ${data.player.firstName}`}
+              teamName={data.player.teamName}
+              subscription={{
+                status: data.subscription.status,
+                amount_uah: data.subscription.amountUah,
+                current_period_end: data.subscription.currentPeriodEnd ?? undefined,
+                grace_period_ends_at: data.subscription.gracePeriodEndsAt ?? undefined,
+              }}
+            />
+          </div>
+        ) : (
+          <>
         {/* БАНЕР ПЕРШОГО ВХОДУ / ЗАПИТ УСІХ ДОЗВОЛІВ */}
         {showOnboarding && missingScopes.length > 0 && (
           <section className="rounded-2xl bg-gradient-to-br from-sky-950/90 via-slate-900 to-slate-900 border border-sky-500/40 p-5 shadow-xl space-y-4">
@@ -1107,6 +1136,8 @@ export default function ParentPortalClient({ rawToken, initialData }: Props) {
               </div>
             </section>
           </div>
+        )}
+          </>
         )}
       </main>
     </div>

@@ -49,7 +49,7 @@ export function isSubscriptionAccessGranted(params: {
  */
 export function generateOrderReference(playerId: string, planCode: BillingPlanCode): string {
   const shortId = playerId.replace(/-/g, "").slice(0, 8);
-  const planPrefix = planCode === "annual_1500_uah" ? "ANN" : "MTH";
+  const planPrefix = planCode === "annual_2000_uah" || planCode === "annual_1500_uah" ? "ANN" : "MTH";
   const ts = Date.now().toString(36).toUpperCase();
   const randomSuffix = crypto.randomBytes(2).toString("hex").toUpperCase();
   return `MED-${planPrefix}-${shortId}-${ts}${randomSuffix}`;
@@ -59,7 +59,7 @@ export function generateOrderReference(playerId: string, planCode: BillingPlanCo
  * Повертає конфігурацію та ціну за кодом тарифного плану
  */
 export function getPlanConfig(planCode: BillingPlanCode) {
-  if (planCode === "annual_1500_uah") {
+  if (planCode === "annual_2000_uah" || planCode === "annual_1500_uah") {
     return PRICING_PLANS.ANNUAL;
   }
   return PRICING_PLANS.MONTHLY;

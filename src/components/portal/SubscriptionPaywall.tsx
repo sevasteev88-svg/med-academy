@@ -30,8 +30,8 @@ export default function SubscriptionPaywall({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [openedJar, setOpenedJar] = useState(false);
 
-  const isAnnual = selectedPlan === "annual_1500_uah";
-  const currentAmount = isAnnual ? 1500 : 200;
+  const isAnnual = selectedPlan === "annual_2000_uah" || selectedPlan === "annual_1500_uah";
+  const currentAmount = isAnnual ? 2000 : 200;
 
   const handlePay = () => {
     setErrorMessage(null);
@@ -103,7 +103,7 @@ export default function SubscriptionPaywall({
         {/* Річний */}
         <button
           type="button"
-          onClick={() => setSelectedPlan("annual_1500_uah")}
+          onClick={() => setSelectedPlan("annual_2000_uah")}
           className={`relative text-left p-4 rounded-2xl border transition-all ${
             isAnnual
               ? "bg-emerald-500/15 border-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.2)]"
@@ -115,7 +115,7 @@ export default function SubscriptionPaywall({
           </span>
           <div className="text-xs font-semibold text-slate-400 mb-1">Річний абонемент</div>
           <div className="text-xl font-black text-emerald-400">
-            1 500 <span className="text-xs font-bold text-slate-400">грн / рік</span>
+            2 000 <span className="text-xs font-bold text-slate-400">грн / рік</span>
           </div>
           <div className="text-[11px] text-emerald-300/80 mt-1.5">10 місяців замість 12</div>
         </button>

@@ -722,7 +722,7 @@ export interface DemoSubscription {
   club_id: string;
   player_id: string;
   status: "active" | "comped" | "unpaid" | "trialing" | "past_due" | "canceled";
-  plan_code: "monthly_200_uah" | "annual_1500_uah";
+  plan_code: "monthly_200_uah" | "annual_2000_uah";
   amount_uah: number;
   currency: string;
   billing_interval: "month" | "year";
@@ -751,8 +751,8 @@ export const DEMO_SUBSCRIPTIONS: DemoSubscription[] = [
     club_id: DEMO_CLUB_ID,
     player_id: DEMO_PLAYERS[0].id, // Мельник Олександр
     status: "active",
-    plan_code: "annual_1500_uah",
-    amount_uah: 1500,
+    plan_code: "annual_2000_uah",
+    amount_uah: 2000,
     currency: "UAH",
     billing_interval: "year",
     current_period_start: "2026-08-01T00:00:00Z",
@@ -859,8 +859,8 @@ export const DEMO_SUBSCRIPTIONS: DemoSubscription[] = [
     club_id: DEMO_CLUB_ID,
     player_id: DEMO_PLAYERS[6].id, // Шевчук Данило (КВОТА КЛУБУ)
     status: "comped",
-    plan_code: "annual_1500_uah",
-    amount_uah: 1500,
+    plan_code: "annual_2000_uah",
+    amount_uah: 2000,
     currency: "UAH",
     billing_interval: "year",
     current_period_start: "2026-07-01T00:00:00Z",
@@ -934,8 +934,8 @@ export const DEMO_SUBSCRIPTIONS: DemoSubscription[] = [
     club_id: DEMO_CLUB_ID,
     player_id: DEMO_PLAYERS[10].id, // Мороз Матвій
     status: "active",
-    plan_code: "annual_1500_uah",
-    amount_uah: 1500,
+    plan_code: "annual_2000_uah",
+    amount_uah: 2000,
     currency: "UAH",
     billing_interval: "year",
     current_period_start: "2026-08-15T00:00:00Z",
@@ -1099,8 +1099,8 @@ export const DEMO_SUBSCRIPTIONS: DemoSubscription[] = [
     club_id: DEMO_CLUB_ID,
     player_id: DEMO_PLAYERS[19].id, // Василенко Марко
     status: "active",
-    plan_code: "annual_1500_uah",
-    amount_uah: 1500,
+    plan_code: "annual_2000_uah",
+    amount_uah: 2000,
     currency: "UAH",
     billing_interval: "year",
     current_period_start: "2026-09-01T00:00:00Z",
@@ -1135,8 +1135,8 @@ export const DEMO_SUBSCRIPTIONS: DemoSubscription[] = [
     club_id: DEMO_CLUB_ID,
     player_id: DEMO_PLAYERS[21].id, // Ткачук Юрій (КВОТА КЛУБУ)
     status: "comped",
-    plan_code: "annual_1500_uah",
-    amount_uah: 1500,
+    plan_code: "annual_2000_uah",
+    amount_uah: 2000,
     currency: "UAH",
     billing_interval: "year",
     current_period_start: "2026-07-01T00:00:00Z",

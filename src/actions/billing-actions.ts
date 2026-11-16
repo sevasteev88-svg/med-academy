@@ -327,8 +327,9 @@ export async function recordManualParentPaymentAction(params: {
   const supabase = createAdminClient();
   const plan = getPlanConfig(params.planCode);
   const now = new Date();
+  const isAnnualPlan = params.planCode === "annual_2000_uah" || params.planCode === "annual_1500_uah";
   const periodEnd = calculateNextPeriodEnd(
-    params.planCode === "annual_1500_uah" ? "year" : "month",
+    isAnnualPlan ? "year" : "month",
     now
   ).toISOString();
 
@@ -351,7 +352,7 @@ export async function recordManualParentPaymentAction(params: {
       status: "active",
       plan_code: params.planCode,
       amount_uah: plan.amountUah,
-      billing_interval: params.planCode === "annual_1500_uah" ? "year" : "month",
+      billing_interval: isAnnualPlan ? "year" : "month",
       current_period_start: now.toISOString(),
       current_period_end: periodEnd,
       provider: "manual",
@@ -502,7 +503,7 @@ export async function getTeamSubscriptionsAction(params?: {
     if (isActive) {
       if (status === "active") {
         activePaidCount++;
-        totalMonthlyRevenueUah += sub?.billing_interval === "year" ? Math.round(1500 / 12) : 200;
+        totalMonthlyRevenueUah += sub?.billing_interval === "year" ? Math.round(2000 / 12) : 200;
       } else if (status === "comped") {
         compedCount++;
       }

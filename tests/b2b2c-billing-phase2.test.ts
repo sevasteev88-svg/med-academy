@@ -18,8 +18,8 @@ test("Фаза 2 — Білінг B2B2C, Еквайринг (WayForPay / Mono) �
     assert.equal(monthlyPlan.amountUah, 200);
     assert.equal(monthlyPlan.interval, "month");
 
-    const annualPlan = getPlanConfig("annual_1500_uah");
-    assert.equal(annualPlan.amountUah, 1500);
+    const annualPlan = getPlanConfig("annual_2000_uah");
+    assert.equal(annualPlan.amountUah, 2000);
     assert.equal(annualPlan.interval, "year");
 
     const orderRef = generateOrderReference(dummyPlayerId, "monthly_200_uah");

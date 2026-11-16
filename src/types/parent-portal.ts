@@ -1,6 +1,7 @@
 import type { Consent, ConsentDocument, ConsentScope } from "./database";
 import type { AvailabilityStatus } from "@/lib/availability-rules";
 import type { GrowthPhase } from "@/lib/phv-calculator";
+import type { SubscriptionStatus } from "./billing";
 
 export type ParentMessageCategory =
   | "illness"
@@ -179,5 +180,12 @@ export interface ParentPortalData {
     alreadySubmitted: boolean;
     date: string;
     submittedAt?: string | null;
+  };
+  subscription: {
+    isActive: boolean;
+    status: SubscriptionStatus;
+    amountUah: number;
+    currentPeriodEnd?: string | null;
+    gracePeriodEndsAt?: string | null;
   };
 }

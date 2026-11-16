@@ -144,7 +144,7 @@ export default function TeamSubscriptionsClient({
       if (p.subscription?.isActive) {
         if (p.subscription.status === "active") {
           activePaid++;
-          revenue += p.subscription.billingInterval === "year" ? Math.round(1500 / 12) : 200;
+          revenue += p.subscription.billingInterval === "year" ? Math.round(2000 / 12) : 200;
         } else if (p.subscription.status === "comped") {
           comped++;
         }
@@ -177,7 +177,7 @@ export default function TeamSubscriptionsClient({
       });
 
       if (res.success) {
-        const isAnn = payPlan === "annual_1500_uah";
+        const isAnn = payPlan === "annual_2000_uah" || payPlan === "annual_1500_uah";
         const futureDate = new Date();
         if (isAnn) futureDate.setFullYear(futureDate.getFullYear() + 1);
         else futureDate.setMonth(futureDate.getMonth() + 1);
@@ -189,7 +189,7 @@ export default function TeamSubscriptionsClient({
               subscription: {
                 status: "active" as SubscriptionStatus,
                 planCode: payPlan,
-                amountUah: isAnn ? 1500 : 200,
+                amountUah: isAnn ? 2000 : 200,
                 billingInterval: isAnn ? "year" : "month",
                 currentPeriodEnd: futureDate.toISOString(),
                 compedReason: payMethod,
@@ -664,7 +664,7 @@ export default function TeamSubscriptionsClient({
                         <td className="py-3 px-3">
                           {isAct ? (
                             <span className="font-semibold text-slate-200">
-                              {sub?.planCode === "annual_1500_uah" ? "1 500 грн / рік" : "200 грн / міс"}
+                              {sub?.planCode === "annual_2000_uah" || sub?.planCode === "annual_1500_uah" ? "2 000 грн / рік" : "200 грн / міс"}
                             </span>
                           ) : isCmp ? (
                             <span className="text-emerald-400 font-medium">Безкоштовно</span>
@@ -811,15 +811,15 @@ export default function TeamSubscriptionsClient({
 
                 <button
                   type="button"
-                  onClick={() => setPayPlan("annual_1500_uah")}
+                  onClick={() => setPayPlan("annual_2000_uah")}
                   className={`p-3 rounded-2xl border text-left transition-all ${
-                    payPlan === "annual_1500_uah"
+                    payPlan === "annual_2000_uah" || payPlan === "annual_1500_uah"
                       ? "bg-emerald-500/20 border-emerald-500 text-white"
                       : "bg-slate-950 border-slate-800 text-slate-400"
                   }`}
                 >
                   <div className="text-[11px] font-medium text-slate-400">1 рік (12 міс)</div>
-                  <div className="text-base font-black text-emerald-300">1 500 грн</div>
+                  <div className="text-base font-black text-emerald-300">2 000 грн</div>
                 </button>
               </div>
             </div>

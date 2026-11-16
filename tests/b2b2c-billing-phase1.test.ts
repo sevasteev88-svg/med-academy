@@ -11,21 +11,21 @@ import {
 } from "../src/lib/billing.ts";
 
 test("Фаза 1 — B2B2C Білінг та Підписки MedAcademy", async (t) => {
-  await t.test("1. Тарифи та ціноутворення (200 грн/міс та 1500 грн/рік)", () => {
+  await t.test("1. Тарифи та ціноутворення (200 грн/міс та 2000 грн/рік)", () => {
     // Щомісячний тариф
     assert.equal(PRICING_PLANS.MONTHLY.amountUah, 200);
     assert.equal(PRICING_PLANS.MONTHLY.code, "monthly_200_uah");
     assert.equal(PRICING_PLANS.MONTHLY.interval, "month");
 
     // Річний тариф (10 місяців + 2 у подарунок)
-    assert.equal(PRICING_PLANS.ANNUAL.amountUah, 1500);
-    assert.equal(PRICING_PLANS.ANNUAL.code, "annual_1500_uah");
+    assert.equal(PRICING_PLANS.ANNUAL.amountUah, 2000);
+    assert.equal(PRICING_PLANS.ANNUAL.code, "annual_2000_uah");
     assert.equal(PRICING_PLANS.ANNUAL.interval, "year");
     assert.equal(PRICING_PLANS.ANNUAL.discountMonths, 2);
 
     // Перевірка конфігуратора планів
     assert.equal(getPlanConfig("monthly_200_uah").amountUah, 200);
-    assert.equal(getPlanConfig("annual_1500_uah").amountUah, 1500);
+    assert.equal(getPlanConfig("annual_2000_uah").amountUah, 2000);
   });
 
   await t.test("2. Логіка доступу (isSubscriptionAccessGranted) для різних статусів", () => {
@@ -102,7 +102,7 @@ test("Фаза 1 — B2B2C Білінг та Підписки MedAcademy", async
   await t.test("3. Генерація унікального номера замовлення (orderReference)", () => {
     const playerId = "c9a0b123-4567-89ab-cdef-0123456789ab";
     const refMonthly = generateOrderReference(playerId, "monthly_200_uah");
-    const refAnnual = generateOrderReference(playerId, "annual_1500_uah");
+    const refAnnual = generateOrderReference(playerId, "annual_2000_uah");
 
     assert.match(refMonthly, /^MED-MTH-[0-9a-f]{8}-[A-Z0-9]+$/);
     assert.match(refAnnual, /^MED-ANN-[0-9a-f]{8}-[A-Z0-9]+$/);
