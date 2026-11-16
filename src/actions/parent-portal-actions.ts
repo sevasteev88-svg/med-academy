@@ -281,7 +281,7 @@ export async function getParentPortalDataAction(
   ] = await Promise.all([
     admin
       .from("players")
-      .select("id, first_name, last_name, date_of_birth, position, team_id, club_id, current_weight, teams ( name, category )")
+      .select("id, first_name, last_name, date_of_birth, position, team_id, club_id, teams ( name, category )")
       .eq("id", tokenRow.player_id)
       .maybeSingle(),
     admin
@@ -321,7 +321,7 @@ export async function getParentPortalDataAction(
       .limit(1),
     admin
       .from("player_anamnesis")
-      .select("blood_type, allergies, data")
+      .select("blood_type, allergies, initial_weight, data")
       .eq("player_id", tokenRow.player_id)
       .order("created_at", { ascending: false })
       .limit(1),
@@ -577,9 +577,10 @@ export async function getParentPortalDataAction(
   }
 
   // Персональна норма гідратації та нутрієнти
+  const rawWeight = latestAnamnesisRow?.initial_weight;
   const weightKg =
-    player.current_weight && Number(player.current_weight) > 0
-      ? Number(player.current_weight)
+    rawWeight && Number(rawWeight) > 0
+      ? Number(rawWeight)
       : null;
   const effectiveWeight = weightKg ?? 45;
   const dailyWaterMl = Math.round(effectiveWeight * 35);
