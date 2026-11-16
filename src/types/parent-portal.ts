@@ -181,11 +181,47 @@ export interface ParentPortalData {
     date: string;
     submittedAt?: string | null;
   };
+  wellnessHistory: Array<{
+    date: string;
+    sleepQuality: number;
+    fatigue: number;
+    soreness: number;
+    totalScore: number;
+    readinessStatus: string;
+  }>;
+  schedule: {
+    upcomingSessions: Array<{
+      id: string;
+      date: string;
+      sessionType: string;
+      title: string;
+    }>;
+    todayAttendanceStatus: "attending" | "absent" | null;
+  };
+  nutritionAndHydration: {
+    weightKg: number | null;
+    dailyWaterMl: number;
+    trainingDayWaterMl: number;
+    supplements: Array<{ name: string; dosage?: string }>;
+    recoveryTips: string[];
+  };
+  emergencyContacts: {
+    primaryName: string;
+    primaryPhone: string;
+    secondaryName: string;
+    secondaryPhone: string;
+    pickupAuthorized: string;
+    familyDoctorPhone: string;
+  };
   subscription: {
     isActive: boolean;
     status: SubscriptionStatus;
+    planCode?: string | null;
     amountUah: number;
+    billingInterval?: string | null;
     currentPeriodEnd?: string | null;
     gracePeriodEndsAt?: string | null;
+    cardLast4?: string | null;
+    compedReason?: string | null;
   };
 }

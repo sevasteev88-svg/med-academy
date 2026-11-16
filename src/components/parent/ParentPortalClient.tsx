@@ -8,9 +8,13 @@ import {
   GUARDIAN_RELATION_UA,
 } from "@/lib/consent-constants";
 import {
+  submitParentAttendanceAction,
   submitParentConsentsAction,
+  submitParentEmergencyContactsAction,
   submitParentMessageAction,
+  submitParentPediatricAnamnesisAction,
   submitParentWellnessAction,
+  uploadParentMedicalCertificateAction,
 } from "@/actions/parent-portal-actions";
 import {
   PARENT_MESSAGE_CATEGORY_META,
@@ -30,9 +34,9 @@ type Props = {
 
 export default function ParentPortalClient({ rawToken, initialData }: Props) {
   const [data, setData] = useState<ParentPortalData>(initialData);
-  const [activeTab, setActiveTab] = useState<"status" | "message" | "consents">(
-    "status"
-  );
+  const [activeTab, setActiveTab] = useState<
+    "status" | "schedule" | "message" | "consents"
+  >("status");
   const [showOnboarding, setShowOnboarding] = useState<boolean>(
     initialData.needsOnboardingConsents && initialData.consents.missingScopes.length > 0
   );
@@ -82,6 +86,85 @@ export default function ParentPortalClient({ rawToken, initialData }: Props) {
     type: "ok" | "err";
     text: string;
   } | null>(null);
+
+  // Стан медичної картки (група крові, алергії, хронічні захворювання)
+  const hasInitialPediatricData = Boolean(
+    initialData.pediatricSummary.bloodType ||
+      initialData.pediatricSummary.allergies.length > 0 ||
+      initialData.pediatricSummary.chronicConditions.length > 0
+  );
+  const [isEditingPediatric, setIsEditingPediatric] = useState<boolean>(
+    !hasInitialPediatricData
+  );
+  const [pediatricBloodType, setPediatricBloodType] = useState<string>(
+    initialData.pediatricSummary.bloodType || ""
+  );
+  const [hasAllergies, setHasAllergies] = useState<boolean>(
+    initialData.pediatricSummary.allergies.length > 0
+  );
+  const [allergiesText, setAllergiesText] = useState<string>(
+    initialData.pediatricSummary.allergies.join(", ")
+  );
+  const [hasChronic, setHasChronic] = useState<boolean>(
+    initialData.pediatricSummary.chronicConditions.length > 0
+  );
+  const [chronicText, setChronicText] = useState<string>(
+    initialData.pediatricSummary.chronicConditions.join(", ")
+  );
+  const [pediatricFeedback, setPediatricFeedback] = useState<{
+    type: "ok" | "err";
+    text: string;
+  } | null>(null);
+
+  // Стан екстрених контактів сім'ї
+  const hasInitialEc = Boolean(
+    initialData.emergencyContacts.primaryName &&
+      initialData.emergencyContacts.primaryPhone
+  );
+  const [isEditingEc, setIsEditingEc] = useState<boolean>(!hasInitialEc);
+  const [ecPrimaryName, setEcPrimaryName] = useState<string>(
+    initialData.emergencyContacts.primaryName
+  );
+  const [ecPrimaryPhone, setEcPrimaryPhone] = useState<string>(
+    initialData.emergencyContacts.primaryPhone
+  );
+  const [ecSecondaryName, setEcSecondaryName] = useState<string>(
+    initialData.emergencyContacts.secondaryName
+  );
+  const [ecSecondaryPhone, setEcSecondaryPhone] = useState<string>(
+    initialData.emergencyContacts.secondaryPhone
+  );
+  const [ecPickup, setEcPickup] = useState<string>(
+    initialData.emergencyContacts.pickupAuthorized
+  );
+  const [ecDoctorPhone, setEcDoctorPhone] = useState<string>(
+    initialData.emergencyContacts.familyDoctorPhone
+  );
+  const [ecFeedback, setEcFeedback] = useState<{
+    type: "ok" | "err";
+    text: string;
+  } | null>(null);
+
+  // Стан присутності на тренуванні (1 клік)
+  const [attendanceStatus, setAttendanceStatus] = useState<
+    "attending" | "absent" | null
+  >(initialData.schedule.todayAttendanceStatus);
+  const [attendanceNote, setAttendanceNote] = useState<string>("");
+  const [attendanceFeedback, setAttendanceFeedback] = useState<{
+    type: "ok" | "err";
+    text: string;
+  } | null>(null);
+
+  // Стан завантаження довідки від педіатра
+  const [certTitle, setCertTitle] = useState<string>("");
+  const [certFile, setCertFile] = useState<File | null>(null);
+  const [certFeedback, setCertFeedback] = useState<{
+    type: "ok" | "err";
+    text: string;
+  } | null>(null);
+
+  // Стан продовження підписки у вкладці Дозволи та підписка
+  const [showRenewPaywall, setShowRenewPaywall] = useState<boolean>(false);
 
   const [isPending, startTransition] = useTransition();
 
@@ -235,6 +318,155 @@ export default function ParentPortalClient({ rawToken, initialData }: Props) {
       setWellnessFeedback({
         type: "ok",
         text: "Ранковий чекін збережено. Дякуємо!",
+      });
+    });
+  };
+
+  const handleSubmitPediatric = (e: React.FormEvent) => {
+    e.preventDefault();
+    setPediatricFeedback(null);
+
+    const parsedAllergies = hasAllergies
+      ? allergiesText
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [];
+    const parsedChronic = hasChronic
+      ? chronicText
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [];
+
+    if (hasAllergies && parsedAllergies.length === 0) {
+      setPediatricFeedback({
+        type: "err",
+        text: "Вкажіть, на що саме є алергія (через кому), або оберіть «Алергій немає».",
+      });
+      return;
+    }
+    if (hasChronic && parsedChronic.length === 0) {
+      setPediatricFeedback({
+        type: "err",
+        text: "Вкажіть хронічні захворювання чи особливості, або оберіть «Немає».",
+      });
+      return;
+    }
+
+    startTransition(async () => {
+      const res = await submitParentPediatricAnamnesisAction({
+        rawToken,
+        bloodType: pediatricBloodType || null,
+        allergies: parsedAllergies,
+        chronicConditions: parsedChronic,
+      });
+
+      if (res.error) {
+        setPediatricFeedback({ type: "err", text: res.error });
+        return;
+      }
+
+      if (res.pediatricSummary) {
+        setData((prev) => ({
+          ...prev,
+          pediatricSummary: res.pediatricSummary!,
+        }));
+      }
+      setIsEditingPediatric(false);
+      setPediatricFeedback({
+        type: "ok",
+        text: "Медичні дані збережено та передано лікарю клубу.",
+      });
+    });
+  };
+
+  const handleSubmitEc = (e: React.FormEvent) => {
+    e.preventDefault();
+    setEcFeedback(null);
+    startTransition(async () => {
+      const res = await submitParentEmergencyContactsAction({
+        rawToken,
+        primaryName: ecPrimaryName,
+        primaryPhone: ecPrimaryPhone,
+        secondaryName: ecSecondaryName,
+        secondaryPhone: ecSecondaryPhone,
+        pickupAuthorized: ecPickup,
+        familyDoctorPhone: ecDoctorPhone,
+      });
+      if (res.error) {
+        setEcFeedback({ type: "err", text: res.error });
+        return;
+      }
+      if (res.emergencyContacts) {
+        setData((prev) => ({
+          ...prev,
+          emergencyContacts: res.emergencyContacts!,
+        }));
+      }
+      setIsEditingEc(false);
+      setEcFeedback({
+        type: "ok",
+        text: "Екстрені контакти збережено.",
+      });
+    });
+  };
+
+  const handleAttendanceClick = (status: "attending" | "absent") => {
+    setAttendanceFeedback(null);
+    startTransition(async () => {
+      const res = await submitParentAttendanceAction({
+        rawToken,
+        status,
+        note: attendanceNote,
+      });
+      if (res.error) {
+        setAttendanceFeedback({ type: "err", text: res.error });
+        return;
+      }
+      setAttendanceStatus(status);
+      if (res.record) {
+        setMessages((prev) => [res.record!, ...prev]);
+      }
+      setAttendanceNote("");
+      setAttendanceFeedback({
+        type: "ok",
+        text:
+          status === "attending"
+            ? "Повідомлено: дитина буде на тренуванні."
+            : "Повідомлено тренера та лікаря: дитина сьогодні пропустить тренування.",
+      });
+    });
+  };
+
+  const handleUploadCertificate = (e: React.FormEvent) => {
+    e.preventDefault();
+    setCertFeedback(null);
+    if (!certFile) {
+      setCertFeedback({
+        type: "err",
+        text: "Оберіть файл довідки (PDF або фото).",
+      });
+      return;
+    }
+    startTransition(async () => {
+      const fd = new FormData();
+      fd.append("rawToken", rawToken);
+      fd.append("title", certTitle);
+      fd.append("file", certFile);
+      const res = await uploadParentMedicalCertificateAction(fd);
+      if (res.error) {
+        setCertFeedback({ type: "err", text: res.error });
+        return;
+      }
+      if (res.record) {
+        setMessages((prev) => [res.record!, ...prev]);
+      }
+      setCertTitle("");
+      setCertFile(null);
+      setCertFeedback({
+        type: "ok",
+        text: "Довідку завантажено та передано лікарю клубу.",
       });
     });
   };
@@ -473,12 +705,12 @@ export default function ParentPortalClient({ rawToken, initialData }: Props) {
           </section>
         )}
 
-        {/* НАВІГАЦІЯ ВКЛАДОК */}
-        <div className="grid grid-cols-3 gap-1.5 p-1 rounded-xl bg-slate-900 border border-slate-800 print:hidden">
+        {/* НАВІГАЦІЯ ВКЛАДОК (4 компактні вкладки) */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 p-1 rounded-xl bg-slate-900 border border-slate-800 print:hidden">
           <button
             type="button"
             onClick={() => setActiveTab("status")}
-            className={`py-2 px-2 rounded-lg text-xs font-bold transition cursor-pointer ${
+            className={`py-2 px-2 rounded-lg text-[11px] sm:text-xs font-bold transition cursor-pointer ${
               activeTab === "status"
                 ? "bg-sky-600/30 text-white border border-sky-500/40"
                 : "text-slate-400 hover:text-white"
@@ -488,25 +720,36 @@ export default function ParentPortalClient({ rawToken, initialData }: Props) {
           </button>
           <button
             type="button"
+            onClick={() => setActiveTab("schedule")}
+            className={`py-2 px-2 rounded-lg text-[11px] sm:text-xs font-bold transition cursor-pointer ${
+              activeTab === "schedule"
+                ? "bg-sky-600/30 text-white border border-sky-500/40"
+                : "text-slate-400 hover:text-white"
+            }`}
+          >
+            📅 Графік і побут
+          </button>
+          <button
+            type="button"
             onClick={() => setActiveTab("message")}
-            className={`py-2 px-2 rounded-lg text-xs font-bold transition cursor-pointer ${
+            className={`py-2 px-2 rounded-lg text-[11px] sm:text-xs font-bold transition cursor-pointer ${
               activeTab === "message"
                 ? "bg-sky-600/30 text-white border border-sky-500/40"
                 : "text-slate-400 hover:text-white"
             }`}
           >
-            💬 Написати лікарю
+            💬 Лікар і довідки
           </button>
           <button
             type="button"
             onClick={() => setActiveTab("consents")}
-            className={`py-2 px-2 rounded-lg text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1.5 ${
+            className={`py-2 px-2 rounded-lg text-[11px] sm:text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1 ${
               activeTab === "consents"
                 ? "bg-sky-600/30 text-white border border-sky-500/40"
                 : "text-slate-400 hover:text-white"
             }`}
           >
-            <span>✍️ Дозволи</span>
+            <span>🛡️ Дозволи та підписка</span>
             {missingScopes.length > 0 && (
               <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/40">
                 {missingScopes.length}
@@ -564,8 +807,40 @@ export default function ParentPortalClient({ rawToken, initialData }: Props) {
                     <span>очікує внесення</span>
                   )}
                 </span>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("message")}
+                  className="text-sky-400 hover:underline font-semibold cursor-pointer print:hidden"
+                >
+                  Завантажити довідку →
+                </button>
               </div>
             </section>
+
+            {/* Нагадування про плановий медогляд (якщо протерміновано або < 30 днів або не внесено) */}
+            {(!data.clearance.screeningValidUntil ||
+              data.clearance.screeningExpired ||
+              (new Date(data.clearance.screeningValidUntil).getTime() - Date.now()) /
+                86400000 <=
+                30) && (
+              <section className="rounded-2xl bg-amber-950/30 border border-amber-500/35 p-4 space-y-2 print:hidden">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="text-xs font-black text-amber-200 flex items-center gap-1.5">
+                    <span>🩺</span> Нагадування про плановий медогляд
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("message")}
+                    className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 text-[11px] font-bold transition cursor-pointer"
+                  >
+                    Надіслати довідку
+                  </button>
+                </div>
+                <p className="text-[11px] text-amber-100/80 leading-relaxed">
+                  Для спортивного допуску зазвичай потрібні: ЕКГ у спокої, огляд педіатра/спортивного лікаря та загальний аналіз крові. Готову довідку можна завантажити у вкладці «Лікар і довідки».
+                </p>
+              </section>
+            )}
 
             {/* Ранкове самопочуття дитини (ТІЛЬКИ для гравців < 14 років) */}
             {data.player.age < 14 && (
@@ -918,56 +1193,644 @@ export default function ParentPortalClient({ rawToken, initialData }: Props) {
             )}
 
             {/* Вижимка для сімейного лікаря / педіатра */}
-            <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-2.5">
-              <div className="flex items-center justify-between">
+            <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-3">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div>
+                  <h2 className="text-sm font-black text-white flex items-center gap-1.5">
+                    <span>🩺</span> Картка для сімейного лікаря / педіатра
+                  </h2>
+                  {!hasInitialPediatricData && isEditingPediatric && (
+                    <p className="text-[11px] text-amber-300/90 mt-0.5">
+                      Будь ласка, заповніть базові медичні дані дитини при першому вході.
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-3 print:hidden">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPediatricFeedback(null);
+                      setIsEditingPediatric((v) => !v);
+                    }}
+                    className="text-xs font-semibold text-slate-300 hover:text-white cursor-pointer"
+                  >
+                    {isEditingPediatric ? "Скасувати" : "✏️ Редагувати"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="text-xs text-sky-400 hover:underline cursor-pointer"
+                  >
+                    Друкувати / PDF
+                  </button>
+                </div>
+              </div>
+
+              {pediatricFeedback && !isEditingPediatric && (
+                <div
+                  className={`p-2.5 rounded-xl text-xs font-semibold ${
+                    pediatricFeedback.type === "ok"
+                      ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+                      : "bg-rose-500/15 text-rose-300 border border-rose-500/30"
+                  }`}
+                >
+                  {pediatricFeedback.text}
+                </div>
+              )}
+
+              {isEditingPediatric ? (
+                <form onSubmit={handleSubmitPediatric} className="space-y-3 pt-1 print:hidden">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-400 mb-1.5">
+                      Група крові та резус-фактор
+                    </label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        "O (I) Rh+",
+                        "O (I) Rh-",
+                        "A (II) Rh+",
+                        "A (II) Rh-",
+                        "B (III) Rh+",
+                        "B (III) Rh-",
+                        "AB (IV) Rh+",
+                        "AB (IV) Rh-",
+                      ].map((bt) => (
+                        <button
+                          key={bt}
+                          type="button"
+                          onClick={() =>
+                            setPediatricBloodType((prev) => (prev === bt ? "" : bt))
+                          }
+                          className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
+                            pediatricBloodType === bt
+                              ? "bg-sky-500/25 border-sky-400 text-white"
+                              : "bg-slate-950 border-slate-800 text-slate-400 hover:text-white"
+                          }`}
+                        >
+                          {bt}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="block text-[11px] font-semibold text-slate-400">
+                      Алергії (медикаменти, їжа, пилок тощо)
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setHasAllergies(false)}
+                        className={`py-2 px-3 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                          !hasAllergies
+                            ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-200"
+                            : "bg-slate-950 border-slate-800 text-slate-400 hover:text-white"
+                        }`}
+                      >
+                        Алергій немає
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setHasAllergies(true)}
+                        className={`py-2 px-3 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                          hasAllergies
+                            ? "bg-amber-500/20 border-amber-500/50 text-amber-200"
+                            : "bg-slate-950 border-slate-800 text-slate-400 hover:text-white"
+                        }`}
+                      >
+                        Є алергії
+                      </button>
+                    </div>
+                    {hasAllergies && (
+                      <input
+                        type="text"
+                        value={allergiesText}
+                        onChange={(e) => setAllergiesText(e.target.value)}
+                        placeholder="Вкажіть через кому (напр. пеніцилін, горіхи, амброзія)"
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-sky-500"
+                      />
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="block text-[11px] font-semibold text-slate-400">
+                      Хронічні захворювання або особливості анамнезу
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setHasChronic(false)}
+                        className={`py-2 px-3 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                          !hasChronic
+                            ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-200"
+                            : "bg-slate-950 border-slate-800 text-slate-400 hover:text-white"
+                        }`}
+                      >
+                        Немає / без особливостей
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setHasChronic(true)}
+                        className={`py-2 px-3 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                          hasChronic
+                            ? "bg-amber-500/20 border-amber-500/50 text-amber-200"
+                            : "bg-slate-950 border-slate-800 text-slate-400 hover:text-white"
+                        }`}
+                      >
+                        Є хронічні стани
+                      </button>
+                    </div>
+                    {hasChronic && (
+                      <input
+                        type="text"
+                        value={chronicText}
+                        onChange={(e) => setChronicText(e.target.value)}
+                        placeholder="Вкажіть через кому (напр. бронхіальна астма, міопія)"
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-sky-500"
+                      />
+                    )}
+                  </div>
+
+                  {pediatricFeedback && (
+                    <div
+                      className={`p-2.5 rounded-xl text-xs font-semibold ${
+                        pediatricFeedback.type === "ok"
+                          ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+                          : "bg-rose-500/15 text-rose-300 border border-rose-500/30"
+                      }`}
+                    >
+                      {pediatricFeedback.text}
+                    </div>
+                  )}
+
+                  <div className="flex justify-end pt-1">
+                    <button
+                      type="submit"
+                      disabled={isPending}
+                      className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white text-xs font-bold transition cursor-pointer"
+                    >
+                      {isPending ? "Збереження..." : "Зберегти медичну картку"}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+                  <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                    <div className="text-slate-500 text-[10px] uppercase font-bold">
+                      Група крові
+                    </div>
+                    <div className="text-white font-bold mt-0.5">
+                      {data.pediatricSummary.bloodType || "Не вказано"}
+                    </div>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                    <div className="text-slate-500 text-[10px] uppercase font-bold">
+                      Алергії
+                    </div>
+                    <div className="text-white font-bold mt-0.5">
+                      {data.pediatricSummary.allergies.length > 0
+                        ? data.pediatricSummary.allergies.join(", ")
+                        : "Не зафіксовано"}
+                    </div>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                    <div className="text-slate-500 text-[10px] uppercase font-bold">
+                      Особливості анамнезу
+                    </div>
+                    <div className="text-white font-bold mt-0.5">
+                      {data.pediatricSummary.chronicConditions.length > 0
+                        ? data.pediatricSummary.chronicConditions.join(", ")
+                        : "Без особливостей"}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </section>
+
+            {/* Історія самопочуття за останні 14 днів */}
+            <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-3 print:hidden">
+              <div className="flex items-center justify-between gap-2">
                 <h2 className="text-sm font-black text-white flex items-center gap-1.5">
-                  <span>🩺</span> Картка для сімейного лікаря / педіатра
+                  <span>📊</span> Історія самопочуття (останні 14 днів)
+                </h2>
+                <span className="text-[11px] text-slate-400">
+                  Записів: {data.wellnessHistory.length}
+                </span>
+              </div>
+
+              {data.wellnessHistory.length === 0 ? (
+                <p className="text-xs text-slate-500">
+                  Поки що немає заповнених анкет за останні 14 днів.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex items-end gap-1.5 h-20 pt-2 px-1">
+                    {data.wellnessHistory.map((item) => {
+                      const pct = Math.max(20, Math.min(100, Math.round((item.totalScore / 20) * 100)));
+                      const barColor =
+                        item.readinessStatus === "optimal"
+                          ? "bg-emerald-500"
+                          : item.readinessStatus === "warning"
+                          ? "bg-amber-400"
+                          : "bg-rose-500";
+                      return (
+                        <div
+                          key={item.date}
+                          className="flex-1 flex flex-col items-center gap-1 group"
+                          title={`${item.date}: Сон ${item.sleepQuality}/5, Бадьорість ${item.fatigue}/5, М'язи ${item.soreness}/5`}
+                        >
+                          <div className="w-full bg-slate-950 rounded-t-md h-14 flex items-end overflow-hidden border border-slate-800/70">
+                            <div
+                              style={{ height: `${pct}%` }}
+                              className={`w-full ${barColor} transition-all`}
+                            />
+                          </div>
+                          <span className="text-[9px] font-mono text-slate-500">
+                            {item.date.slice(8, 10)}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-slate-800/80">
+                    <span>🟢 Оптимально · 🟡 Увага · 🔴 Ризик</span>
+                    <span>Останній сон: {data.wellnessHistory[data.wellnessHistory.length - 1]?.sleepQuality}/5</span>
+                  </div>
+                </div>
+              )}
+            </section>
+
+            {/* Екстрені контакти сім'ї та довірених осіб */}
+            <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-sm font-black text-white flex items-center gap-1.5">
+                  <span>📞</span> Екстрені контакти сім&apos;ї
                 </h2>
                 <button
                   type="button"
-                  onClick={() => window.print()}
-                  className="text-xs text-sky-400 hover:underline print:hidden cursor-pointer"
+                  onClick={() => {
+                    setEcFeedback(null);
+                    setIsEditingEc((v) => !v);
+                  }}
+                  className="text-xs font-semibold text-slate-300 hover:text-white cursor-pointer print:hidden"
                 >
-                  Друкувати / PDF
+                  {isEditingEc ? "Скасувати" : "✏️ Редагувати"}
                 </button>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
-                <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
-                  <div className="text-slate-500 text-[10px] uppercase font-bold">
-                    Група крові
+
+              {ecFeedback && !isEditingEc && (
+                <div className="p-2.5 rounded-xl text-xs font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                  {ecFeedback.text}
+                </div>
+              )}
+
+              {isEditingEc ? (
+                <form onSubmit={handleSubmitEc} className="space-y-3 print:hidden">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+                        Основний контакт (Мама / Тато) *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={ecPrimaryName}
+                        onChange={(e) => setEcPrimaryName(e.target.value)}
+                        placeholder="Напр.: Олена Іванова"
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-sky-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+                        Телефон основного контакту *
+                      </label>
+                      <input
+                        type="tel"
+                        required
+                        value={ecPrimaryPhone}
+                        onChange={(e) => setEcPrimaryPhone(e.target.value)}
+                        placeholder="+380 67 000 00 00"
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-sky-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+                        Запасний контакт
+                      </label>
+                      <input
+                        type="text"
+                        value={ecSecondaryName}
+                        onChange={(e) => setEcSecondaryName(e.target.value)}
+                        placeholder="Напр.: Сергій Іванов (тато)"
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-sky-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+                        Телефон запасного контакту
+                      </label>
+                      <input
+                        type="tel"
+                        value={ecSecondaryPhone}
+                        onChange={(e) => setEcSecondaryPhone(e.target.value)}
+                        placeholder="+380 50 000 00 00"
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-sky-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+                        Хто забирає з тренувань / матчів
+                      </label>
+                      <input
+                        type="text"
+                        value={ecPickup}
+                        onChange={(e) => setEcPickup(e.target.value)}
+                        placeholder="Батьки / бабуся / самостійно"
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-sky-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+                        Телефон сімейного лікаря / педіатра
+                      </label>
+                      <input
+                        type="tel"
+                        value={ecDoctorPhone}
+                        onChange={(e) => setEcDoctorPhone(e.target.value)}
+                        placeholder="За бажанням"
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-sky-500"
+                      />
+                    </div>
                   </div>
-                  <div className="text-white font-bold mt-0.5">
-                    {data.pediatricSummary.bloodType || "Не вказано"}
+                  {ecFeedback && (
+                    <div className="p-2.5 rounded-xl text-xs font-semibold bg-rose-500/15 text-rose-300 border border-rose-500/30">
+                      {ecFeedback.text}
+                    </div>
+                  )}
+                  <div className="flex justify-end">
+                    <button
+                      type="submit"
+                      disabled={isPending}
+                      className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white text-xs font-bold transition cursor-pointer"
+                    >
+                      {isPending ? "Збереження..." : "Зберегти контакти"}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                  <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                    <div className="text-slate-500 text-[10px] uppercase font-bold">
+                      Основний контакт
+                    </div>
+                    <div className="text-white font-bold mt-0.5">
+                      {data.emergencyContacts.primaryName || "Не вказано"}
+                    </div>
+                    <div className="text-sky-400 font-mono text-[11px]">
+                      {data.emergencyContacts.primaryPhone || "—"}
+                    </div>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                    <div className="text-slate-500 text-[10px] uppercase font-bold">
+                      Запасний контакт
+                    </div>
+                    <div className="text-white font-bold mt-0.5">
+                      {data.emergencyContacts.secondaryName || "Не вказано"}
+                    </div>
+                    <div className="text-sky-400 font-mono text-[11px]">
+                      {data.emergencyContacts.secondaryPhone || "—"}
+                    </div>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                    <div className="text-slate-500 text-[10px] uppercase font-bold">
+                      Хто забирає
+                    </div>
+                    <div className="text-white font-semibold mt-0.5">
+                      {data.emergencyContacts.pickupAuthorized || "Не вказано"}
+                    </div>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                    <div className="text-slate-500 text-[10px] uppercase font-bold">
+                      Педіатр / сімейний лікар
+                    </div>
+                    <div className="text-white font-mono text-[11px] mt-0.5">
+                      {data.emergencyContacts.familyDoctorPhone || "Не вказано"}
+                    </div>
                   </div>
                 </div>
-                <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
-                  <div className="text-slate-500 text-[10px] uppercase font-bold">
-                    Алергії
-                  </div>
-                  <div className="text-white font-bold mt-0.5">
-                    {data.pediatricSummary.allergies.length > 0
-                      ? data.pediatricSummary.allergies.join(", ")
-                      : "Не зафіксовано"}
-                  </div>
-                </div>
-                <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
-                  <div className="text-slate-500 text-[10px] uppercase font-bold">
-                    Особливості анамнезу
-                  </div>
-                  <div className="text-white font-bold mt-0.5">
-                    {data.pediatricSummary.chronicConditions.length > 0
-                      ? data.pediatricSummary.chronicConditions.join(", ")
-                      : "Без особливостей"}
-                  </div>
-                </div>
-              </div>
+              )}
             </section>
           </div>
         )}
 
-        {/* ВКЛАДКА 2: ПОВІДОМИТИ ЛІКАРЯ */}
+        {/* ВКЛАДКА 2: ГРАФІК І ПОБУТ */}
+        {activeTab === "schedule" && (
+          <div className="space-y-4">
+            {/* Відмітка присутності в 1 клік */}
+            <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-3">
+              <div>
+                <h2 className="text-sm font-black text-white flex items-center gap-1.5">
+                  <span>✅</span> Присутність на сьогоднішньому тренуванні
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Повідомте тренера та лікаря в 1 клік, чи буде {data.player.firstName} на занятті.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  disabled={isPending}
+                  onClick={() => handleAttendanceClick("attending")}
+                  className={`p-3 rounded-xl border text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                    attendanceStatus === "attending"
+                      ? "bg-emerald-500/20 border-emerald-500 text-emerald-200"
+                      : "bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700"
+                  }`}
+                >
+                  <span>✅</span> Буде на тренуванні
+                </button>
+                <button
+                  type="button"
+                  disabled={isPending}
+                  onClick={() => handleAttendanceClick("absent")}
+                  className={`p-3 rounded-xl border text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                    attendanceStatus === "absent"
+                      ? "bg-rose-500/20 border-rose-500 text-rose-200"
+                      : "bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700"
+                  }`}
+                >
+                  <span>🚫</span> Не буде сьогодні
+                </button>
+              </div>
+
+              <input
+                type="text"
+                value={attendanceNote}
+                onChange={(e) => setAttendanceNote(e.target.value)}
+                placeholder="Коротка причина (за бажанням, напр. школа / застуда / сімейні справи)"
+                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-sky-500"
+              />
+
+              {attendanceFeedback && (
+                <div
+                  className={`p-2.5 rounded-xl text-xs font-semibold ${
+                    attendanceFeedback.type === "ok"
+                      ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+                      : "bg-rose-500/15 text-rose-300 border border-rose-500/30"
+                  }`}
+                >
+                  {attendanceFeedback.text}
+                </div>
+              )}
+            </section>
+
+            {/* Найближчі тренування / матчі */}
+            <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-3">
+              <h2 className="text-sm font-black text-white flex items-center gap-1.5">
+                <span>📅</span> Найближчі заняття ({data.player.teamName})
+              </h2>
+              {data.schedule.upcomingSessions.length === 0 ? (
+                <p className="text-xs text-slate-400">
+                  Розклад найближчих тренувань і матчів оновлюється тренером команди.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {data.schedule.upcomingSessions.map((s) => (
+                    <div
+                      key={s.id}
+                      className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-2 text-xs"
+                    >
+                      <div className="font-bold text-white flex items-center gap-2">
+                        <span>{s.sessionType === "match" ? "⚽" : "🏃"}</span>
+                        <span>{s.title}</span>
+                      </div>
+                      <span className="font-mono text-sky-300 text-[11px]">
+                        {new Date(s.date).toLocaleDateString("uk-UA", {
+                          weekday: "short",
+                          day: "2-digit",
+                          month: "2-digit",
+                        })}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            {/* Харчування та гідратація */}
+            <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-3">
+              <h2 className="text-sm font-black text-white flex items-center gap-1.5">
+                <span>💧</span> Харчування та гідратація
+              </h2>
+              <div className="grid grid-cols-2 gap-2.5 text-xs">
+                <div className="p-3 rounded-xl bg-sky-950/30 border border-sky-500/30">
+                  <div className="text-slate-400 text-[10px] uppercase font-bold">
+                    Звичайний день
+                  </div>
+                  <div className="text-lg font-black text-sky-300 mt-0.5">
+                    {(data.nutritionAndHydration.dailyWaterMl / 1000).toFixed(1)} л
+                  </div>
+                  <div className="text-[10px] text-slate-400">
+                    {data.nutritionAndHydration.weightKg
+                      ? `Розрахунок на вагу ${data.nutritionAndHydration.weightKg} кг`
+                      : "Базова норма води"}
+                  </div>
+                </div>
+                <div className="p-3 rounded-xl bg-emerald-950/30 border border-emerald-500/30">
+                  <div className="text-slate-400 text-[10px] uppercase font-bold">
+                    День тренування / матчу
+                  </div>
+                  <div className="text-lg font-black text-emerald-300 mt-0.5">
+                    {(data.nutritionAndHydration.trainingDayWaterMl / 1000).toFixed(1)} л
+                  </div>
+                  <div className="text-[10px] text-slate-400">
+                    +500 мл для відновлення
+                  </div>
+                </div>
+              </div>
+
+              <ul className="space-y-1.5 text-xs text-slate-300 pt-1">
+                {data.nutritionAndHydration.recoveryTips.map((tip, idx) => (
+                  <li key={idx} className="flex items-start gap-2">
+                    <span className="text-sky-400">•</span>
+                    <span>{tip}</span>
+                  </li>
+                ))}
+              </ul>
+
+              {data.nutritionAndHydration.supplements.length > 0 && (
+                <div className="pt-2 border-t border-slate-800 space-y-1.5">
+                  <div className="text-[11px] font-bold text-slate-400 uppercase">
+                    Призначено лікарем клубу:
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {data.nutritionAndHydration.supplements.map((sup) => (
+                      <span
+                        key={sup.name}
+                        className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-[11px] text-slate-200"
+                      >
+                        💊 {sup.name}
+                        {sup.dosage ? ` — ${sup.dosage}` : ""}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </section>
+          </div>
+        )}
+
+        {/* ВКЛАДКА 3: ЛІКАР І ДОВІДКИ */}
         {activeTab === "message" && (
           <div className="space-y-4">
+            {/* Завантаження довідки від педіатра / аналізів */}
+            <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-3">
+              <div>
+                <h2 className="text-sm font-black text-white flex items-center gap-1.5">
+                  <span>📎</span> Завантажити довідку або результати аналізів
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Фото або PDF (до 10 МБ) — файл буде передано безпосередньо лікарю клубу.
+                </p>
+              </div>
+              <form onSubmit={handleUploadCertificate} className="space-y-2.5">
+                <input
+                  type="text"
+                  value={certTitle}
+                  onChange={(e) => setCertTitle(e.target.value)}
+                  placeholder="Назва документа (напр. Довідка від педіатра / ЕКГ)"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-sky-500"
+                />
+                <input
+                  type="file"
+                  accept=".pdf,image/*"
+                  onChange={(e) => setCertFile(e.target.files?.[0] || null)}
+                  className="w-full text-xs text-slate-300 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-slate-800 file:text-sky-300 hover:file:bg-slate-700 cursor-pointer"
+                />
+                {certFeedback && (
+                  <div
+                    className={`p-2.5 rounded-xl text-xs font-semibold ${
+                      certFeedback.type === "ok"
+                        ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+                        : "bg-rose-500/15 text-rose-300 border border-rose-500/30"
+                    }`}
+                  >
+                    {certFeedback.text}
+                  </div>
+                )}
+                <div className="flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={isPending}
+                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold transition cursor-pointer"
+                  >
+                    {isPending ? "Завантаження..." : "Надіслати довідку лікарю"}
+                  </button>
+                </div>
+              </form>
+            </section>
+
             <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-3">
               <h2 className="text-sm font-black text-white">
                 Повідомити лікаря клубу про стан дитини
@@ -1074,9 +1937,79 @@ export default function ParentPortalClient({ rawToken, initialData }: Props) {
           </div>
         )}
 
-        {/* ВКЛАДКА 3: ДОЗВОЛИ ТА ЗГОДИ */}
+        {/* ВКЛАДКА 4: ДОЗВОЛИ ТА ПІДПИСКА */}
         {activeTab === "consents" && (
           <div className="space-y-4">
+            {/* Статус підписки та продовження */}
+            <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-3">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div>
+                  <h2 className="text-sm font-black text-white flex items-center gap-1.5">
+                    <span>💳</span> Підписка на Паспорт здоров&apos;я
+                  </h2>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {data.subscription.status === "comped"
+                      ? "Стипендіальний доступ від клубу"
+                      : data.subscription.billingInterval === "year"
+                      ? "Річний абонемент · 2 000 грн / рік"
+                      : "Щомісячний план · 200 грн / міс"}
+                  </p>
+                </div>
+                <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                  ✓ Активна
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5 text-xs">
+                <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                  <div className="text-slate-500 text-[10px] uppercase font-bold">
+                    Оплачено до
+                  </div>
+                  <div className="text-white font-bold mt-0.5">
+                    {data.subscription.currentPeriodEnd
+                      ? new Date(data.subscription.currentPeriodEnd).toLocaleDateString("uk-UA")
+                      : "—"}
+                  </div>
+                </div>
+                <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                  <div className="text-slate-500 text-[10px] uppercase font-bold">
+                    Статус / Тариф
+                  </div>
+                  <div className="text-sky-300 font-bold mt-0.5">
+                    {data.subscription.status === "comped"
+                      ? "Квота клубу"
+                      : `${data.subscription.amountUah} грн`}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowRenewPaywall((v) => !v)}
+                  className="px-3.5 py-2 rounded-xl bg-sky-600/20 hover:bg-sky-600/30 border border-sky-500/40 text-sky-300 text-xs font-bold transition cursor-pointer"
+                >
+                  {showRenewPaywall ? "Сховати форму оплати" : "Продовжити або змінити тариф"}
+                </button>
+              </div>
+
+              {showRenewPaywall && (
+                <div className="pt-2">
+                  <SubscriptionPaywall
+                    playerId={data.player.id}
+                    playerName={`${data.player.lastName} ${data.player.firstName}`}
+                    teamName={data.player.teamName}
+                    subscription={{
+                      status: data.subscription.status,
+                      amount_uah: data.subscription.amountUah,
+                      current_period_end: data.subscription.currentPeriodEnd ?? undefined,
+                      grace_period_ends_at: data.subscription.gracePeriodEndsAt ?? undefined,
+                    }}
+                  />
+                </div>
+              )}
+            </section>
+
             <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-3">
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div>

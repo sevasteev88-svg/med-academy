@@ -276,10 +276,12 @@ export async function getParentPortalDataAction(
     messagesRes,
     consentSummary,
     activeDocs,
+    wellnessHistoryRes,
+    nutritionRes,
   ] = await Promise.all([
     admin
       .from("players")
-      .select("id, first_name, last_name, date_of_birth, position, team_id, club_id, teams ( name, category )")
+      .select("id, first_name, last_name, date_of_birth, position, team_id, club_id, current_weight, teams ( name, category )")
       .eq("id", tokenRow.player_id)
       .maybeSingle(),
     admin
@@ -331,6 +333,18 @@ export async function getParentPortalDataAction(
       .limit(15),
     getPlayerConsentSummary(tokenRow.player_id, undefined, tokenRow.club_id),
     getActiveConsentDocuments(tokenRow.club_id),
+    admin
+      .from("wellness_surveys")
+      .select("date, sleep_quality, fatigue_level, muscle_soreness, total_score, readiness_status")
+      .eq("player_id", tokenRow.player_id)
+      .order("date", { ascending: false })
+      .limit(14),
+    admin
+      .from("player_nutrition_profiles")
+      .select("data")
+      .eq("player_id", tokenRow.player_id)
+      .order("date", { ascending: false })
+      .limit(1),
   ]);
 
   const player = playerRes.data as any;
@@ -481,11 +495,12 @@ export async function getParentPortalDataAction(
     ? new Date(screeningValidUntil).getTime() < Date.now()
     : false;
 
+  const timezone = await getClubTimezone(tokenRow.club_id);
+  const today = getClubDate(timezone);
+
   // Для дітей < 14 років перевіряємо, чи заповнено сьогодні ранковий чекін (wellness_surveys)
   let wellnessToday: ParentPortalData["wellnessToday"] = undefined;
   if (isParentWellnessAllowedForAge(age)) {
-    const timezone = await getClubTimezone(tokenRow.club_id);
-    const today = getClubDate(timezone);
     const { data: todaySurvey } = await admin
       .from("wellness_surveys")
       .select("id, created_at")
@@ -501,9 +516,113 @@ export async function getParentPortalDataAction(
     };
   }
 
+  const wellnessHistory = (wellnessHistoryRes.data || [])
+    .map((w: any) => ({
+      date: w.date,
+      sleepQuality: Number(w.sleep_quality || 0),
+      fatigue: Number(w.fatigue_level || 0),
+      soreness: Number(w.muscle_soreness || 0),
+      totalScore: Number(w.total_score || 0),
+      readinessStatus: String(w.readiness_status || "optimal"),
+    }))
+    .reverse();
+
+  // Найближчі тренування / матчі команди
+  let upcomingSessions: ParentPortalData["schedule"]["upcomingSessions"] = [];
+  if (player.team_id) {
+    const { data: sessionsRows } = await admin
+      .from("workload_sessions")
+      .select("id, date, session_type, notes")
+      .eq("team_id", player.team_id)
+      .gte("date", today)
+      .order("date", { ascending: true })
+      .limit(10);
+
+    const seenKeys = new Set<string>();
+    for (const s of sessionsRows || []) {
+      const key = `${s.date}_${s.session_type || "training"}`;
+      if (seenKeys.has(key)) continue;
+      seenKeys.add(key);
+      const sType = String(s.session_type || "training");
+      upcomingSessions.push({
+        id: s.id,
+        date: s.date,
+        sessionType: sType,
+        title:
+          sType === "match"
+            ? "Матч команди"
+            : sType === "recovery"
+            ? "Відновлювальне заняття"
+            : "Командне тренування",
+      });
+      if (upcomingSessions.length >= 5) break;
+    }
+  }
+
+  // Сьогоднішня відмітка присутності з повідомлень батьків
+  const todayMsgs = (messagesRes.data || []).filter((m: any) =>
+    String(m.created_at || "").startsWith(today)
+  );
+  let todayAttendanceStatus: "attending" | "absent" | null = null;
+  for (const m of todayMsgs) {
+    const txt = String((m as any).message || "");
+    if (txt.includes("[ВІДМІТКА: БУДЕ]")) {
+      todayAttendanceStatus = "attending";
+      break;
+    }
+    if ((m as any).category === "absence" || txt.includes("[ВІДМІТКА: НЕ БУДЕ]")) {
+      todayAttendanceStatus = "absent";
+      break;
+    }
+  }
+
+  // Персональна норма гідратації та нутрієнти
+  const weightKg =
+    player.current_weight && Number(player.current_weight) > 0
+      ? Number(player.current_weight)
+      : null;
+  const effectiveWeight = weightKg ?? 45;
+  const dailyWaterMl = Math.round(effectiveWeight * 35);
+  const trainingDayWaterMl = dailyWaterMl + 500;
+
+  const nutData = ((nutritionRes.data?.[0] as any)?.data || {}) as Record<string, any>;
+  const supplements: Array<{ name: string; dosage?: string }> = [];
+  if (nutData.supplements_collagen_vit_c) {
+    supplements.push({ name: "Колаген + вітамін С", dosage: "За 45 хв до заняття" });
+  }
+  if (nutData.supplements_creatine) {
+    supplements.push({ name: "Креатин моногідрат", dosage: "За призначенням лікаря" });
+  }
+  if (nutData.supplements_omega3) {
+    supplements.push({ name: "Омега-3", dosage: "Для контролю запалення" });
+  }
+  if (nutData.supplements_whey_protein) {
+    supplements.push({ name: "Протеїн", dosage: "Протягом 30 хв після тренування" });
+  }
+  if (nutData.supplements_vitamin_d) {
+    supplements.push({ name: "Вітамін D3", dosage: "Зранку під час сніданку" });
+  }
+
+  const recoveryTips = [
+    `Вода у звичайний день: ${(dailyWaterMl / 1000).toFixed(1)} л, у день тренування: ${(trainingDayWaterMl / 1000).toFixed(1)} л.`,
+    "За 1.5–2 години до тренування: складні вуглеводи (каша, паста, фрукти) + легкий білок.",
+    "Протягом 30–45 хв після навантаження: вода + банан / йогурт або повноцінний прийом їжі з білком.",
+  ];
+
+  // Екстрені контакти сім'ї з анамнезу
+  const ecRaw = (latestAnamnesisRow?.data?.emergency_contacts || {}) as Record<string, any>;
+  const emergencyContacts = {
+    primaryName: String(ecRaw.primaryName || ""),
+    primaryPhone: String(ecRaw.primaryPhone || ""),
+    secondaryName: String(ecRaw.secondaryName || ""),
+    secondaryPhone: String(ecRaw.secondaryPhone || ""),
+    pickupAuthorized: String(ecRaw.pickupAuthorized || ""),
+    familyDoctorPhone: String(ecRaw.familyDoctorPhone || ""),
+  };
+
   const { data: subRow } = await admin
     .from("player_subscriptions")
-    .select("status, amount_uah, current_period_end, grace_period_ends_at")
+    .select("status, plan_code, amount_uah, billing_interval, current_period_end, grace_period_ends_at, card_last4, comped_reason")
     .eq("player_id", tokenRow.player_id)
     .maybeSingle();
 
@@ -567,12 +686,29 @@ export async function getParentPortalDataAction(
       },
       messages: (messagesRes.data || []) as ParentMessageRecord[],
       wellnessToday,
+      wellnessHistory,
+      schedule: {
+        upcomingSessions,
+        todayAttendanceStatus,
+      },
+      nutritionAndHydration: {
+        weightKg,
+        dailyWaterMl,
+        trainingDayWaterMl,
+        supplements,
+        recoveryTips,
+      },
+      emergencyContacts,
       subscription: {
         isActive: isSubActive,
         status: (subRow?.status as SubscriptionStatus) || "unpaid",
+        planCode: subRow?.plan_code || null,
         amountUah: subRow ? Number(subRow.amount_uah) : 200,
+        billingInterval: subRow?.billing_interval || null,
         currentPeriodEnd: subRow?.current_period_end || null,
         gracePeriodEndsAt: subRow?.grace_period_ends_at || null,
+        cardLast4: subRow?.card_last4 || null,
+        compedReason: subRow?.comped_reason || null,
       },
     },
   };
@@ -1011,4 +1147,324 @@ export async function submitParentWellnessAction(input: {
   revalidatePath(`/players/${tokenRow.player_id}`);
 
   return { success: true, date: today };
+}
+
+/**
+ * Заповнення / оновлення первинних медичних даних (група крові, алергії, хронічні захворювання)
+ * батьками безпосередньо з Сімейного кабінету.
+ */
+export async function submitParentPediatricAnamnesisAction(input: {
+  rawToken: string;
+  bloodType: string | null;
+  allergies: string[];
+  chronicConditions: string[];
+}): Promise<{
+  success?: boolean;
+  pediatricSummary?: {
+    bloodType: string | null;
+    allergies: string[];
+    chronicConditions: string[];
+  };
+  error?: string;
+}> {
+  if (!input.rawToken || input.rawToken.trim().length < 16) {
+    return { error: "Недійсне посилання сімейного доступу." };
+  }
+
+  const admin = createAdminClient();
+  const tokenHash = hashToken(input.rawToken);
+
+  const { data: tokenRow } = await admin
+    .from("parent_portal_tokens")
+    .select("id, club_id, player_id, is_active")
+    .eq("token_hash", tokenHash)
+    .maybeSingle();
+
+  if (!tokenRow || !tokenRow.is_active) {
+    return { error: "Посилання сімейного доступу недійсне або відкликане." };
+  }
+
+  const { data: subRow } = await admin
+    .from("player_subscriptions")
+    .select("status, current_period_end, grace_period_ends_at")
+    .eq("player_id", tokenRow.player_id)
+    .maybeSingle();
+
+  const isSubActive = subRow
+    ? isSubscriptionAccessGranted({
+        status: subRow.status as SubscriptionStatus,
+        currentPeriodEnd: subRow.current_period_end,
+        gracePeriodEndsAt: subRow.grace_period_ends_at,
+      })
+    : false;
+
+  if (!isSubActive) {
+    return { error: "Потрібна активна підписка для збереження медичної картки." };
+  }
+
+  const cleanBloodType = input.bloodType?.trim() ? input.bloodType.trim().slice(0, 32) : null;
+  const cleanAllergies = Array.isArray(input.allergies)
+    ? input.allergies.map((a) => a.trim()).filter(Boolean).slice(0, 20)
+    : [];
+  const cleanChronic = Array.isArray(input.chronicConditions)
+    ? input.chronicConditions.map((c) => c.trim()).filter(Boolean).slice(0, 20)
+    : [];
+
+  // Зберігаємо попередні поля анамнезу, якщо запис вже існував
+  const { data: latestRow } = await admin
+    .from("player_anamnesis")
+    .select("jersey_number, phone, past_injuries, initial_height, initial_weight, data")
+    .eq("player_id", tokenRow.player_id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const prevData = (latestRow?.data as Record<string, unknown>) || {};
+  const clubId = tokenRow.club_id || DEFAULT_CLUB_ID;
+  const timezone = await getClubTimezone(clubId);
+  const today = getClubDate(timezone);
+
+  const mergedData = {
+    ...prevData,
+    blood_type: cleanBloodType,
+    allergies: cleanAllergies,
+    chronic_conditions: cleanChronic,
+    filled_by: "parent",
+    updated_at: new Date().toISOString(),
+  };
+
+  const { error: insertErr } = await admin.from("player_anamnesis").insert({
+    club_id: clubId,
+    player_id: tokenRow.player_id,
+    date: today,
+    jersey_number: latestRow?.jersey_number ?? null,
+    phone: latestRow?.phone ?? null,
+    blood_type: cleanBloodType,
+    allergies: cleanAllergies.length > 0 ? cleanAllergies.join(", ") : null,
+    past_injuries: latestRow?.past_injuries ?? null,
+    initial_height: latestRow?.initial_height ?? null,
+    initial_weight: latestRow?.initial_weight ?? null,
+    data: mergedData,
+  } as any);
+
+  if (insertErr) {
+    return { error: `Не вдалося зберегти медичну картку: ${insertErr.message}` };
+  }
+
+  await logAudit({
+    action: "parent_pediatric_anamnesis_update",
+    entity: "player_anamnesis",
+    entityId: tokenRow.player_id,
+    playerId: tokenRow.player_id,
+    clubId,
+    allowPublic: true,
+    meta: {
+      source: "parent_portal",
+      hasBloodType: Boolean(cleanBloodType),
+      allergiesCount: cleanAllergies.length,
+      chronicCount: cleanChronic.length,
+    },
+  });
+
+  revalidatePath(`/players/${tokenRow.player_id}`);
+
+  return {
+    success: true,
+    pediatricSummary: {
+      bloodType: cleanBloodType,
+      allergies: cleanAllergies,
+      chronicConditions: cleanChronic,
+    },
+  };
+}
+
+/**
+ * Збереження екстрених контактів сім'ї та довірених осіб у player_anamnesis.data.emergency_contacts.
+ */
+export async function submitParentEmergencyContactsAction(input: {
+  rawToken: string;
+  primaryName: string;
+  primaryPhone: string;
+  secondaryName: string;
+  secondaryPhone: string;
+  pickupAuthorized: string;
+  familyDoctorPhone: string;
+}): Promise<{
+  success?: boolean;
+  emergencyContacts?: ParentPortalData["emergencyContacts"];
+  error?: string;
+}> {
+  if (!input.rawToken || input.rawToken.trim().length < 16) {
+    return { error: "Недійсне посилання сімейного доступу." };
+  }
+  if (!input.primaryName.trim() || !input.primaryPhone.trim()) {
+    return { error: "Вкажіть ім'я та телефон основного контакту (мама / тато)." };
+  }
+
+  const admin = createAdminClient();
+  const tokenHash = hashToken(input.rawToken);
+
+  const { data: tokenRow } = await admin
+    .from("parent_portal_tokens")
+    .select("id, club_id, player_id, is_active")
+    .eq("token_hash", tokenHash)
+    .maybeSingle();
+
+  if (!tokenRow || !tokenRow.is_active) {
+    return { error: "Посилання сімейного доступу недійсне або відкликане." };
+  }
+
+  const cleanContacts = {
+    primaryName: input.primaryName.trim().slice(0, 100),
+    primaryPhone: input.primaryPhone.trim().slice(0, 40),
+    secondaryName: input.secondaryName.trim().slice(0, 100),
+    secondaryPhone: input.secondaryPhone.trim().slice(0, 40),
+    pickupAuthorized: input.pickupAuthorized.trim().slice(0, 150),
+    familyDoctorPhone: input.familyDoctorPhone.trim().slice(0, 40),
+  };
+
+  const { data: latestRow } = await admin
+    .from("player_anamnesis")
+    .select("jersey_number, phone, blood_type, allergies, past_injuries, initial_height, initial_weight, data")
+    .eq("player_id", tokenRow.player_id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const prevData = (latestRow?.data as Record<string, unknown>) || {};
+  const clubId = tokenRow.club_id || DEFAULT_CLUB_ID;
+  const timezone = await getClubTimezone(clubId);
+  const today = getClubDate(timezone);
+
+  const { error: insertErr } = await admin.from("player_anamnesis").insert({
+    club_id: clubId,
+    player_id: tokenRow.player_id,
+    date: today,
+    jersey_number: latestRow?.jersey_number ?? null,
+    phone: cleanContacts.primaryPhone || latestRow?.phone || null,
+    blood_type: latestRow?.blood_type ?? null,
+    allergies: latestRow?.allergies ?? null,
+    past_injuries: latestRow?.past_injuries ?? null,
+    initial_height: latestRow?.initial_height ?? null,
+    initial_weight: latestRow?.initial_weight ?? null,
+    data: {
+      ...prevData,
+      emergency_contacts: cleanContacts,
+      updated_at: new Date().toISOString(),
+    },
+  } as any);
+
+  if (insertErr) {
+    return { error: `Не вдалося зберегти контакти: ${insertErr.message}` };
+  }
+
+  revalidatePath(`/players/${tokenRow.player_id}`);
+  return { success: true, emergencyContacts: cleanContacts };
+}
+
+/**
+ * Швидка відмітка батьків «Буде / Не буде на тренуванні» в 1 клік.
+ */
+export async function submitParentAttendanceAction(input: {
+  rawToken: string;
+  status: "attending" | "absent";
+  note?: string;
+}): Promise<{
+  success?: boolean;
+  record?: ParentMessageRecord;
+  error?: string;
+}> {
+  const category: ParentMessageCategory =
+    input.status === "absent" ? "absence" : "question";
+  const prefix =
+    input.status === "absent"
+      ? "[ВІДМІТКА: НЕ БУДЕ] Дитина пропустить сьогоднішнє тренування."
+      : "[ВІДМІТКА: БУДЕ] Дитина буде на сьогоднішньому тренуванні.";
+  const fullMessage = input.note?.trim()
+    ? `${prefix} Причина/деталі: ${input.note.trim()}`
+    : prefix;
+
+  return submitParentMessageAction({
+    rawToken: input.rawToken,
+    category,
+    message: fullMessage,
+  });
+}
+
+/**
+ * Завантаження довідки від педіатра / результатів аналізів (фото або PDF) у сховище
+ * та передача повідомлення лікарю клубу.
+ */
+export async function uploadParentMedicalCertificateAction(
+  formData: FormData
+): Promise<{
+  success?: boolean;
+  record?: ParentMessageRecord;
+  error?: string;
+}> {
+  const rawToken = String(formData.get("rawToken") || "");
+  const title = String(formData.get("title") || "").trim();
+  const file = formData.get("file") as File | null;
+
+  if (!rawToken || rawToken.trim().length < 16) {
+    return { error: "Недійсне посилання сімейного доступу." };
+  }
+  if (!file || file.size === 0) {
+    return { error: "Оберіть файл довідки (PDF, JPG або PNG)." };
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    return { error: "Файл завеликий (максимум 10 МБ)." };
+  }
+
+  const allowedTypes = [
+    "application/pdf",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/heic",
+  ];
+  if (file.type && !allowedTypes.includes(file.type)) {
+    return { error: "Підтримуються лише PDF або зображення (JPG, PNG, WEBP)." };
+  }
+
+  const admin = createAdminClient();
+  const tokenHash = hashToken(rawToken);
+
+  const { data: tokenRow } = await admin
+    .from("parent_portal_tokens")
+    .select("id, club_id, player_id, is_active")
+    .eq("token_hash", tokenHash)
+    .maybeSingle();
+
+  if (!tokenRow || !tokenRow.is_active) {
+    return { error: "Посилання сімейного доступу недійсне або відкликане." };
+  }
+
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 80);
+  const storagePath = `parent-certificates/${tokenRow.player_id}/${Date.now()}_${safeName}`;
+  const buffer = Buffer.from(await file.arrayBuffer());
+
+  const { error: uploadErr } = await admin.storage
+    .from("consent_scans")
+    .upload(storagePath, buffer, {
+      contentType: file.type || "application/octet-stream",
+      upsert: false,
+    });
+
+  if (uploadErr) {
+    return { error: `Не вдалося завантажити файл: ${uploadErr.message}` };
+  }
+
+  const label = title || "Довідка від педіатра / аналізи";
+  const msgRes = await submitParentMessageAction({
+    rawToken,
+    category: "question",
+    message: `📎 [Довідка: ${label}] Файл: ${file.name} (${Math.round(file.size / 1024)} КБ). Збережено для лікаря клубу.`,
+  });
+
+  if (msgRes.error) {
+    return { error: msgRes.error };
+  }
+
+  return { success: true, record: msgRes.record };
 }
