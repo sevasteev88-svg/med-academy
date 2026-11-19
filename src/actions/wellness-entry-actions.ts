@@ -72,6 +72,37 @@ export async function checkPlayerWellnessAccessAction(playerId: string): Promise
   };
 }
 
+function mapWellnessSurveyRow(s: any, clubId: string): WellnessEntry {
+  let extra: any = {};
+  if (s.notes && typeof s.notes === "string" && s.notes.startsWith("{")) {
+    try { extra = JSON.parse(s.notes); } catch {}
+  }
+  return {
+    id: s.id,
+    club_id: s.club_id || clubId,
+    player_id: s.player_id,
+    date: s.date,
+    sleep_quality: s.sleep_quality,
+    fatigue: s.fatigue_level,
+    soreness: s.muscle_soreness,
+    stress: s.stress_level,
+    sleep_hours: extra.sleep_hours ?? null,
+    pain: Boolean(extra.pain),
+    pain_vas: extra.pain_vas ?? null,
+    pain_locations: extra.pain_locations || (s.soreness_location ? [s.soreness_location] : []),
+    pain_symptoms: extra.pain_symptoms || extra.painSymptoms || [],
+    pain_comment: extra.pain_comment || extra.painComment || null,
+    illness: Boolean(extra.illness),
+    body_temperature: extra.body_temperature ?? extra.temperature ?? null,
+    illness_symptoms: extra.illness_symptoms || extra.illnessSymptoms || [],
+    illness_comment: extra.illness_comment || extra.illnessComment || null,
+    comment: extra.comment || (s.notes?.startsWith("{") ? null : s.notes),
+    submitted_at: s.created_at,
+    source: extra.source || "player",
+    doctor_recommendation: extra.doctor_recommendation || extra.doctorRecommendation || null,
+  };
+}
+
 /**
  * Отримує сьогоднішній запис анкети для гравця (якщо вже заповнено).
  */
@@ -108,35 +139,7 @@ export async function getTodayWellnessEntryForPlayerAction(playerId: string): Pr
       .maybeSingle();
 
     if (s) {
-      let extra: any = {};
-      if (s.notes && typeof s.notes === "string" && s.notes.startsWith("{")) {
-        try { extra = JSON.parse(s.notes); } catch {}
-      }
-      const entry: WellnessEntry = {
-        id: s.id,
-        club_id: s.club_id || clubId,
-        player_id: s.player_id,
-        date: s.date,
-        sleep_quality: s.sleep_quality,
-        fatigue: s.fatigue_level,
-        soreness: s.muscle_soreness,
-        stress: s.stress_level,
-        sleep_hours: extra.sleep_hours ?? null,
-        pain: Boolean(extra.pain),
-        pain_vas: extra.pain_vas ?? null,
-        pain_locations: extra.pain_locations || (s.soreness_location ? [s.soreness_location] : []),
-        pain_symptoms: extra.pain_symptoms || extra.painSymptoms || [],
-        pain_comment: extra.pain_comment || extra.painComment || null,
-        illness: Boolean(extra.illness),
-        body_temperature: extra.body_temperature || extra.temperature || null,
-        illness_symptoms: extra.illness_symptoms || extra.illnessSymptoms || [],
-        illness_comment: extra.illness_comment || extra.illnessComment || null,
-        comment: extra.comment || (s.notes?.startsWith("{") ? null : s.notes),
-        submitted_at: s.created_at,
-        source: extra.source || "player",
-        doctor_recommendation: extra.doctor_recommendation || extra.doctorRecommendation || null,
-      };
-      return { entry, today, timezone };
+      return { entry: mapWellnessSurveyRow(s, clubId), today, timezone };
     }
   } catch {}
 
@@ -438,28 +441,7 @@ export async function getWellnessEntriesForDashboardAction(
 
       if (wsData && wsData.length > 0) {
         for (const s of wsData) {
-          let extra: any = {};
-          if (s.notes && typeof s.notes === "string" && s.notes.startsWith("{")) {
-            try { extra = JSON.parse(s.notes); } catch {}
-          }
-          rawEntries.push({
-            id: s.id,
-            club_id: s.club_id || clubId,
-            player_id: s.player_id,
-            date: s.date,
-            sleep_quality: s.sleep_quality,
-            fatigue: s.fatigue_level,
-            soreness: s.muscle_soreness,
-            stress: s.stress_level,
-            sleep_hours: extra.sleep_hours ?? null,
-            pain: Boolean(extra.pain),
-            pain_vas: extra.pain_vas ?? null,
-            pain_locations: extra.pain_locations || (s.soreness_location ? [s.soreness_location] : []),
-            illness: Boolean(extra.illness),
-            comment: extra.comment || (s.notes?.startsWith("{") ? null : s.notes),
-            submitted_at: s.created_at,
-            source: extra.source || "player",
-          });
+          rawEntries.push(mapWellnessSurveyRow(s, clubId));
         }
       }
     } catch {}
@@ -605,28 +587,7 @@ export async function getPlayerWeeklySummaryAction(playerId: string): Promise<{
 
       if (wsData && wsData.length > 0) {
         for (const s of wsData) {
-          let extra: any = {};
-          if (s.notes && typeof s.notes === "string" && s.notes.startsWith("{")) {
-            try { extra = JSON.parse(s.notes); } catch {}
-          }
-          allEntries.push({
-            id: s.id,
-            club_id: s.club_id || clubId,
-            player_id: s.player_id,
-            date: s.date,
-            sleep_quality: s.sleep_quality,
-            fatigue: s.fatigue_level,
-            soreness: s.muscle_soreness,
-            stress: s.stress_level,
-            sleep_hours: extra.sleep_hours ?? null,
-            pain: Boolean(extra.pain),
-            pain_vas: extra.pain_vas ?? null,
-            pain_locations: extra.pain_locations || (s.soreness_location ? [s.soreness_location] : []),
-            illness: Boolean(extra.illness),
-            comment: extra.comment || (s.notes?.startsWith("{") ? null : s.notes),
-            submitted_at: s.created_at,
-            source: extra.source || "player",
-          });
+          allEntries.push(mapWellnessSurveyRow(s, clubId));
         }
       }
     } catch {}

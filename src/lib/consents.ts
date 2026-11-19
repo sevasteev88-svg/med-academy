@@ -306,6 +306,12 @@ export function calculatePlayerAge(dateOfBirth: string): number {
   return Math.floor(diffMs / (365.25 * 86400000));
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isValidUuid(value: string | null | undefined): boolean {
+  return Boolean(value && UUID_RE.test(value));
+}
+
 /**
  * Отримує активні версії документів згоди для клубу (з БД або дефолтних шаблонів, якщо міграція ще не застосована)
  */
@@ -330,14 +336,61 @@ export async function getActiveConsentDocuments(
       .eq("club_id", clubId)
       .eq("is_active", true);
 
-    if (!error && data && data.length > 0) {
-      for (const doc of data) {
+    if (!error) {
+      for (const doc of data || []) {
         const s = doc.scope as ConsentScope;
         if (ALL_CONSENT_SCOPES.includes(s)) {
           result[s] = doc as ConsentDocument;
         }
       }
-    } else {
+
+      const missingScopes = ALL_CONSENT_SCOPES.filter(
+        (s) => !isValidUuid(result[s]?.id)
+      );
+
+      if (missingScopes.length > 0 && isValidUuid(clubId)) {
+        const rowsToSeed = missingScopes.map((scope) => {
+          const tpl = DEFAULT_CONSENT_TEMPLATES[scope];
+          return {
+            club_id: clubId,
+            scope: tpl.scope,
+            version: tpl.version,
+            title: tpl.title,
+            body_markdown: tpl.body_markdown,
+            effective_from: tpl.effective_from,
+            is_active: true,
+          };
+        });
+
+        const { error: seedErr } = await supabase
+          .from("consent_documents")
+          .upsert(rowsToSeed as any[], {
+            onConflict: "club_id,scope,version",
+            ignoreDuplicates: true,
+          });
+
+        if (!seedErr) {
+          const { data: reloaded } = await supabase
+            .from("consent_documents")
+            .select("*")
+            .eq("club_id", clubId)
+            .eq("is_active", true);
+
+          for (const doc of reloaded || []) {
+            const s = doc.scope as ConsentScope;
+            if (ALL_CONSENT_SCOPES.includes(s)) {
+              result[s] = doc as ConsentDocument;
+            }
+          }
+        }
+      }
+    }
+
+    const hasSeededDocs = ALL_CONSENT_SCOPES.some((s) =>
+      isValidUuid(result[s]?.id)
+    );
+
+    if (error || ((!data || data.length === 0) && !hasSeededDocs)) {
       // Fallback: перевіряємо чи є кастомні версії в injury_logs з маркером [CONSENT_DOC]
       const { data: logs } = await supabase
         .from("injury_logs")
@@ -547,7 +600,7 @@ export async function getPlayerConsentSummary(
       grantedAt: latest?.granted_at || null,
       revokedAt: latest?.revoked_at || null,
       method: latest?.method || null,
-      signerName: latest?.evidence?.signer_full_name || null,
+      signerName: latest?.evidence?.signer_full_name || (latest?.evidence as any)?.signer_name || null,
       scanPath: latest?.scan_path || null,
       consentId: latest?.id || null,
     };

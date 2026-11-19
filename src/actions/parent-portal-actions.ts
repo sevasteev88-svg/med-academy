@@ -15,6 +15,7 @@ import {
 import {
   getActiveConsentDocuments,
   getPlayerConsentSummary,
+  isValidUuid,
 } from "@/lib/consents";
 import {
   calculatePlayerAvailability,
@@ -755,6 +756,17 @@ export async function submitParentConsentsAction(input: {
 
   const activeDocs = await getActiveConsentDocuments(tokenRow.club_id);
   const nowIso = new Date().toISOString();
+  const signerFullName = input.signerFullName.trim();
+
+  for (const scope of input.selectedScopes) {
+    const doc = activeDocs[scope];
+    if (!isValidUuid(doc?.id)) {
+      return {
+        error:
+          "Не вдалося ініціалізувати шаблони документів згоди для клубу. Спробуйте ще раз або зверніться до лікаря.",
+      };
+    }
+  }
 
   const rowsToInsert = input.selectedScopes.map((scope) => {
     const doc = activeDocs[scope];
@@ -768,10 +780,12 @@ export async function submitParentConsentsAction(input: {
       granted_at: nowIso,
       player_assent: Boolean(input.playerAssent),
       player_assent_at: input.playerAssent ? nowIso : null,
+      retention_status: "active",
       evidence: {
         ip,
         user_agent: userAgent,
-        signer_name: input.signerFullName.trim(),
+        signer_full_name: signerFullName,
+        signer_name: signerFullName,
         signer_relation: input.signerRelation || "mother",
         document_version: doc?.version || "1.0",
         source: "parent_portal",
@@ -802,6 +816,7 @@ export async function submitParentConsentsAction(input: {
   });
 
   revalidatePath(`/players/${tokenRow.player_id}`);
+  revalidatePath("/consents");
   revalidatePath("/team/readiness");
   revalidatePath("/availability");
   revalidatePath("/coach-briefing");

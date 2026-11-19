@@ -472,6 +472,33 @@ export async function acknowledgeReadinessAction(input: {
   };
 }
 
+function pickNonEmptyStringArray(
+  primary?: string[] | null,
+  fallback?: string[] | null
+): string[] {
+  if (Array.isArray(primary) && primary.length > 0) return primary;
+  if (Array.isArray(fallback) && fallback.length > 0) return fallback;
+  return [];
+}
+
+function mergeRichWellnessFields(
+  base: WellnessEntry,
+  incoming: Partial<WellnessEntry>
+): WellnessEntry {
+  return {
+    ...base,
+    pain_locations: pickNonEmptyStringArray(base.pain_locations, incoming.pain_locations),
+    pain_symptoms: pickNonEmptyStringArray(base.pain_symptoms, incoming.pain_symptoms),
+    pain_comment: base.pain_comment || incoming.pain_comment || null,
+    body_temperature: base.body_temperature ?? incoming.body_temperature ?? null,
+    illness_symptoms: pickNonEmptyStringArray(base.illness_symptoms, incoming.illness_symptoms),
+    illness_comment: base.illness_comment || incoming.illness_comment || null,
+    comment: base.comment || incoming.comment || null,
+    doctor_recommendation:
+      base.doctor_recommendation || incoming.doctor_recommendation || null,
+  };
+}
+
 /**
  * Отримує статус готовності команди для екрана тренера (8.4)
  */
@@ -654,7 +681,7 @@ export async function getTeamReadinessAction(params?: {
   const minDateStr = past28DateObj.toISOString().split("T")[0];
 
   // 7. Отримуємо всі анкети за останні 28 днів для цих гравців
-  let wellnessEntriesList: WellnessEntry[] = [];
+  const entriesByKey = new Map<string, WellnessEntry>();
 
   // 7a. Спершу пробуємо таблицю wellness_entries
   try {
@@ -667,11 +694,14 @@ export async function getTeamReadinessAction(params?: {
       .order("date", { ascending: true });
 
     if (!weErr && weData) {
-      wellnessEntriesList = weData as WellnessEntry[];
+      for (const entry of weData as WellnessEntry[]) {
+        entriesByKey.set(`${entry.player_id}_${entry.date}`, entry);
+      }
     }
   } catch {}
 
   // 7b. Також перевіряємо таблицю wellness_surveys (існуючу в базі даних Supabase)
+  // і підмішуємо детальні поля (pain_symptoms, pain_comment, симптоми ГРВІ тощо)
   try {
     const { data: wsData } = await supabase
       .from("wellness_surveys")
@@ -682,34 +712,42 @@ export async function getTeamReadinessAction(params?: {
       .order("date", { ascending: true });
 
     if (wsData && wsData.length > 0) {
-      const existingKeySet = new Set(wellnessEntriesList.map((e) => `${e.player_id}_${e.date}`));
       for (const s of wsData) {
         const key = `${s.player_id}_${s.date}`;
-        if (!existingKeySet.has(key)) {
-          let extra: any = {};
-          if (s.notes && typeof s.notes === "string" && s.notes.startsWith("{")) {
-            try { extra = JSON.parse(s.notes); } catch {}
-          }
-          wellnessEntriesList.push({
-            id: s.id,
-            club_id: s.club_id || DEFAULT_CLUB_ID,
-            player_id: s.player_id,
-            date: s.date,
-            sleep_quality: s.sleep_quality,
-            fatigue: s.fatigue_level,
-            soreness: s.muscle_soreness,
-            stress: s.stress_level,
-            sleep_hours: extra.sleep_hours ?? null,
-            pain: Boolean(extra.pain),
-            pain_vas: extra.pain_vas ?? null,
-            pain_locations: extra.pain_locations || (s.soreness_location ? [s.soreness_location] : []),
-            illness: Boolean(extra.illness),
-            comment: extra.comment || (s.notes?.startsWith("{") ? null : s.notes),
-            submitted_at: s.created_at,
-            source: extra.source || "player",
-          });
-          existingKeySet.add(key);
+        let extra: any = {};
+        if (s.notes && typeof s.notes === "string" && s.notes.startsWith("{")) {
+          try { extra = JSON.parse(s.notes); } catch {}
         }
+        const surveyEntry: WellnessEntry = {
+          id: s.id,
+          club_id: s.club_id || clubId,
+          player_id: s.player_id,
+          date: s.date,
+          sleep_quality: s.sleep_quality,
+          fatigue: s.fatigue_level,
+          soreness: s.muscle_soreness,
+          stress: s.stress_level,
+          sleep_hours: extra.sleep_hours ?? null,
+          pain: Boolean(extra.pain),
+          pain_vas: extra.pain_vas ?? null,
+          pain_locations: extra.pain_locations || (s.soreness_location ? [s.soreness_location] : []),
+          pain_symptoms: extra.pain_symptoms || extra.painSymptoms || [],
+          pain_comment: extra.pain_comment || extra.painComment || null,
+          illness: Boolean(extra.illness),
+          body_temperature: extra.body_temperature ?? extra.temperature ?? null,
+          illness_symptoms: extra.illness_symptoms || extra.illnessSymptoms || [],
+          illness_comment: extra.illness_comment || extra.illnessComment || null,
+          comment: extra.comment || (s.notes?.startsWith("{") ? null : s.notes),
+          submitted_at: s.created_at,
+          source: extra.source || "player",
+          doctor_recommendation: extra.doctor_recommendation || extra.doctorRecommendation || null,
+        };
+
+        const existing = entriesByKey.get(key);
+        entriesByKey.set(
+          key,
+          existing ? mergeRichWellnessFields(existing, surveyEntry) : surveyEntry
+        );
       }
     }
   } catch {}
@@ -719,21 +757,24 @@ export async function getTeamReadinessAction(params?: {
     const { data: clubData } = await supabase
       .from("clubs")
       .select("settings")
-      .eq("id", user.clubId || DEFAULT_CLUB_ID)
+      .eq("id", clubId)
       .maybeSingle();
 
     const storedMap = (clubData as any)?.settings?.wellness_entries_store || {};
-    const existingKeySet = new Set(wellnessEntriesList.map((e) => `${e.player_id}_${e.date}`));
-    for (const [key, storedEntry] of Object.entries(storedMap)) {
+    for (const [, storedEntry] of Object.entries(storedMap)) {
       const entry = storedEntry as WellnessEntry;
       if (playerIds.includes(entry.player_id) && entry.date >= minDateStr && entry.date <= today) {
-        if (!existingKeySet.has(`${entry.player_id}_${entry.date}`)) {
-          wellnessEntriesList.push(entry);
-          existingKeySet.add(`${entry.player_id}_${entry.date}`);
-        }
+        const entryKey = `${entry.player_id}_${entry.date}`;
+        const existing = entriesByKey.get(entryKey);
+        entriesByKey.set(
+          entryKey,
+          existing ? mergeRichWellnessFields(existing, entry) : entry
+        );
       }
     }
   } catch {}
+
+  const wellnessEntriesList: WellnessEntry[] = Array.from(entriesByKey.values());
 
   // Групуємо анкети по player_id та накладаємо acknowledgements
   const entriesByPlayer = new Map<string, WellnessEntry[]>();
