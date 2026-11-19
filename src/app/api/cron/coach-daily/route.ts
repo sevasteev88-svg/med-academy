@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/utils/supabase/admin";
+import { getClubTelegramConfig } from "@/lib/club-telegram";
 import { sendCoachMorningDigestAction, getCoachSession } from "@/actions/coach-telegram-actions";
 
 export const dynamic = "force-dynamic";
@@ -27,25 +28,28 @@ export async function GET(req: NextRequest) {
 
     const mode = req.nextUrl.searchParams.get("mode") || "morning";
     const supabase = createAdminClient();
-    const botToken = process.env.TELEGRAM_BOT_TOKEN || "";
     const appUrl = getPublicAppUrl();
 
     const { data: bindings } = await supabase
       .from("coach_telegram_bindings")
-      .select("coach_user_id, telegram_chat_id")
+      .select("coach_user_id, telegram_chat_id, club_id")
       .eq("status", "active");
 
     let sent = 0;
     for (const b of bindings || []) {
       try {
         if (mode === "evening") {
+          const { botToken } = await getClubTelegramConfig(b.club_id);
           if (!botToken) continue;
           const session = await getCoachSession(b.coach_user_id, b.telegram_chat_id);
           const preferred = (session.session_draft as any)?.preferred_mode || "chat";
           const keyboard: any[][] = [];
 
           if (preferred === "miniapp" && appUrl.startsWith("https://")) {
-            keyboard.push([{ text: "📱 Записати у Міні-додатку", web_app: { url: `${appUrl}/tg-coach` } }]);
+            const miniAppUrl = b.club_id
+              ? `${appUrl}/tg-coach?clubId=${encodeURIComponent(b.club_id)}`
+              : `${appUrl}/tg-coach`;
+            keyboard.push([{ text: "📱 Записати у Міні-додатку", web_app: { url: miniAppUrl } }]);
           }
           keyboard.push([{ text: "⏱️ Записати в чаті (15 сек)", callback_data: "coach_action_start_training" }]);
 
@@ -64,6 +68,7 @@ export async function GET(req: NextRequest) {
           await sendCoachMorningDigestAction({
             coachUserId: b.coach_user_id,
             chatId: b.telegram_chat_id,
+            clubId: b.club_id || undefined,
           });
           sent++;
         }

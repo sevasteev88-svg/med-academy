@@ -1,6 +1,7 @@
 "use server";
 
 import { assertAuth } from "@/lib/auth";
+import { getClubTelegramConfig } from "@/lib/club-telegram";
 
 type TelegramSendInput = {
   text: string;
@@ -10,7 +11,7 @@ type TelegramSendInput = {
  * Server Action для надсилання агрегованих медичних звітів у Telegram (п. 1.5.4, 1.5.6).
  *
  * Вимоги безпеки:
- * 1. Ключі та Chat ID беруться виключно із серверних змінних середовища (.env.local),
+ * 1. Ключі та Chat ID беруться виключно з серверного сховища клубу / змінних середовища,
  *    без можливості передачі або заміни з клієнтського браузера.
  * 2. Доступно лише для авторизованого медичного/адміністративного персоналу.
  */
@@ -18,13 +19,12 @@ export async function sendTelegramDigestAction(input: TelegramSendInput) {
   const auth = await assertAuth();
   if ("error" in auth) return { error: auth.error };
 
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chat = process.env.TELEGRAM_CHAT_ID;
+  const { botToken: token, chatId: chat } = await getClubTelegramConfig(auth.user.clubId);
 
   if (!token || !chat) {
     return {
       error:
-        "TELEGRAM_BOT_TOKEN або TELEGRAM_CHAT_ID не налаштовані у серверних змінних середовища (.env.local). Додайте їх на сервері.",
+        "Telegram-бот або Chat ID клубу не налаштовані. Додайте їх у Налаштуваннях клубу → Telegram або в серверних змінних середовища.",
     };
   }
 

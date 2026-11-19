@@ -35,6 +35,20 @@ export function encryptServerSecret(plainText: string): string {
   return `${iv.toString("hex")}:${authTag}:${encrypted}`;
 }
 
+function decryptWithKey(
+  iv: Buffer,
+  authTag: Buffer,
+  encryptedHex: string,
+  key: Buffer
+): string {
+  const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+  decipher.setAuthTag(authTag);
+
+  let decrypted = decipher.update(encryptedHex, "hex", "utf8");
+  decrypted += decipher.final("utf8");
+  return decrypted;
+}
+
 /**
  * Дешифрує рядок формату `ivHex:tagHex:cipherHex`
  */
@@ -44,22 +58,46 @@ export function decryptServerSecret(cipherString: string): string {
   const parts = cipherString.split(":");
   if (parts.length !== 3) return "";
 
+  const [ivHex, tagHex, encryptedHex] = parts;
+  const iv = Buffer.from(ivHex, "hex");
+  const authTag = Buffer.from(tagHex, "hex");
+
+  let primaryKey: Buffer | null = null;
+  let lastError: unknown = null;
+
   try {
-    const [ivHex, tagHex, encryptedHex] = parts;
-    const iv = Buffer.from(ivHex, "hex");
-    const authTag = Buffer.from(tagHex, "hex");
-    const key = getMasterKey();
-
-    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
-    decipher.setAuthTag(authTag);
-
-    let decrypted = decipher.update(encryptedHex, "hex", "utf8");
-    decrypted += decipher.final("utf8");
-    return decrypted;
+    primaryKey = getMasterKey();
+    return decryptWithKey(iv, authTag, encryptedHex, primaryKey);
   } catch (err) {
-    console.error("Помилка дешифрування серверного секрету:", err);
-    return "";
+    lastError = err;
   }
+
+  // Read-only fallback for secrets encrypted before CLUB_SETTINGS_SECRET rotation
+  const legacySecrets = [
+    process.env.CLUB_SETTINGS_SECRET,
+    process.env.PLAYER_SESSION_SECRET,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    "med-academy-club-settings-key-2026-safe-salt",
+  ];
+
+  for (const candidate of legacySecrets) {
+    if (!candidate) continue;
+    const legacyKey = crypto.createHash("sha256").update(candidate).digest();
+    if (primaryKey && legacyKey.equals(primaryKey)) continue;
+
+    try {
+      const decrypted = decryptWithKey(iv, authTag, encryptedHex, legacyKey);
+      console.warn(
+        "[server-crypto] Decrypted legacy club secret; re-save club settings to rotate encryption key."
+      );
+      return decrypted;
+    } catch {
+      // try next legacy key
+    }
+  }
+
+  console.error("Помилка дешифрування серверного секрету:", lastError);
+  return "";
 }
 
 /**

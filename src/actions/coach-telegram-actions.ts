@@ -92,6 +92,13 @@ export async function createCoachTelegramBindingLinkAction(coachUserId: string) 
 
     // 4. Формуємо deep-link виду: https://t.me/<bot>?start=coach_<token>
     const { botUsername } = await getClubTelegramConfig(targetClubId);
+    if (!botUsername) {
+      return {
+        success: false,
+        error:
+          "Telegram-бот для цього клубу ще не налаштовано. Додайте токен та username бота в Налаштуваннях клубу.",
+      };
+    }
     const deepLink = `https://t.me/${botUsername}?start=coach_${rawToken}`;
 
     const qrDataUrl = await QRCode.toDataURL(deepLink, {
@@ -131,6 +138,7 @@ export async function getCoachTelegramStatusAction(coachUserId: string) {
     }
 
     const supabase = createAdminClient();
+    const currentClubId = auth.user.clubId || DEFAULT_CLUB_ID;
 
     // Перевірка в БД
     try {
@@ -138,7 +146,10 @@ export async function getCoachTelegramStatusAction(coachUserId: string) {
         .from("coach_telegram_bindings")
         .select("*")
         .eq("coach_user_id", coachUserId)
+        .eq("club_id", currentClubId)
         .eq("status", "active")
+        .order("created_at", { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       if (binding) {
@@ -152,7 +163,11 @@ export async function getCoachTelegramStatusAction(coachUserId: string) {
 
     // In-memory fallback
     for (const b of memoryCoachBindings.values()) {
-      if (b.coach_user_id === coachUserId && b.status === "active") {
+      if (
+        b.coach_user_id === coachUserId &&
+        b.club_id === currentClubId &&
+        b.status === "active"
+      ) {
         return {
           success: true,
           isLinked: true,
@@ -182,6 +197,7 @@ export async function unlinkCoachTelegramAction(coachUserId: string) {
     }
 
     const supabase = createAdminClient();
+    const currentClubId = auth.user.clubId || DEFAULT_CLUB_ID;
     const nowIso = new Date().toISOString();
 
     try {
@@ -189,11 +205,16 @@ export async function unlinkCoachTelegramAction(coachUserId: string) {
         .from("coach_telegram_bindings")
         .update({ status: "unlinked", unlinked_at: nowIso })
         .eq("coach_user_id", coachUserId)
+        .eq("club_id", currentClubId)
         .eq("status", "active");
     } catch {}
 
     for (const b of memoryCoachBindings.values()) {
-      if (b.coach_user_id === coachUserId && b.status === "active") {
+      if (
+        b.coach_user_id === coachUserId &&
+        b.club_id === currentClubId &&
+        b.status === "active"
+      ) {
         b.status = "unlinked";
         b.unlinked_at = nowIso;
       }
@@ -212,11 +233,22 @@ export async function sendCoachMorningDigestAction(params: {
   coachUserId: string;
   chatId?: string;
   targetDate?: string;
+  clubId?: string;
 }) {
   const supabase = createAdminClient();
   const dateStr = params.targetDate || new Date().toISOString().split("T")[0];
 
   try {
+    let clubMemberQuery = supabase
+      .from("club_members")
+      .select("club_id, team_id, teams ( id, name )")
+      .eq("user_id", params.coachUserId);
+    if (params.clubId) {
+      clubMemberQuery = clubMemberQuery.eq("club_id", params.clubId);
+    }
+    const { data: coachClubMember } = await clubMemberQuery.limit(1).maybeSingle();
+    const clubId = params.clubId || coachClubMember?.club_id || DEFAULT_CLUB_ID;
+
     // 1. Отримуємо прив'язку тренера
     let chatId = params.chatId;
     if (!chatId) {
@@ -224,7 +256,10 @@ export async function sendCoachMorningDigestAction(params: {
         .from("coach_telegram_bindings")
         .select("telegram_chat_id")
         .eq("coach_user_id", params.coachUserId)
+        .eq("club_id", clubId)
         .eq("status", "active")
+        .order("created_at", { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       chatId = binding?.telegram_chat_id;
@@ -234,44 +269,32 @@ export async function sendCoachMorningDigestAction(params: {
       return { success: false, error: "Тренер не підключений до Telegram" };
     }
 
-    // 2. Знаходимо команди, призначені тренеру
+    // 2. Знаходимо команди, призначені тренеру в межах клубу
     const { data: assignments } = await supabase
       .from("coach_team_assignments")
-      .select("team_id, teams ( id, name )")
+      .select("team_id, teams ( id, name, club_id )")
       .eq("coach_user_id", params.coachUserId);
 
     let assignedTeams: { id: string; name: string }[] = [];
     if (assignments && assignments.length > 0) {
       assignedTeams = assignments
-        .filter((a) => a.teams)
+        .filter((a: any) => a.teams && (!a.teams.club_id || a.teams.club_id === clubId))
         .map((a: any) => ({ id: a.teams.id, name: a.teams.name }));
-    } else {
-      // Перевіряємо в club_members.team_id
-      const { data: member } = await supabase
-        .from("club_members")
-        .select("team_id, teams ( id, name )")
-        .eq("user_id", params.coachUserId)
-        .maybeSingle();
-
-      if (member?.team_id && member.teams) {
-        assignedTeams = [{ id: member.team_id, name: (member.teams as any).name }];
-      }
+    } else if (coachClubMember?.team_id && coachClubMember.teams) {
+      assignedTeams = [{ id: coachClubMember.team_id, name: (coachClubMember.teams as any).name }];
     }
 
     if (assignedTeams.length === 0) {
-      // Якщо команда не призначена, беремо першу команду клубу або виводимо повідомлення
-      const { data: anyTeam } = await supabase.from("teams").select("id, name").limit(1).maybeSingle();
+      const { data: anyTeam } = await supabase
+        .from("teams")
+        .select("id, name")
+        .eq("club_id", clubId)
+        .limit(1)
+        .maybeSingle();
       if (anyTeam) assignedTeams = [anyTeam];
     }
 
-    const { data: coachClubMember } = await supabase
-      .from("club_members")
-      .select("club_id")
-      .eq("user_id", params.coachUserId)
-      .limit(1)
-      .maybeSingle();
-
-    const { botToken } = await getClubTelegramConfig(coachClubMember?.club_id);
+    const { botToken } = await getClubTelegramConfig(clubId);
     if (!botToken) {
       return { success: false, error: "TELEGRAM_BOT_TOKEN не налаштовано" };
     }
@@ -282,6 +305,7 @@ export async function sendCoachMorningDigestAction(params: {
       const { data: players } = await supabase
         .from("players")
         .select("id, first_name, last_name, archived_at")
+        .eq("club_id", clubId)
         .eq("team_id", team.id)
         .is("archived_at", null)
         .order("last_name", { ascending: true });
@@ -462,16 +486,20 @@ export async function sendCoachMorningDigestAction(params: {
 export async function finalizeCoachTrainingSession(
   coachUserId: string,
   chatId: string,
-  draft: CoachTelegramSessionDraft
+  draft: CoachTelegramSessionDraft,
+  explicitClubId?: string
 ) {
   const supabase = createAdminClient();
-  const { data: coachClubMember } = await supabase
+  let clubMemberQuery = supabase
     .from("club_members")
-    .select("club_id")
-    .eq("user_id", coachUserId)
-    .limit(1)
-    .maybeSingle();
-  const { botToken } = await getClubTelegramConfig(coachClubMember?.club_id);
+    .select("club_id, team_id")
+    .eq("user_id", coachUserId);
+  if (explicitClubId) {
+    clubMemberQuery = clubMemberQuery.eq("club_id", explicitClubId);
+  }
+  const { data: coachClubMember } = await clubMemberQuery.limit(1).maybeSingle();
+  const resolvedClubId = explicitClubId || coachClubMember?.club_id || DEFAULT_CLUB_ID;
+  const { botToken } = await getClubTelegramConfig(resolvedClubId);
 
   try {
     const targetDate = draft.date || new Date().toISOString().split("T")[0];
@@ -479,18 +507,15 @@ export async function finalizeCoachTrainingSession(
     const rpe = (draft.rpe_score ?? 5) as RpeScore;
     const sessionType = draft.session_type || "training_team";
 
-    let teamId = draft.team_id;
-    if (!teamId) {
-      const { data: member } = await supabase
-        .from("club_members")
-        .select("team_id")
-        .eq("user_id", coachUserId)
-        .maybeSingle();
-      teamId = member?.team_id;
-    }
+    let teamId = draft.team_id || coachClubMember?.team_id;
 
     if (!teamId) {
-      const { data: team } = await supabase.from("teams").select("id").limit(1).maybeSingle();
+      const { data: team } = await supabase
+        .from("teams")
+        .select("id")
+        .eq("club_id", resolvedClubId)
+        .limit(1)
+        .maybeSingle();
       teamId = team?.id;
     }
 
@@ -502,11 +527,12 @@ export async function finalizeCoachTrainingSession(
     const { data: players } = await supabase
       .from("players")
       .select("id, first_name, last_name, club_id")
+      .eq("club_id", resolvedClubId)
       .eq("team_id", teamId)
       .neq("status", "archived");
 
     const teamPlayers = players || [];
-    const clubId = teamPlayers[0]?.club_id || DEFAULT_CLUB_ID;
+    const clubId = teamPlayers[0]?.club_id || resolvedClubId;
     const teamSessionId = `tg_sess_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
     const notesSummary = [

@@ -64,13 +64,14 @@ export async function createTelegramBindingLinkAction(playerId: string) {
     // 1. Отримуємо дані гравця
     const { data: player, error: pErr } = await supabase
       .from("players")
-      .select("id, first_name, last_name, date_of_birth, team_id, teams ( name )")
+      .select("id, club_id, first_name, last_name, date_of_birth, team_id, teams ( name )")
       .eq("id", playerId)
       .maybeSingle();
 
     if (pErr || !player) {
       return { success: false, error: "Гравця не знайдено" };
     }
+    const targetClubId = player.club_id || user.clubId || DEFAULT_CLUB_ID;
 
     // 2. Вимога 5: Для гравців молодше 18 років прив'язка допустима тільки при згоді батьків
     const consentSummary = await getPlayerConsentSummary(player.id);
@@ -113,7 +114,7 @@ export async function createTelegramBindingLinkAction(playerId: string) {
     // Запис у БД
     const { error: insErr } = await supabase.from("player_telegram_tokens").insert({
       player_id: playerId,
-      club_id: user.clubId || DEFAULT_CLUB_ID,
+      club_id: targetClubId,
       token_hash: tokenHash,
       expires_at: expiresAt,
       created_by: user.id,
@@ -124,7 +125,7 @@ export async function createTelegramBindingLinkAction(playerId: string) {
       memoryTelegramTokens.set(tokenHash, {
         id: crypto.randomUUID(),
         player_id: playerId,
-        club_id: user.clubId || DEFAULT_CLUB_ID,
+        club_id: targetClubId,
         token_hash: tokenHash,
         expires_at: expiresAt,
         used_at: null,
@@ -144,7 +145,14 @@ export async function createTelegramBindingLinkAction(playerId: string) {
       },
     });
 
-    const { botUsername } = await getClubTelegramConfig(user.clubId);
+    const { botUsername } = await getClubTelegramConfig(targetClubId);
+    if (!botUsername) {
+      return {
+        success: false,
+        error:
+          "Telegram-бот для цього клубу ще не налаштовано. Додайте токен та username бота в Налаштуваннях клубу.",
+      };
+    }
     const deepLink = buildTelegramDeepLink(rawToken, botUsername);
     const qrDataUrl = await QRCode.toDataURL(deepLink, {
       errorCorrectionLevel: "M",
@@ -292,6 +300,7 @@ export async function processTelegramWebhookUpdateAction(
 ): Promise<{ success: boolean; replyText?: string; error?: string }> {
   try {
     const supabase = createAdminClient();
+    const scopedClubId = overrideClubId || DEFAULT_CLUB_ID;
 
     // 0. ОБРОБКА НАЙНЛАЙН КНОПОК ТРЕНЕРА (callback_query)
     if (update.callback_query) {
@@ -303,14 +312,21 @@ export async function processTelegramWebhookUpdateAction(
           .from("coach_telegram_bindings")
           .select("*")
           .eq("telegram_chat_id", cbChatId)
+          .eq("club_id", scopedClubId)
           .eq("status", "active")
+          .order("created_at", { ascending: false })
+          .limit(1)
           .maybeSingle();
         if (data) coachBinding = data as CoachTelegramBinding;
       } catch {}
 
       if (!coachBinding) {
         for (const b of memoryCoachBindings.values()) {
-          if (b.telegram_chat_id === cbChatId && b.status === "active") {
+          if (
+            b.telegram_chat_id === cbChatId &&
+            b.club_id === scopedClubId &&
+            b.status === "active"
+          ) {
             coachBinding = b;
             break;
           }
@@ -320,7 +336,14 @@ export async function processTelegramWebhookUpdateAction(
       if (coachBinding || (cb.data && (cb.data.startsWith("coach_") || cb.data.startsWith("cstep_")))) {
         await processCoachCallbackQuery(
           cb,
-          coachBinding || ({ coach_user_id: "", telegram_chat_id: cbChatId, status: "active" } as any)
+          coachBinding ||
+            ({
+              coach_user_id: "",
+              club_id: scopedClubId,
+              telegram_chat_id: cbChatId,
+              status: "active",
+            } as any),
+          scopedClubId
         );
         return { success: true };
       }
@@ -345,7 +368,7 @@ export async function processTelegramWebhookUpdateAction(
     }
     const chatId = String(message.chat.id);
     const username = message.from?.username || message.chat.username || null;
-    const { botToken } = await getClubTelegramConfig(overrideClubId);
+    const { botToken } = await getClubTelegramConfig(scopedClubId);
 
     // Функція відправки відповіді у Telegram
     async function reply(replyMsg: string) {
@@ -384,7 +407,7 @@ export async function processTelegramWebhookUpdateAction(
         const nowIso = new Date().toISOString();
 
         let coachUserId: string | null = null;
-        let clubId: string = DEFAULT_CLUB_ID;
+        let clubId: string = scopedClubId;
 
         // Шукаємо в coach_telegram_tokens
         try {
@@ -403,8 +426,13 @@ export async function processTelegramWebhookUpdateAction(
               await reply("⏳ Термін дії токена минув. Зверніться до адміністратора клубу.");
               return { success: false, replyText: "Token expired" };
             }
+            const tokClubId = tokRec.club_id || DEFAULT_CLUB_ID;
+            if (tokClubId !== scopedClubId) {
+              await reply("⛔ Це посилання належить іншому клубу. Відскануйте QR-код саме у своєму клубному боті.");
+              return { success: false, replyText: "Cross-club token mismatch" };
+            }
             coachUserId = tokRec.coach_user_id;
-            clubId = tokRec.club_id || DEFAULT_CLUB_ID;
+            clubId = tokClubId;
 
             await supabase
               .from("coach_telegram_tokens")
@@ -420,8 +448,13 @@ export async function processTelegramWebhookUpdateAction(
               await reply("⚠️ Цей одноразовий токен прив'язки тренера вже був використаний.");
               return { success: false, replyText: "Token already used" };
             }
+            const memClubId = mem.club_id || DEFAULT_CLUB_ID;
+            if (memClubId !== scopedClubId) {
+              await reply("⛔ Це посилання належить іншому клубу. Відскануйте QR-код саме у своєму клубному боті.");
+              return { success: false, replyText: "Cross-club token mismatch" };
+            }
             coachUserId = mem.coach_user_id;
-            clubId = mem.club_id;
+            clubId = memClubId;
             mem.used_at = nowIso;
           }
         }
@@ -469,10 +502,10 @@ export async function processTelegramWebhookUpdateAction(
           );
         } catch {}
 
-        memoryCoachBindings.set(chatId, bindingRecord);
+        memoryCoachBindings.set(`${clubId}:${chatId}`, bindingRecord);
 
         // Вітаємо тренера та надсилаємо головне меню
-        await sendCoachMainMenu(chatId, undefined, coachName);
+        await sendCoachMainMenu(chatId, undefined, coachName, clubId);
         return { success: true };
       }
 
@@ -483,9 +516,14 @@ export async function processTelegramWebhookUpdateAction(
       // Шукаємо токен у БД
       const { data: tokenRecord, error: tErr } = await supabase
         .from("player_telegram_tokens")
-        .select("*, players ( id, first_name, last_name, date_of_birth )")
+        .select("*, players ( id, club_id, first_name, last_name, date_of_birth )")
         .eq("token_hash", tokenHash)
         .maybeSingle();
+
+      if (tokenRecord?.club_id && tokenRecord.club_id !== scopedClubId) {
+        await reply("⛔ Це посилання належить іншому клубу. Відскануйте QR-код саме у своєму клубному боті.");
+        return { success: false, replyText: "Cross-club token mismatch" };
+      }
 
       let playerId = tokenRecord?.player_id;
       let playerDob = (tokenRecord as any)?.players?.date_of_birth;
@@ -497,8 +535,8 @@ export async function processTelegramWebhookUpdateAction(
       try {
         const { data: c } = await supabase
           .from("clubs")
-          .select("id, settings")
-          .eq("id", DEFAULT_CLUB_ID)
+          .select("id, name, settings")
+          .eq("id", scopedClubId)
           .maybeSingle();
         clubDataObj = c;
         const clubTokens = (c?.settings as any)?.telegram_tokens || {};
@@ -519,6 +557,10 @@ export async function processTelegramWebhookUpdateAction(
             "❌ Недійсний або прострочений токен прив'язки. Будь ласка, зверніться до медичного штабу клубу.";
           await reply(failMsg);
           return { success: false, replyText: failMsg };
+        }
+        if (memToken.club_id && memToken.club_id !== scopedClubId) {
+          await reply("⛔ Це посилання належить іншому клубу. Відскануйте QR-код саме у своєму клубному боті.");
+          return { success: false, replyText: "Cross-club token mismatch" };
         }
         if (memToken.used_at) {
           const usedMsg = "⚠️ Цей одноразовий токен вже був використаний.";
@@ -573,11 +615,12 @@ export async function processTelegramWebhookUpdateAction(
       try {
         const { data: latestClub } = await supabase
           .from("clubs")
-          .select("id, settings")
-          .eq("id", DEFAULT_CLUB_ID)
+          .select("id, name, settings")
+          .eq("id", scopedClubId)
           .maybeSingle();
 
         if (latestClub) {
+          if (!clubDataObj) clubDataObj = latestClub;
           const s = (latestClub.settings as any) || {};
           const tBindings = s.telegram_bindings || {};
           tBindings[playerId!] = {
@@ -609,7 +652,7 @@ export async function processTelegramWebhookUpdateAction(
         await supabase.from("player_telegram_bindings").upsert(
           {
             player_id: playerId,
-            club_id: tokenRecord?.club_id || DEFAULT_CLUB_ID,
+            club_id: scopedClubId,
             telegram_chat_id: chatId,
             telegram_username: username,
             status: "active",
@@ -623,16 +666,17 @@ export async function processTelegramWebhookUpdateAction(
       memoryTelegramBindings.set(`${playerId}:${chatId}`, {
         id: crypto.randomUUID(),
         player_id: playerId!,
-        club_id: tokenRecord?.club_id || DEFAULT_CLUB_ID,
+        club_id: scopedClubId,
         telegram_chat_id: chatId,
         telegram_username: username,
         status: "active",
         created_at: nowIso,
       });
 
+      const clubDisplayName = clubDataObj?.name || "вашого клубу";
       const successMsg =
         `✅ *Привіт, ${playerName || "гравець"}!*\n\n` +
-        `Твій акаунт успішно підключено до медичного штабу ФК «Чорноморець» (U-19).\n\n` +
+        `Твій акаунт успішно підключено до медичного штабу *${clubDisplayName}*.\n\n` +
         `Тут ти отримуватимеш персональні вказівки лікаря, рекомендації за результатами ранкової анкети та оперативний зв'язок.\n` +
         `Щоб відписатися будь-коли, надішліть команду /stop.`;
 
@@ -648,6 +692,7 @@ export async function processTelegramWebhookUpdateAction(
         .from("player_telegram_bindings")
         .update({ status: "unlinked", unlinked_at: nowIso })
         .eq("telegram_chat_id", chatId)
+        .eq("club_id", scopedClubId)
         .eq("status", "active");
 
       unlinkTelegramByChatIdInMemory(chatId);
@@ -667,14 +712,21 @@ export async function processTelegramWebhookUpdateAction(
         .from("coach_telegram_bindings")
         .select("*")
         .eq("telegram_chat_id", chatId)
+        .eq("club_id", scopedClubId)
         .eq("status", "active")
+        .order("created_at", { ascending: false })
+        .limit(1)
         .maybeSingle();
       if (data) coachBinding = data as CoachTelegramBinding;
     } catch {}
 
     if (!coachBinding) {
       for (const b of memoryCoachBindings.values()) {
-        if (b.telegram_chat_id === chatId && b.status === "active") {
+        if (
+          b.telegram_chat_id === chatId &&
+          b.club_id === scopedClubId &&
+          b.status === "active"
+        ) {
           coachBinding = b;
           break;
         }
@@ -682,7 +734,7 @@ export async function processTelegramWebhookUpdateAction(
     }
 
     if (coachBinding) {
-      await processCoachTextMessage(message, coachBinding);
+      await processCoachTextMessage(message, coachBinding, scopedClubId);
       return { success: true };
     }
 
@@ -690,7 +742,7 @@ export async function processTelegramWebhookUpdateAction(
     if (text === "/status") {
       let active = false;
       for (const b of memoryTelegramBindings.values()) {
-        if (b.telegram_chat_id === chatId && b.status === "active") {
+        if (b.telegram_chat_id === chatId && b.club_id === scopedClubId && b.status === "active") {
           active = true;
           break;
         }
@@ -713,7 +765,7 @@ export async function processTelegramWebhookUpdateAction(
     const { data: club } = await supabase
       .from("clubs")
       .select("id, settings")
-      .eq("id", DEFAULT_CLUB_ID)
+      .eq("id", scopedClubId)
       .maybeSingle();
 
     const clubSettings = (club?.settings as any) || {};
@@ -736,6 +788,7 @@ export async function processTelegramWebhookUpdateAction(
           .from("player_telegram_bindings")
           .select("player_id, players ( first_name, last_name )")
           .eq("telegram_chat_id", String(chatId).trim())
+          .eq("club_id", scopedClubId)
           .eq("status", "active")
           .maybeSingle();
         if (bRow?.player_id) {
@@ -748,7 +801,11 @@ export async function processTelegramWebhookUpdateAction(
     // 4c. Пошук в in-memory
     if (!boundPlayerId) {
       for (const b of memoryTelegramBindings.values()) {
-        if (String(b.telegram_chat_id).trim() === String(chatId).trim() && b.status === "active") {
+        if (
+          String(b.telegram_chat_id).trim() === String(chatId).trim() &&
+          b.club_id === scopedClubId &&
+          b.status === "active"
+        ) {
           boundPlayerId = b.player_id;
           break;
         }
@@ -824,7 +881,7 @@ export async function processTelegramWebhookUpdateAction(
           wellness_entries_store: store,
         },
       })
-      .eq("id", club?.id || DEFAULT_CLUB_ID);
+      .eq("id", club?.id || scopedClubId);
 
     try {
       await logAudit({
@@ -883,40 +940,58 @@ export async function processTelegramWebhookUpdateAction(
  * У повідомленні суворо НЕМАЄ медичних даних і прізвищ інших гравців.
  */
 export async function sendMorningWellnessRemindersAction(options?: {
+  clubId?: string;
   teamId?: string;
   baseUrl?: string;
   isCron?: boolean;
 }) {
   try {
+    let targetClubId = options?.clubId || "";
     if (!options?.isCron) {
       const auth = await assertTeamStaff();
       if ("error" in auth) {
         return { success: false, error: auth.error };
       }
+      if (!targetClubId) {
+        targetClubId = auth.user.clubId || "";
+      }
     }
 
     const supabase = createAdminClient();
+    if (!targetClubId && options?.teamId) {
+      const { data: teamRow } = await supabase
+        .from("teams")
+        .select("club_id")
+        .eq("id", options.teamId)
+        .maybeSingle();
+      targetClubId = teamRow?.club_id || "";
+    }
+    if (!targetClubId) {
+      targetClubId = DEFAULT_CLUB_ID;
+    }
+
     const today = new Date().toISOString().split("T")[0];
     const baseUrl =
       options?.baseUrl ||
       process.env.NEXT_PUBLIC_APP_URL ||
-      "https://med.fc-chornomorets.com";
+      "https://med-academy-alpha.vercel.app";
 
     // 1. Отримуємо клубні налаштування (там зберігаються telegram_bindings та wellness_entries_store)
     const { data: club } = await supabase
       .from("clubs")
       .select("id, settings")
-      .eq("id", DEFAULT_CLUB_ID)
+      .eq("id", targetClubId)
       .maybeSingle();
 
     const clubSettings = (club?.settings as any) || {};
     const clubBindings = clubSettings.telegram_bindings || {};
     const store = clubSettings.wellness_entries_store || {};
 
-    // 2. Отримуємо активних гравців команди (або всіх)
+    // 2. Отримуємо активних гравців команди (або всіх у межах клубу)
     let playersQuery = supabase
       .from("players")
       .select("id, first_name, last_name, team_id")
+      .eq("club_id", targetClubId)
       .is("archived_at", null);
 
     if (options?.teamId) {
@@ -927,13 +1002,12 @@ export async function sendMorningWellnessRemindersAction(options?: {
     const playersList = teamPlayers || [];
     const totalPlayers = playersList.length;
 
-    // 3. Отримуємо записи з таблиці player_telegram_bindings
-    let tableBindingsQuery = supabase
+    // 3. Отримуємо записи з таблиці player_telegram_bindings для клубу
+    const { data: tableBindingsData } = await supabase
       .from("player_telegram_bindings")
       .select("player_id, telegram_chat_id, status")
+      .eq("club_id", targetClubId)
       .eq("status", "active");
-
-    const { data: tableBindingsData } = await tableBindingsQuery;
     const tableBindingsMap = new Map<string, string>();
     for (const b of tableBindingsData || []) {
       if (b.player_id && b.telegram_chat_id) {
@@ -1039,6 +1113,7 @@ export async function sendMorningWellnessRemindersAction(options?: {
       });
 
       await sendClubMessage({
+        clubId: targetClubId,
         channel: "telegram",
         recipient: b.telegram_chat_id,
         text: reminderText,
@@ -1092,11 +1167,18 @@ export async function sendPostSessionRemindersAction(options: {
       process.env.NEXT_PUBLIC_APP_URL ||
       "https://med-academy-alpha.vercel.app";
 
-    // 1. Отримуємо клубні налаштування та прив'язки
+    // 1. Визначаємо клуб за командою та отримуємо клубні налаштування і прив'язки
+    const { data: teamMeta } = await supabase
+      .from("teams")
+      .select("club_id")
+      .eq("id", options.teamId)
+      .maybeSingle();
+    const targetClubId = teamMeta?.club_id || DEFAULT_CLUB_ID;
+
     const { data: club } = await supabase
       .from("clubs")
       .select("id, name, settings")
-      .eq("id", DEFAULT_CLUB_ID)
+      .eq("id", targetClubId)
       .maybeSingle();
 
     const clubSettings = (club?.settings as any) || {};
@@ -1107,6 +1189,7 @@ export async function sendPostSessionRemindersAction(options: {
     let playersQuery = supabase
       .from("players")
       .select("id, first_name, last_name, team_id, portal_token")
+      .eq("club_id", targetClubId)
       .eq("team_id", options.teamId)
       .is("archived_at", null);
 
@@ -1117,10 +1200,11 @@ export async function sendPostSessionRemindersAction(options: {
     const { data: teamPlayers } = await playersQuery;
     const playersList = teamPlayers || [];
 
-    // 3. Отримуємо активні записи з таблиці player_telegram_bindings
+    // 3. Отримуємо активні записи з таблиці player_telegram_bindings для клубу
     const { data: tableBindingsData } = await supabase
       .from("player_telegram_bindings")
       .select("player_id, telegram_chat_id, status")
+      .eq("club_id", targetClubId)
       .eq("status", "active");
 
     const tableBindingsMap = new Map<string, string>();
@@ -1198,7 +1282,7 @@ export async function sendPostSessionRemindersAction(options: {
       });
 
       await sendClubMessage({
-        clubId: club?.id || DEFAULT_CLUB_ID,
+        clubId: club?.id || targetClubId,
         channel: "telegram",
         recipient: String(chatId),
         text: msgText,
@@ -1478,6 +1562,7 @@ export async function generateCoachWeeklyTelegramReportAction(
 
       if (coachChat) {
         const sendRes = await sendClubMessage({
+          clubId,
           channel: "telegram",
           recipient: coachChat,
           text: messageText,
@@ -1511,11 +1596,18 @@ export async function getPlayerTelegramBindingAction(playerId: string): Promise<
   if (!playerId) return { isBound: false };
   try {
     const supabase = createAdminClient();
+    const { data: playerRow } = await supabase
+      .from("players")
+      .select("club_id")
+      .eq("id", playerId)
+      .maybeSingle();
+    const playerClubId = playerRow?.club_id || DEFAULT_CLUB_ID;
+
     // 1. clubs.settings
     const { data: club } = await supabase
       .from("clubs")
       .select("settings")
-      .eq("id", DEFAULT_CLUB_ID)
+      .eq("id", playerClubId)
       .maybeSingle();
 
     const bindings = (club?.settings as any)?.telegram_bindings || {};
@@ -1532,6 +1624,7 @@ export async function getPlayerTelegramBindingAction(playerId: string): Promise<
       .from("player_telegram_bindings")
       .select("telegram_username, created_at, status")
       .eq("player_id", playerId)
+      .eq("club_id", playerClubId)
       .eq("status", "active")
       .maybeSingle();
 
@@ -1582,6 +1675,13 @@ export async function sendDoctorRecommendationAction(params: {
     const rawDoctor = doctorName || (user as any)?.name || (user as any)?.fullName;
     const docDisplayName = rawDoctor && !rawDoctor.includes("@") ? rawDoctor.trim() : "Медичний штаб";
 
+    const { data: playerMeta } = await supabase
+      .from("players")
+      .select("club_id")
+      .eq("id", playerId)
+      .maybeSingle();
+    const playerClubId = playerMeta?.club_id || user?.clubId || DEFAULT_CLUB_ID;
+
     // 1. Шукаємо Telegram Chat ID
     let chatId: string | null = null;
     let isBound = false;
@@ -1589,7 +1689,7 @@ export async function sendDoctorRecommendationAction(params: {
     const { data: club } = await supabase
       .from("clubs")
       .select("id, settings")
-      .eq("id", DEFAULT_CLUB_ID)
+      .eq("id", playerClubId)
       .maybeSingle();
 
     const clubSettings = (club?.settings as any) || {};
@@ -1605,6 +1705,7 @@ export async function sendDoctorRecommendationAction(params: {
           .from("player_telegram_bindings")
           .select("telegram_chat_id")
           .eq("player_id", playerId)
+          .eq("club_id", playerClubId)
           .eq("status", "active")
           .maybeSingle();
         if (b?.telegram_chat_id) {
@@ -1616,7 +1717,7 @@ export async function sendDoctorRecommendationAction(params: {
 
     // 2. Якщо є Telegram - відправляємо повідомлення (без email, з прямим телефоном та посиланням на Telegram)
     let sentToTelegram = false;
-    const { botToken } = await getClubTelegramConfig(user?.clubId);
+    const { botToken } = await getClubTelegramConfig(playerClubId);
     if (chatId && botToken) {
       try {
         const messageText =
@@ -1709,7 +1810,7 @@ export async function sendDoctorRecommendationAction(params: {
           wellness_acknowledgements: acks,
         },
       })
-      .eq("id", club?.id || DEFAULT_CLUB_ID);
+      .eq("id", club?.id || playerClubId);
 
     return {
       success: true,
@@ -1740,10 +1841,17 @@ export async function getPlayerDoctorRecommendationAction(params: {
 }> {
   try {
     const supabase = createAdminClient();
+    const { data: playerMeta } = await supabase
+      .from("players")
+      .select("club_id")
+      .eq("id", params.playerId)
+      .maybeSingle();
+    const playerClubId = playerMeta?.club_id || DEFAULT_CLUB_ID;
+
     const { data: club } = await supabase
       .from("clubs")
       .select("settings")
-      .eq("id", DEFAULT_CLUB_ID)
+      .eq("id", playerClubId)
       .maybeSingle();
 
     const store = (club?.settings as any)?.wellness_entries_store || {};

@@ -2,6 +2,7 @@
 
 import { createAdminClient } from "@/utils/supabase/admin";
 import { getCurrentUser, DEFAULT_CLUB_ID } from "@/lib/auth";
+import { getClubTelegramConfig } from "@/lib/club-telegram";
 import { revalidatePath } from "next/cache";
 import {
   calculateDaysLeft,
@@ -104,6 +105,7 @@ export async function sendParentPassportReminderAction(params: {
         .from("player_telegram_bindings")
         .select("telegram_chat_id")
         .eq("player_id", player.id)
+        .eq("club_id", player.club_id)
         .eq("status", "active")
         .maybeSingle();
 
@@ -130,7 +132,7 @@ export async function sendParentPassportReminderAction(params: {
     });
 
     const isExplicitSimulate = params.simulate === true;
-    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+    const { botToken } = await getClubTelegramConfig(player.club_id);
     const isStubMode =
       isExplicitSimulate ||
       !botToken ||

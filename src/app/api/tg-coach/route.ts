@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/utils/supabase/admin";
+import { DEFAULT_CLUB_ID } from "@/lib/auth";
+import { getClubTelegramConfig } from "@/lib/club-telegram";
 import { verifyTelegramWebAppInitData } from "@/lib/telegram-webapp-auth";
 import { calculatePlayerAvailability } from "@/lib/availability-rules";
 import {
@@ -14,15 +16,53 @@ import type { TrainingSessionType, RpeScore } from "@/types/workload";
 
 export const dynamic = "force-dynamic";
 
-async function resolveCoachByTelegram(initData: string) {
-  const token = process.env.TELEGRAM_BOT_TOKEN || "";
-  const verified = verifyTelegramWebAppInitData(initData, token);
-  if (!verified.ok) {
-    return { error: verified.error, status: 401 as const };
+async function resolveCoachByTelegram(initData: string, requestedClubId?: string | null) {
+  const supabase = createAdminClient();
+  const cleanClubId = requestedClubId?.trim() || "";
+
+  let verified: ReturnType<typeof verifyTelegramWebAppInitData> | null = null;
+  let verifiedClubId = "";
+
+  if (cleanClubId) {
+    const { botToken } = await getClubTelegramConfig(cleanClubId);
+    const candidate = verifyTelegramWebAppInitData(initData, botToken);
+    if (!candidate.ok) {
+      return { error: candidate.error, status: 401 as const };
+    }
+    verified = candidate;
+    verifiedClubId = cleanClubId;
+  } else {
+    const defaultToken = process.env.TELEGRAM_BOT_TOKEN || "";
+    const defaultCandidate = verifyTelegramWebAppInitData(initData, defaultToken);
+    if (defaultCandidate.ok) {
+      verified = defaultCandidate;
+      verifiedClubId = DEFAULT_CLUB_ID;
+    } else {
+      try {
+        const { data: clubsData } = await supabase
+          .from("clubs")
+          .select("id, settings")
+          .not("settings->telegram->encrypted_token", "is", null);
+
+        for (const c of clubsData || []) {
+          const { botToken: clubToken } = await getClubTelegramConfig(c.id);
+          if (!clubToken) continue;
+          const candidate = verifyTelegramWebAppInitData(initData, clubToken);
+          if (candidate.ok) {
+            verified = candidate;
+            verifiedClubId = c.id;
+            break;
+          }
+        }
+      } catch {}
+
+      if (!verified || !verified.ok) {
+        return { error: defaultCandidate.error, status: 401 as const };
+      }
+    }
   }
 
   const chatId = String(verified.user.id);
-  const supabase = createAdminClient();
 
   let binding: { coach_user_id: string; club_id?: string | null } | null = null;
   try {
@@ -30,15 +70,25 @@ async function resolveCoachByTelegram(initData: string) {
       .from("coach_telegram_bindings")
       .select("coach_user_id, club_id, status")
       .eq("telegram_chat_id", chatId)
+      .eq("club_id", verifiedClubId)
       .eq("status", "active")
+      .order("created_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
     if (data) binding = data;
   } catch {}
 
   if (!binding) {
-    const mem = memoryCoachBindings.get(chatId);
-    if (mem && mem.status === "active") {
+    const mem = memoryCoachBindings.get(`${verifiedClubId}:${chatId}`);
+    if (mem && mem.club_id === verifiedClubId && mem.status === "active") {
       binding = mem;
+    } else {
+      for (const m of memoryCoachBindings.values()) {
+        if (m.telegram_chat_id === chatId && m.club_id === verifiedClubId && m.status === "active") {
+          binding = m;
+          break;
+        }
+      }
     }
   }
 
@@ -53,20 +103,41 @@ async function resolveCoachByTelegram(initData: string) {
 
   const [profileRes, memberRes, assignmentsRes] = await Promise.all([
     supabase.from("profiles").select("full_name, team_id").eq("id", coachUserId).maybeSingle(),
-    supabase.from("club_members").select("club_id, team_id").eq("user_id", coachUserId).limit(1).maybeSingle(),
-    supabase.from("coach_team_assignments").select("team_id").eq("coach_user_id", coachUserId),
+    supabase
+      .from("club_members")
+      .select("club_id, team_id")
+      .eq("user_id", coachUserId)
+      .eq("club_id", verifiedClubId)
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("coach_team_assignments")
+      .select("team_id, club_id")
+      .eq("coach_user_id", coachUserId),
   ]);
 
-  const clubId = binding.club_id || memberRes.data?.club_id || null;
-  const teamIds = Array.from(
+  const clubId = binding.club_id || memberRes.data?.club_id || verifiedClubId;
+  const candidateTeamIds = Array.from(
     new Set(
       [
-        ...(assignmentsRes.data || []).map((a: any) => a.team_id),
+        ...(assignmentsRes.data || [])
+          .filter((a: any) => !a.club_id || a.club_id === clubId)
+          .map((a: any) => a.team_id),
         memberRes.data?.team_id,
         profileRes.data?.team_id,
       ].filter(Boolean)
     )
   ) as string[];
+
+  let teamIds: string[] = [];
+  if (candidateTeamIds.length > 0) {
+    const { data: clubTeams } = await supabase
+      .from("teams")
+      .select("id")
+      .eq("club_id", clubId)
+      .in("id", candidateTeamIds);
+    teamIds = (clubTeams || []).map((t: any) => t.id);
+  }
 
   const coachName =
     profileRes.data?.full_name ||
@@ -88,7 +159,10 @@ export async function GET(req: NextRequest) {
     req.nextUrl.searchParams.get("initData") ||
     "";
 
-  const auth = await resolveCoachByTelegram(initData);
+  const auth = await resolveCoachByTelegram(
+    initData,
+    req.nextUrl.searchParams.get("clubId")
+  );
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
@@ -99,12 +173,11 @@ export async function GET(req: NextRequest) {
   let teamsQuery = supabase
     .from("teams")
     .select("id, name, category, sort_order")
+    .eq("club_id", auth.clubId)
     .order("sort_order", { ascending: true });
 
   if (auth.teamIds.length > 0) {
     teamsQuery = teamsQuery.in("id", auth.teamIds);
-  } else if (auth.clubId) {
-    teamsQuery = teamsQuery.eq("club_id", auth.clubId);
   }
 
   let playersQuery = supabase
@@ -114,12 +187,11 @@ export async function GET(req: NextRequest) {
       teams ( id, name, category, sort_order ),
       injuries ( id, status, injury_type, location, vas_score, date_of_injury, expected_return_date, description )
     `)
+    .eq("club_id", auth.clubId)
     .is("archived_at", null);
 
   if (auth.teamIds.length > 0) {
     playersQuery = playersQuery.in("team_id", auth.teamIds);
-  } else if (auth.clubId) {
-    playersQuery = playersQuery.eq("club_id", auth.clubId);
   }
 
   let screeningsQuery = supabase
@@ -218,7 +290,8 @@ export async function POST(req: NextRequest) {
   }
 
   const initData = req.headers.get("x-telegram-init-data") || body?.initData || "";
-  const auth = await resolveCoachByTelegram(initData);
+  const requestedClubId = req.nextUrl.searchParams.get("clubId") || body?.clubId || null;
+  const auth = await resolveCoachByTelegram(initData, requestedClubId);
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
@@ -226,16 +299,21 @@ export async function POST(req: NextRequest) {
   const action = body?.action;
 
   if (action === "save_training") {
-    const res = await finalizeCoachTrainingSession(auth.coachUserId, auth.chatId, {
-      team_id: body.teamId || auth.teamIds[0],
-      date: new Date().toISOString().split("T")[0],
-      session_type: (body.sessionType || "training_team") as TrainingSessionType,
-      duration_minutes: Number(body.durationMinutes) || 90,
-      rpe_score: (Number(body.rpeScore) || 5) as RpeScore,
-      surface: body.surface || "Не вказано",
-      incident: body.incident === "injury" ? "injury" : "none",
-      notes: body.notes || "",
-    });
+    const res = await finalizeCoachTrainingSession(
+      auth.coachUserId,
+      auth.chatId,
+      {
+        team_id: body.teamId || auth.teamIds[0],
+        date: new Date().toISOString().split("T")[0],
+        session_type: (body.sessionType || "training_team") as TrainingSessionType,
+        duration_minutes: Number(body.durationMinutes) || 90,
+        rpe_score: (Number(body.rpeScore) || 5) as RpeScore,
+        surface: body.surface || "Не вказано",
+        incident: body.incident === "injury" ? "injury" : "none",
+        notes: body.notes || "",
+      },
+      auth.clubId || undefined
+    );
     return NextResponse.json(res, { status: res.success ? 200 : 400 });
   }
 
@@ -251,11 +329,14 @@ export async function POST(req: NextRequest) {
     const todayStr = new Date().toISOString().split("T")[0];
 
     // Знаходимо або створюємо прив'язку до травми для логу, або пишемо в audit_logs
-    const { data: player } = await supabase
+    let playerQuery = supabase
       .from("players")
       .select("id, first_name, last_name, club_id")
-      .eq("id", playerId)
-      .maybeSingle();
+      .eq("id", playerId);
+    if (auth.clubId) {
+      playerQuery = playerQuery.eq("club_id", auth.clubId);
+    }
+    const { data: player } = await playerQuery.maybeSingle();
 
     if (!player) {
       return NextResponse.json({ error: "Гравця не знайдено" }, { status: 404 });

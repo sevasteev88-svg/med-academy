@@ -12,6 +12,7 @@ import {
 } from "@/lib/auth";
 import { getPlayerConsentSummary } from "@/lib/consents";
 import { getClubDate, getClubTimezone } from "@/lib/club-timezone";
+import { getClubTelegramConfig } from "@/lib/club-telegram";
 import {
   DEFAULT_CLUB_READINESS_CONFIG,
   DEFAULT_READINESS_THRESHOLDS,
@@ -432,10 +433,11 @@ export async function acknowledgeReadinessAction(input: {
       .from("player_telegram_bindings")
       .select("telegram_chat_id, status")
       .eq("player_id", input.playerId)
+      .eq("club_id", clubId)
       .eq("status", "active")
       .maybeSingle();
 
-    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+    const { botToken } = await getClubTelegramConfig(clubId);
     if (binding?.telegram_chat_id && botToken) {
       const parts = targetDate.split("-");
       const formattedDate = parts.length === 3 ? `${parts[2]}.${parts[1]}.${parts[0]}` : targetDate;
