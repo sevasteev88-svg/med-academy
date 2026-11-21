@@ -73,6 +73,8 @@ async function resolveCoachByTelegram(initData: string, requestedClubId?: string
       .eq("telegram_chat_id", chatId)
       .eq("club_id", verifiedClubId)
       .eq("status", "active")
+      .order("created_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
     if (data) binding = data;
   } catch {}
@@ -81,6 +83,13 @@ async function resolveCoachByTelegram(initData: string, requestedClubId?: string
     const mem = memoryCoachBindings.get(`${verifiedClubId}:${chatId}`);
     if (mem && mem.club_id === verifiedClubId && mem.status === "active") {
       binding = mem;
+    } else {
+      for (const m of memoryCoachBindings.values()) {
+        if (m.telegram_chat_id === chatId && m.club_id === verifiedClubId && m.status === "active") {
+          binding = m;
+          break;
+        }
+      }
     }
   }
 

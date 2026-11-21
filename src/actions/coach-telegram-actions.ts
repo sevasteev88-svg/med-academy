@@ -102,6 +102,13 @@ export async function createCoachTelegramBindingLinkAction(coachUserId: string) 
 
     // 4. Формуємо deep-link виду: https://t.me/<bot>?start=coach_<token>
     const { botUsername } = await getClubTelegramConfig(targetClubId);
+    if (!botUsername) {
+      return {
+        success: false,
+        error:
+          "Telegram-бот для цього клубу ще не налаштовано. Додайте токен та username бота в Налаштуваннях клубу.",
+      };
+    }
     const deepLink = `https://t.me/${botUsername}?start=coach_${rawToken}`;
 
     const qrDataUrl = await QRCode.toDataURL(deepLink, {
@@ -160,6 +167,8 @@ export async function getCoachTelegramStatusAction(coachUserId: string) {
         .eq("coach_user_id", coachUserId)
         .eq("club_id", currentUser.clubId)
         .eq("status", "active")
+        .order("created_at", { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       if (binding) {
@@ -251,6 +260,7 @@ export async function unlinkCoachTelegramAction(coachUserId: string) {
 export async function sendCoachMorningDigestAction(params: {
   coachUserId: string;
   targetDate?: string;
+  clubId?: string;
 }) {
   const auth = await assertAuth();
   if ("error" in auth) {
@@ -270,5 +280,6 @@ export async function sendCoachMorningDigestAction(params: {
   return sendCoachMorningDigestInternal({
     coachUserId: params.coachUserId,
     targetDate: params.targetDate,
+    clubId: currentUser.clubId,
   });
 }

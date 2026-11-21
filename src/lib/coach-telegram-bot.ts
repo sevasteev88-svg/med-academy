@@ -17,10 +17,13 @@ async function resolveCoachBotToken(
   clubId?: string | null
 ): Promise<string> {
   if (clubId) {
-    const { botToken } = await getClubTelegramConfig(clubId);
-    return botToken;
+    try {
+      const { botToken } = await getClubTelegramConfig(clubId);
+      return botToken;
+    } catch {
+      return "";
+    }
   }
-
   try {
     const supabase = createAdminClient();
     const { data } = await supabase
@@ -416,13 +419,14 @@ async function renderStepFinalize(
  */
 export async function processCoachCallbackQuery(
   callbackQuery: NonNullable<import("@/types/telegram").TelegramWebhookUpdate["callback_query"]>,
-  coachBinding: CoachTelegramBinding
+  coachBinding: CoachTelegramBinding,
+  overrideClubId?: string | null
 ) {
   const chatId = String(callbackQuery.message?.chat.id || coachBinding.telegram_chat_id);
   const messageId = callbackQuery.message?.message_id;
   const data = callbackQuery.data || "";
   const coachUserId = coachBinding.coach_user_id;
-  const clubId = coachBinding.club_id || undefined;
+  const clubId = overrideClubId || coachBinding.club_id || undefined;
 
   await answerCallback(callbackQuery.id, undefined, chatId, clubId);
 
@@ -741,12 +745,13 @@ export async function processCoachCallbackQuery(
  */
 export async function processCoachTextMessage(
   message: NonNullable<import("@/types/telegram").TelegramWebhookUpdate["message"]>,
-  coachBinding: CoachTelegramBinding
+  coachBinding: CoachTelegramBinding,
+  overrideClubId?: string | null
 ) {
   const chatId = String(message.chat.id);
   const text = (message.text || message.caption || "").trim();
   const coachUserId = coachBinding.coach_user_id;
-  const clubId = coachBinding.club_id || undefined;
+  const clubId = overrideClubId || coachBinding.club_id || undefined;
 
   // 1. Команди
   if (text === "/start" || text === "/menu") {
@@ -787,7 +792,7 @@ export async function processCoachTextMessage(
     const supabase = createAdminClient();
     try {
       await supabase.from("audit_logs").insert({
-        club_id: coachBinding.club_id || null,
+        club_id: clubId || coachBinding.club_id || null,
         user_id: coachUserId,
         action: "coach_field_injury_report",
         entity: "telegram_bot",

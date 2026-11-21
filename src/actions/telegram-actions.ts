@@ -145,6 +145,13 @@ export async function createTelegramBindingLinkAction(playerId: string) {
     });
 
     const { botUsername } = await getClubTelegramConfig(user.clubId);
+    if (!botUsername) {
+      return {
+        success: false,
+        error:
+          "Telegram-бот для цього клубу ще не налаштовано. Додайте токен та username бота в Налаштуваннях клубу.",
+      };
+    }
     const deepLink = buildTelegramDeepLink(rawToken, botUsername);
     const qrDataUrl = await QRCode.toDataURL(deepLink, {
       errorCorrectionLevel: "M",

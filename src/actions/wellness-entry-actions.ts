@@ -160,8 +160,7 @@ export async function getTodayWellnessEntryForPlayerAction(playerId: string): Pr
       .maybeSingle();
 
     if (s) {
-      const entry = mapWellnessSurveyRow(s, clubId);
-      return { entry, today, timezone };
+      return { entry: mapWellnessSurveyRow(s, clubId), today, timezone };
     }
   } catch {}
 

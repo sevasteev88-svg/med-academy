@@ -6,6 +6,7 @@ import { getTelegramBotUsername } from "@/lib/telegram-auth";
 export interface ClubTelegramConfig {
   botToken: string;
   botUsername: string;
+  chatId?: string;
 }
 
 /**
@@ -16,10 +17,15 @@ export interface ClubTelegramConfig {
 export async function getClubTelegramConfig(clubId?: string | null): Promise<ClubTelegramConfig> {
   const defaultToken = process.env.TELEGRAM_BOT_TOKEN || "";
   const defaultUsername = getTelegramBotUsername();
+  const defaultChatId = process.env.TELEGRAM_CHAT_ID || "";
   const isNonDefaultClub = Boolean(clubId && clubId !== DEFAULT_CLUB_ID);
 
   if (!clubId) {
-    return { botToken: defaultToken, botUsername: defaultUsername };
+    return {
+      botToken: defaultToken,
+      botUsername: defaultUsername,
+      chatId: defaultChatId,
+    };
   }
 
   try {
@@ -32,7 +38,9 @@ export async function getClubTelegramConfig(clubId?: string | null): Promise<Clu
 
     const tg = (club as any)?.settings?.telegram;
     const customToken = tg?.encrypted_token ? decryptServerSecret(tg.encrypted_token) : "";
-    const customUsername = typeof tg?.bot_username === "string" ? tg.bot_username.trim().replace(/^@/, "") : "";
+    const customUsername =
+      typeof tg?.bot_username === "string" ? tg.bot_username.trim().replace(/^@/, "") : "";
+    const customChatId = tg?.encrypted_chat_id ? decryptServerSecret(tg.encrypted_chat_id) : "";
     const hasCustomBotConfigured = Boolean(tg?.encrypted_token || customUsername);
 
     if (isNonDefaultClub || hasCustomBotConfigured) {
@@ -41,22 +49,32 @@ export async function getClubTelegramConfig(clubId?: string | null): Promise<Clu
           "[club-telegram] Club Telegram bot token is missing or failed to decrypt; refusing cross-club fallback.",
           { clubId }
         );
-        return { botToken: "", botUsername: customUsername };
+        return {
+          botToken: "",
+          botUsername: customUsername,
+          chatId: customChatId,
+        };
       }
       return {
         botToken: customToken,
         botUsername: customUsername,
+        chatId: customChatId,
       };
     }
 
     return {
       botToken: defaultToken,
       botUsername: defaultUsername,
+      chatId: customChatId || defaultChatId,
     };
   } catch {
     if (isNonDefaultClub) {
-      return { botToken: "", botUsername: "" };
+      return { botToken: "", botUsername: "", chatId: "" };
     }
-    return { botToken: defaultToken, botUsername: defaultUsername };
+    return {
+      botToken: defaultToken,
+      botUsername: defaultUsername,
+      chatId: defaultChatId,
+    };
   }
 }

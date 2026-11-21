@@ -202,7 +202,7 @@ test("club-telegram: non-default clubs never fall back to global Chornomorets bo
   }
 });
 
-test("source checks: multi-club club_id scoping across webhook, coach bot, messaging adapter, and mini app", () => {
+test("source checks: multi-club club_id scoping across webhook, coach bot, messaging adapter, cron, and mini app", () => {
   const clubTelegramSrc = fs.readFileSync(
     path.join(process.cwd(), "src/lib/club-telegram.ts"),
     "utf8"
@@ -250,4 +250,11 @@ test("source checks: multi-club club_id scoping across webhook, coach bot, messa
   );
   assert.match(tgCoachUiSrc, /function getApiUrl\(\)/);
   assert.match(tgCoachUiSrc, /\/api\/tg-coach\?clubId=/);
+
+  const cronSrc = fs.readFileSync(
+    path.join(process.cwd(), "src/app/api/cron/coach-daily/route.ts"),
+    "utf8"
+  );
+  assert.match(cronSrc, /getClubTelegramConfig\(b\.club_id\)/);
+  assert.match(cronSrc, /clubId: b\.club_id \|\| undefined/);
 });
