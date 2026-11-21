@@ -398,7 +398,7 @@ describe("8.4 Світлофор готовності для тренера (Rea
       assert.equal(res.doctorDetails?.comment, "Турбує коліно при присіданнях");
     });
 
-    it("sanitizeReadinessForCoach маскує стрес і пристрої, зберігаючи спортивні дані та коментар", () => {
+    it("sanitizeReadinessForCoach маскує стрес, пристрої та приватні коментарі, зберігаючи ВАШ", () => {
       const rawResult: PlayerReadinessResult = {
         playerId: "p1",
         date: TODAY,
@@ -421,6 +421,7 @@ describe("8.4 Світлофор готовності для тренера (Rea
           illness: false,
           stress: 1,
           comment: "Секретний коментар",
+          painComment: "Приватний коментар про біль",
           sleepHours: 5,
           sleepQuality: 2,
           fatigue: 2,
@@ -431,7 +432,8 @@ describe("8.4 Світлофор готовності для тренера (Rea
       const sanitized = sanitizeReadinessForCoach(rawResult);
       assert.notEqual(sanitized.doctorDetails, null);
       assert.equal(sanitized.doctorDetails?.stress, null);
-      assert.equal(sanitized.doctorDetails?.comment, "Секретний коментар");
+      assert.equal(sanitized.doctorDetails?.comment, null);
+      assert.equal(sanitized.doctorDetails?.painComment, null);
       assert.equal(sanitized.doctorDetails?.painVas, 8);
     });
   });

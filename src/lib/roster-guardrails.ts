@@ -35,13 +35,32 @@ export function validateMatchdayRoster(
   }
 
   let gkStarterCount = 0;
+  const seenPlayerIds = new Set<string>();
+  const reportedDuplicates = new Set<string>();
 
   // 1. Check Starters
-  starters.forEach((slot, index) => {
+  starters.forEach((slot) => {
     const player = playerMap.get(slot.playerId);
     if (!player) return;
 
     const fullName = `${player.last_name} ${player.first_name}`.trim();
+    if (seenPlayerIds.has(slot.playerId)) {
+      if (!reportedDuplicates.has(slot.playerId)) {
+        reportedDuplicates.add(slot.playerId);
+        issues.push({
+          id: `duplicate-player-${player.id}`,
+          playerId: player.id,
+          playerName: fullName,
+          severity: "critical",
+          type: "duplicate_player",
+          title: "Дублікат гравця у заявці",
+          message: `${fullName} додано до заявки більше одного разу. Приберіть повторний запис.`,
+        });
+      }
+      return;
+    }
+    seenPlayerIds.add(slot.playerId);
+
     const pos = (player.position || "").toUpperCase();
     if (pos === "ВР" || pos === "GK") {
       gkStarterCount++;
@@ -75,7 +94,7 @@ export function validateMatchdayRoster(
 
     // Warning: Restricted player in Starting XI
     if (player.availability_status === "restricted") {
-      const maxMin = player.max_minutes || 45;
+      const maxMin = player.max_minutes ?? 45;
       issues.push({
         id: `starter-restricted-${player.id}`,
         playerId: player.id,
@@ -94,6 +113,22 @@ export function validateMatchdayRoster(
     if (!player) return;
 
     const fullName = `${player.last_name} ${player.first_name}`.trim();
+    if (seenPlayerIds.has(slot.playerId)) {
+      if (!reportedDuplicates.has(slot.playerId)) {
+        reportedDuplicates.add(slot.playerId);
+        issues.push({
+          id: `duplicate-player-${player.id}`,
+          playerId: player.id,
+          playerName: fullName,
+          severity: "critical",
+          type: "duplicate_player",
+          title: "Дублікат гравця у заявці",
+          message: `${fullName} додано до заявки більше одного разу. Приберіть повторний запис.`,
+        });
+      }
+      return;
+    }
+    seenPlayerIds.add(slot.playerId);
 
     // Critical: Player is unavailable / injured on bench
     if (player.availability_status === "unavailable") {
@@ -123,7 +158,7 @@ export function validateMatchdayRoster(
 
     // Info: Restricted player on bench - this is normal, but note the limit
     if (player.availability_status === "restricted") {
-      const maxMin = player.max_minutes || 45;
+      const maxMin = player.max_minutes ?? 45;
       issues.push({
         id: `sub-restricted-${player.id}`,
         playerId: player.id,

@@ -26,7 +26,14 @@ export type MedicalGuardrailIssue = {
   playerId: string;
   playerName: string;
   severity: "critical" | "warning" | "info";
-  type: "unavailable_player" | "minute_limit_starter" | "unscreened_player" | "no_goalkeeper" | "multiple_goalkeepers" | "roster_size";
+  type:
+    | "unavailable_player"
+    | "minute_limit_starter"
+    | "unscreened_player"
+    | "no_goalkeeper"
+    | "multiple_goalkeepers"
+    | "roster_size"
+    | "duplicate_player";
   title: string;
   message: string;
 };

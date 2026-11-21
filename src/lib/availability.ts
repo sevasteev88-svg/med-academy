@@ -80,13 +80,45 @@ const getPlayerAvailabilityCached = cache(
       screeningsQuery = screeningsQuery.eq("club_id", clubId);
     }
 
-    const [playersRes, rtpLogsRes, screeningLogsRes] = await Promise.all([
+    const concussionPromise = (async () => {
+      try {
+        let q = supabase
+          .from("concussion_cases")
+          .select("player_id, status, current_stage, incident_date")
+          .in("status", ["active", "recovering"])
+          .order("incident_date", { ascending: false });
+        if (clubId) {
+          q = q.eq("club_id", clubId);
+        }
+        const { data } = await q;
+        return data ?? [];
+      } catch {
+        return [];
+      }
+    })();
+
+    const [playersRes, rtpLogsRes, screeningLogsRes, concussionCasesData] = await Promise.all([
       playersQuery,
       rtpQuery,
       screeningsQuery,
+      concussionPromise,
     ]);
 
     const rawPlayers = playersRes.data || [];
+
+    // Активні випадки струсу мозку (останній на гравця)
+    const activeConcussionMap = new Map<
+      string,
+      { status: "active" | "recovering" | "closed"; current_stage: number }
+    >();
+    for (const c of (concussionCasesData || []) as any[]) {
+      if (c.player_id && !activeConcussionMap.has(c.player_id)) {
+        activeConcussionMap.set(c.player_id, {
+          status: c.status,
+          current_stage: Number(c.current_stage) || 1,
+        });
+      }
+    }
 
     // Парсимо останні RTP логи для кожної травми
     const latestRtpByInjury: Record<string, Partial<RtpPhaseLog>> = {};
@@ -126,10 +158,12 @@ const getPlayerAvailabilityCached = cache(
 
     for (const p of rawPlayers) {
       const screening = latestScreeningsMap.get(p.id) || null;
+      const concussionCase = activeConcussionMap.get(p.id) || null;
       const availability = calculatePlayerAvailability(
         {
           ...(p as any),
           screening,
+          concussionCase,
         },
         {
           date: targetDate,

@@ -53,9 +53,10 @@ export function calculateReinjuryRisk(input: ReinjuryRiskInput): ReinjuryRiskAss
   const missingDataReasons: string[] = [];
 
   // 1. Перевірка мінімуму даних: Зріст / PHV
-  const hasPhv = input.growthPhase === "phv" || input.hasPhvRecorded === true;
+  const hasRecordedGrowthPhase = Boolean(input.growthPhase || input.hasPhvRecorded === true);
+  const isInPhvPeak = input.growthPhase === "phv" || (!input.growthPhase && input.hasPhvRecorded === true);
   const heightCount = input.heightMeasurementsCount12m ?? 0;
-  const hasSufficientGrowth = hasPhv || heightCount >= 2;
+  const hasSufficientGrowth = hasRecordedGrowthPhase || heightCount >= 2;
   if (!hasSufficientGrowth) {
     missingDataReasons.push(
       `Виміри зросту: потрібно ≥2 замірів за 12 міс. або статус PHV (наявно: ${heightCount})`
@@ -158,7 +159,7 @@ export function calculateReinjuryRisk(input: ReinjuryRiskInput): ReinjuryRiskAss
   }
 
   // Фактор 3: PHV пік росту
-  if (hasPhv) {
+  if (isInPhvPeak) {
     warningTriggers++;
     factors.push({
       title: "Фаза максимального піку росту (PHV)",

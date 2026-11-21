@@ -17,11 +17,31 @@ export class Anonymizer {
 
   // Шаблони назви клубу для видалення
   private clubPatterns: RegExp[] = [
-    /ФК\s*[«"']?Чорноморець[»"']?/gi,
-    /Чорноморець/gi,
-    /ФК\s*[«"']?Черноморец[»"']?/gi,
-    /Черноморец/gi,
+    /(?<![\p{L}\p{N}_])ФК\s*[«"']?Чорноморець[»"']?(?![\p{L}\p{N}_])/giu,
+    /(?<![\p{L}\p{N}_])Чорноморець(?![\p{L}\p{N}_])/giu,
+    /(?<![\p{L}\p{N}_])ФК\s*[«"']?Черноморец[»"']?(?![\p{L}\p{N}_])/giu,
+    /(?<![\p{L}\p{N}_])Черноморец(?![\p{L}\p{N}_])/giu,
   ];
+
+  constructor(clubNames?: string[]) {
+    if (Array.isArray(clubNames)) {
+      for (const clubName of clubNames) {
+        this.registerClubName(clubName);
+      }
+    }
+  }
+
+  /**
+   * Реєструє назву клубу для заміни на «Футбольна Академія» (з підтримкою кирилиці).
+   */
+  public registerClubName(clubName: string): void {
+    const trimmed = typeof clubName === "string" ? clubName.trim() : "";
+    if (trimmed.length < 3) return;
+    const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    this.clubPatterns.push(
+      new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`, "giu")
+    );
+  }
 
   /**
    * Генерує псевдонім виду "Гравець A", "Гравець B", ..., "Гравець AA"...
@@ -97,7 +117,10 @@ export class Anonymizer {
     for (const [name, pseudo] of sortedEntries) {
       if (name && name.length >= 3) {
         const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        clean = clean.replace(new RegExp(`\\b${escaped}\\b`, "gi"), pseudo);
+        clean = clean.replace(
+          new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`, "giu"),
+          pseudo
+        );
       }
     }
 
@@ -112,9 +135,16 @@ export class Anonymizer {
     if (!text) return "";
     let restored = text;
 
-    for (const [pseudo, realName] of this.pseudoToReal.entries()) {
+    const sortedPseudos = Array.from(this.pseudoToReal.entries()).sort(
+      (a, b) => b[0].length - a[0].length
+    );
+
+    for (const [pseudo, realName] of sortedPseudos) {
       const escaped = pseudo.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      restored = restored.replace(new RegExp(escaped, "g"), realName);
+      restored = restored.replace(
+        new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`, "gu"),
+        realName
+      );
     }
 
     return restored;
@@ -126,6 +156,13 @@ export class Anonymizer {
    */
   public anonymizePlayerContext(player: any): any {
     if (!player) return null;
+    if (typeof player.club_name === "string") {
+      this.registerClubName(player.club_name);
+    }
+    if (typeof player.clubName === "string") {
+      this.registerClubName(player.clubName);
+    }
+
     const pseudo = this.registerPlayer(
       player.name || player.lastName || `${player.last_name || ""} ${player.first_name || ""}`
     );
@@ -138,6 +175,8 @@ export class Anonymizer {
       team,
       team_name,
       club_id,
+      club_name,
+      clubName,
       ...safeFields
     } = player;
 
@@ -154,6 +193,6 @@ export class Anonymizer {
 /**
  * Створює новий екземпляр знеособлювача для ізольованого запиту
  */
-export function createAnonymizer(): Anonymizer {
-  return new Anonymizer();
+export function createAnonymizer(clubNames?: string[]): Anonymizer {
+  return new Anonymizer(clubNames);
 }

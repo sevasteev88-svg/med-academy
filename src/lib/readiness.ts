@@ -799,8 +799,9 @@ export function detectMonotonousAnswers(
 }
 
 /**
- * Фільтрація для тренера: приховує психологічний стрес (stress) та біометрію годинників (wearables).
- * Спортивні показники (сон, втома, крепатура), біль, статус здоров'я та коментарі гравця залишаються доступними.
+ * Фільтрація для тренера: приховує психологічний стрес (stress), біометрію годинників (wearables),
+ * приватні текстові коментарі гравця до лікаря та рекомендації лікаря.
+ * Спортивні показники (сон, втома, крепатура), факт болю/ВАШ та статус здоров'я залишаються доступними.
  * ВИМОГА 8.5: Тренер бачить відсоток заповнення, але НЕ бачить мітку монотонності (видно тільки doctor/admin)!
  */
 export function sanitizeReadinessForCoach(
@@ -811,6 +812,10 @@ export function sanitizeReadinessForCoach(
         ...result.doctorDetails,
         stress: null, // Приховано від тренера (тільки лікар)
         wearables: null, // Біометрія з носимих пристроїв тільки для медштабу
+        comment: null, // Приватні текстові коментарі приховані від тренера
+        painComment: null,
+        illnessComment: null,
+        doctorRecommendation: null,
       }
     : null;
 
@@ -838,6 +843,10 @@ export function sanitizeReadinessForCoach(
         ? {
             ...pt.details,
             stress: null, // Приховано від тренера (тільки лікар)
+            comment: null,
+            painComment: null,
+            illnessComment: null,
+            doctorRecommendation: null,
           }
         : null,
     })),
