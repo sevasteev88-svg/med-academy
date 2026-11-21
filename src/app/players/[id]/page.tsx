@@ -23,7 +23,7 @@ import LsiSymmetryAssessmentCard from "@/components/injuries/LsiSymmetryAssessme
 import RehabExercisePlanBuilder from "@/components/injuries/RehabExercisePlanBuilder";
 import { isScreeningValid, type PreSeasonScreening } from "@/types/screening";
 import type { NutritionProfile } from "@/types/nutrition";
-import type { PlayerPhoto } from "@/types/photo";
+import { loadClubPlayerPhotos } from "@/lib/player-photos";
 import type { WearableBiometricsEntry } from "@/types/wearables";
 import type { RehabCheckinData } from "@/types/rehab-portal";
 import type { LsiAssessmentRecord } from "@/types/lsi";
@@ -186,14 +186,6 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
   const needWorkloadFallback = (workloadRes?.data || []).length === 0;
   const needWellnessFallback = (wellnessRes?.data || []).length === 0;
 
-  let photoLogsQuery = supabase
-    .from("injury_logs")
-    .select("*")
-    .like("note", `[PLAYER_PHOTO] %"player_id":"${id}"%`)
-    .order("date", { ascending: false })
-    .limit(10);
-  if (scopedClubId) photoLogsQuery = photoLogsQuery.eq("club_id", scopedClubId);
-
   let wearableLogsQuery = supabase
     .from("injury_logs")
     .select("*")
@@ -205,7 +197,7 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
   const activeDocumentsPromise = getActiveConsentDocuments(player.club_id);
 
   const [
-    photoLogsRes,
+    photoMap,
     wearableLogsRes,
     workloadLogsRes,
     wellnessLogsRes,
@@ -217,7 +209,7 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
     subRes,
     parentAccessState,
   ] = await Promise.all([
-    photoLogsQuery,
+    loadClubPlayerPhotos(scopedClubId, [id]),
     wearableLogsQuery,
     needWorkloadFallback
       ? (() => {
@@ -304,19 +296,7 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
       }
     : null;
 
-  const photoLogs = (photoLogsRes.data || [])
-    .map((l) => {
-      try {
-        const rawJson = l.note.replace("[PLAYER_PHOTO] ", "");
-        const parsed = JSON.parse(rawJson);
-        return parsed.player_id === id ? (parsed as PlayerPhoto) : null;
-      } catch {
-        return null;
-      }
-    })
-    .filter(Boolean) as PlayerPhoto[];
-
-  const currentPhotoUrl = photoLogs[0]?.photo_url || null;
+  const currentPhotoUrl = photoMap[id] || null;
 
   const wearableLogs = (wearableLogsRes.data || [])
     .map((l) => {

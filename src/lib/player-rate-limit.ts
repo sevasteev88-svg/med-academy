@@ -7,8 +7,8 @@ interface AttemptRecord {
 const ipAttempts = new Map<string, AttemptRecord>();
 const playerAttempts = new Map<string, AttemptRecord>();
 
-const MAX_ATTEMPTS = 5;
-const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes in ms
+export const MAX_ATTEMPTS = 5;
+export const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes in ms
 
 export interface RateLimitResult {
   isLocked: boolean;

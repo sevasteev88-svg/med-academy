@@ -1,8 +1,9 @@
 import { createClient } from "@/utils/supabase/server";
+import { getCurrentUser } from "@/lib/auth";
+import { loadClubPlayerPhotos } from "@/lib/player-photos";
 import Link from "next/link";
 import RtpPipelineBoard, { type RtpPlayerInjury } from "@/components/rtp/RtpPipelineBoard";
 import type { RtpPhaseNumber, RtpPhaseLog } from "@/types/rtp";
-import type { PlayerPhoto } from "@/types/photo";
 
 export const metadata = {
   title: "Return-to-Play (RTP) · Медичний штаб",
@@ -10,18 +11,15 @@ export const metadata = {
 };
 
 export default async function RtpPage() {
-  const supabase = await createClient();
+  const [supabase, user] = await Promise.all([createClient(), getCurrentUser()]);
+  const clubId = user?.clubId ?? null;
 
-  // 1. Отримуємо команди
-  const { data: teamsData } = await supabase
+  let teamsQuery = supabase
     .from("teams")
     .select("id, name, category, sort_order")
     .order("sort_order", { ascending: true });
 
-  const teams = (teamsData || []).map((t) => ({ id: t.id, name: t.name }));
-
-  // 2. Отримуємо активні травми та травми на реабілітації
-  const { data: injuriesData } = await supabase
+  let injuriesQuery = supabase
     .from("injuries")
     .select(`
       id,
@@ -47,19 +45,32 @@ export default async function RtpPage() {
     .in("status", ["active", "rehabilitation"])
     .order("date_of_injury", { ascending: false });
 
-  // 3. Отримуємо логи RTP та фото гравців
-  const [rtpLogsRes, photoLogsRes] = await Promise.all([
-    supabase
-      .from("injury_logs")
-      .select("*")
-      .like("note", "[RTP_PHASE]%")
-      .order("created_at", { ascending: false }),
-    supabase
-      .from("injury_logs")
-      .select("*")
-      .like("note", "[PLAYER_PHOTO]%")
-      .order("created_at", { ascending: false }),
+  let rtpLogsQuery = supabase
+    .from("injury_logs")
+    .select("*")
+    .like("note", "[RTP_PHASE]%")
+    .order("created_at", { ascending: false });
+
+  if (clubId) {
+    teamsQuery = teamsQuery.eq("club_id", clubId);
+    injuriesQuery = injuriesQuery.eq("club_id", clubId);
+    rtpLogsQuery = rtpLogsQuery.eq("club_id", clubId);
+  }
+
+  // 1-3. Отримуємо команди, травми та логи RTP
+  const [{ data: teamsData }, { data: injuriesData }, rtpLogsRes] = await Promise.all([
+    teamsQuery,
+    injuriesQuery,
+    rtpLogsQuery,
   ]);
+
+  const teams = (teamsData || []).map((t) => ({ id: t.id, name: t.name }));
+
+  const rtpPlayerIds = Array.from(
+    new Set((injuriesData || []).map((inj: any) => inj.player_id).filter(Boolean))
+  );
+  const photoByPlayer =
+    rtpPlayerIds.length > 0 ? await loadClubPlayerPhotos(clubId, rtpPlayerIds) : {};
 
   // Словник останніх RTP етапів по injury_id (вибираємо найновіший за міткою часу)
   const latestRtpByInjury: Record<string, RtpPhaseLog> = {};
@@ -74,18 +85,6 @@ export default async function RtpPage() {
         if (!existing || logTime > existingTime) {
           latestRtpByInjury[parsed.injury_id] = parsed;
         }
-      }
-    } catch {}
-  }
-
-  // Словник фото
-  const photoByPlayer: Record<string, string> = {};
-  for (const log of photoLogsRes.data || []) {
-    try {
-      const raw = log.note.replace("[PLAYER_PHOTO] ", "");
-      const parsed: PlayerPhoto = JSON.parse(raw);
-      if (parsed.player_id && !photoByPlayer[parsed.player_id]) {
-        photoByPlayer[parsed.player_id] = parsed.photo_url;
       }
     } catch {}
   }

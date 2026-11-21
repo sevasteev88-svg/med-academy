@@ -15,10 +15,10 @@ import {
   getClientIp,
 } from "@/lib/player-auth";
 import {
-  checkRateLimit,
-  recordFailedAttempt,
-  resetAttempts,
-} from "@/lib/player-rate-limit";
+  checkRateLimitPersistent,
+  recordFailedAttemptPersistent,
+  resetAttemptsPersistent,
+} from "@/lib/player-rate-limit-server";
 import { assertDoctor, assertTeamStaff, assertPlayerAccess, DEFAULT_CLUB_ID } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { getClubDate, getClubTimezone } from "@/lib/club-timezone";
@@ -249,7 +249,7 @@ export async function authenticatePlayerWithTokenAction({
   const ip = await getClientIp();
 
   // 1. Перевірка блокування за IP
-  const ipLimit = checkRateLimit(ip, true);
+  const ipLimit = await checkRateLimitPersistent(ip, true);
   if (ipLimit.isLocked) {
     return {
       error: `Доступ тимчасово заблоковано через забагато невдалих спроб. Спробуйте через ${ipLimit.lockedUntilMinutes || 15} хв.`,
@@ -259,7 +259,7 @@ export async function authenticatePlayerWithTokenAction({
   // 2. Валідація токена гравця
   const playerInfo = await getPlayerByPortalToken(token);
   if (!playerInfo) {
-    recordFailedAttempt(ip, true);
+    await recordFailedAttemptPersistent(ip, true);
     return {
       error: "Невірні дані для входу. Перевірте посилання або зверніться до медичного штабу.",
     };
@@ -268,7 +268,7 @@ export async function authenticatePlayerWithTokenAction({
   const playerId = playerInfo.id;
 
   // 3. Перевірка блокування за гравцем
-  const playerLimit = checkRateLimit(playerId, false);
+  const playerLimit = await checkRateLimitPersistent(playerId, false);
   if (playerLimit.isLocked) {
     return {
       error: `Доступ тимчасово заблоковано через забагато невдалих спроб. Спробуйте через ${playerLimit.lockedUntilMinutes || 15} хв.`,
@@ -277,8 +277,10 @@ export async function authenticatePlayerWithTokenAction({
 
   // Валідація PIN формату: рівно 6 цифр
   if (!/^\d{6}$/.test(enteredPin.trim())) {
-    recordFailedAttempt(ip, true);
-    recordFailedAttempt(playerId, false);
+    await Promise.all([
+      recordFailedAttemptPersistent(ip, true),
+      recordFailedAttemptPersistent(playerId, false),
+    ]);
     return {
       error: "Невірні дані для входу. Перевірте посилання або зверніться до медичного штабу.",
     };
@@ -289,8 +291,10 @@ export async function authenticatePlayerWithTokenAction({
 
   if (!authRecord.pinHash) {
     // PIN не встановлений (наприклад після скидання)
-    recordFailedAttempt(ip, true);
-    recordFailedAttempt(playerId, false);
+    await Promise.all([
+      recordFailedAttemptPersistent(ip, true),
+      recordFailedAttemptPersistent(playerId, false),
+    ]);
     return {
       error: "Невірні дані для входу. Зверніться до клубного лікаря для генерації PIN.",
     };
@@ -300,8 +304,10 @@ export async function authenticatePlayerWithTokenAction({
   const isValid = await verifyPin(enteredPin.trim(), authRecord.pinHash);
 
   if (!isValid) {
-    const resIp = recordFailedAttempt(ip, true);
-    const resPl = recordFailedAttempt(playerId, false);
+    const [resIp, resPl] = await Promise.all([
+      recordFailedAttemptPersistent(ip, true),
+      recordFailedAttemptPersistent(playerId, false),
+    ]);
 
     if (resIp.isLocked || resPl.isLocked) {
       return {
@@ -315,8 +321,10 @@ export async function authenticatePlayerWithTokenAction({
   }
 
   // Успіх! Скидаємо лічильники спроб
-  resetAttempts(ip, true);
-  resetAttempts(playerId, false);
+  await Promise.all([
+    resetAttemptsPersistent(ip, true),
+    resetAttemptsPersistent(playerId, false),
+  ]);
 
   // 6. Встановлюємо httpOnly cookie сесії
   await setPlayerSessionCookie({
@@ -735,8 +743,8 @@ export async function resetPlayerPinByDoctorAction(playerId: string) {
     })}`
   );
 
-  // Скидаємо блокування у пам'яті
-  resetAttempts(playerId, false);
+  // Скидаємо блокування у БД та пам'яті
+  await resetAttemptsPersistent(playerId, false);
 
   await logAudit({
     action: "reset_pin",

@@ -7,24 +7,106 @@ import type { EncryptedPayload } from "@/types/offline";
 
 const ALGORITHM = "AES-GCM";
 const IV_LENGTH = 12; // 96 bits recommended for AES-GCM
+const KEYSTORE_DB_NAME = "medacademy_offline_keystore";
+const KEYSTORE_STORE = "keys";
+const KEY_RECORD_ID = "clinical_outbox_aes_gcm_v1";
 
 /**
- * Отримує або генерує сесійний ключ для шифрування локальної черги на пристрої.
- * Ключ зберігається лише в оперативній пам'яті (in-memory) і зникає при закритті вкладки/сесії.
+ * Отримує або генерує ключ для шифрування локальної черги на пристрої.
+ * У браузері неекстрагований CryptoKey зберігається в IndexedDB, щоб офлайн-черга
+ * розшифровувалася після перезавантаження вкладки або PWA.
  */
 let sessionKeyCache: CryptoKey | null = null;
 let nodeSessionSecret: Buffer | null = null;
+
+function openKeystoreDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    if (typeof window === "undefined" || !window.indexedDB) {
+      return reject(new Error("IndexedDB unavailable"));
+    }
+    const req = window.indexedDB.open(KEYSTORE_DB_NAME, 1);
+    req.onupgradeneeded = (event) => {
+      const db = (event.target as IDBOpenDBRequest).result;
+      if (!db.objectStoreNames.contains(KEYSTORE_STORE)) {
+        db.createObjectStore(KEYSTORE_STORE);
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function loadPersistedCryptoKey(): Promise<CryptoKey | null> {
+  try {
+    const db = await openKeystoreDb();
+    return await new Promise<CryptoKey | null>((resolve) => {
+      const tx = db.transaction(KEYSTORE_STORE, "readonly");
+      const req = tx.objectStore(KEYSTORE_STORE).get(KEY_RECORD_ID);
+      req.onsuccess = () => resolve((req.result as CryptoKey) || null);
+      req.onerror = () => resolve(null);
+      tx.oncomplete = () => db.close();
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function savePersistedCryptoKey(key: CryptoKey): Promise<void> {
+  try {
+    const db = await openKeystoreDb();
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction(KEYSTORE_STORE, "readwrite");
+      tx.objectStore(KEYSTORE_STORE).put(key, KEY_RECORD_ID);
+      tx.oncomplete = () => {
+        db.close();
+        resolve();
+      };
+      tx.onerror = () => {
+        db.close();
+        resolve();
+      };
+    });
+  } catch {}
+}
+
+export async function clearSessionCryptoKey(): Promise<void> {
+  sessionKeyCache = null;
+  nodeSessionSecret = null;
+  try {
+    const db = await openKeystoreDb();
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction(KEYSTORE_STORE, "readwrite");
+      tx.objectStore(KEYSTORE_STORE).delete(KEY_RECORD_ID);
+      tx.oncomplete = () => {
+        db.close();
+        resolve();
+      };
+      tx.onerror = () => {
+        db.close();
+        resolve();
+      };
+    });
+  } catch {}
+}
 
 export async function getOrCreateSessionCryptoKey(): Promise<CryptoKey> {
   if (sessionKeyCache) return sessionKeyCache;
 
   if (typeof window !== "undefined" && window.crypto?.subtle) {
-    sessionKeyCache = await window.crypto.subtle.generateKey(
+    const persisted = await loadPersistedCryptoKey();
+    if (persisted) {
+      sessionKeyCache = persisted;
+      return persisted;
+    }
+
+    const generated = await window.crypto.subtle.generateKey(
       { name: ALGORITHM, length: 256 },
       false, // non-extractable for security
       ["encrypt", "decrypt"]
     );
-    return sessionKeyCache;
+    sessionKeyCache = generated;
+    await savePersistedCryptoKey(generated);
+    return generated;
   }
 
   // Node.js fallback for tests

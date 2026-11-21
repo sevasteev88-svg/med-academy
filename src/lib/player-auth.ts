@@ -198,11 +198,18 @@ export async function clearPlayerSessionCookie() {
  */
 export async function getClientIp(): Promise<string> {
   const headersList = await headers();
+  const vercelIp = headersList.get("x-vercel-forwarded-for");
+  if (vercelIp) return vercelIp.split(",")[0].trim();
+
+  const cfIp = headersList.get("cf-connecting-ip");
+  if (cfIp) return cfIp.trim();
+
+  const realIp = headersList.get("x-real-ip");
+  if (realIp) return realIp.trim();
+
   const forwardedFor = headersList.get("x-forwarded-for");
   if (forwardedFor) {
     return forwardedFor.split(",")[0].trim();
   }
-  const realIp = headersList.get("x-real-ip");
-  if (realIp) return realIp.trim();
   return "127.0.0.1";
 }

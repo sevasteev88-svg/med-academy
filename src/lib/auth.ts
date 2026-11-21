@@ -3,6 +3,9 @@ import crypto from "crypto";
 import { createClient } from "@/utils/supabase/server";
 import { createAdminClient } from "@/utils/supabase/admin";
 import { getPlayerSession } from "@/lib/player-auth";
+import { evaluateMfaPolicy } from "@/lib/mfa";
+import { DEMO_CLUB_ID } from "@/lib/demo-generator";
+import type { MfaAssuranceLevel } from "@/types/mfa";
 import { canUserAccessTeam } from "./team-access";
 import type { UserRole } from "@/types/database";
 
@@ -148,6 +151,63 @@ export function isCoach(role: UserRole): boolean {
 }
 
 /**
+ * Перевірка 2FA (AAL2) без блокування непідключених адміністраторів:
+ * - Якщо у користувача (admin/doctor) підключено 2FA (nextLevel === "aal2"), але поточна сесія лише aal1 — вимагає підтвердження.
+ * - Якщо клуб увімкнув enforce_doctor_mfa, лікар без підключеного 2FA отримує відмову до налаштування 2FA.
+ */
+async function checkMfaEnforcementForUser(user: AppUser): Promise<string | null> {
+  if (user.clubId === DEMO_CLUB_ID || user.role === "coach") {
+    return null;
+  }
+
+  try {
+    const supabase = await createClient();
+    const { data: aalData, error: aalErr } =
+      await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+
+    if (aalErr || !aalData) {
+      return null;
+    }
+
+    const currentAal = (aalData.currentLevel || "aal1") as MfaAssuranceLevel;
+    const hasEnrolledFactor = aalData.nextLevel === "aal2";
+
+    if (hasEnrolledFactor && currentAal !== "aal2") {
+      return "Потрібно підтвердити двофакторну автентифікацію (2FA) у розділі «Безпека».";
+    }
+
+    if (user.role === "doctor" && !hasEnrolledFactor) {
+      const admin = createAdminClient();
+      const { data: club } = await admin
+        .from("clubs")
+        .select("enforce_doctor_mfa, settings")
+        .eq("id", user.clubId)
+        .maybeSingle();
+
+      const enforceDoctorMfa =
+        Boolean((club as any)?.enforce_doctor_mfa) ||
+        Boolean((club?.settings as any)?.enforce_doctor_mfa);
+
+      if (enforceDoctorMfa) {
+        const policy = evaluateMfaPolicy({
+          role: user.role,
+          isClubEnforced: true,
+          hasMfaEnrolled: false,
+          currentAal,
+        });
+        if (!policy.allowed) {
+          return policy.reason;
+        }
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+/**
  * Перевіряє, чи користувач автентифікований і має роль адміністратора клубу.
  */
 export async function assertAdmin(): Promise<{ user: AppUser } | { error: string }> {
@@ -157,6 +217,10 @@ export async function assertAdmin(): Promise<{ user: AppUser } | { error: string
   }
   if (!isAdmin(user.role)) {
     return { error: "Недостатньо прав. Доступ лише для адміністраторів клубу." };
+  }
+  const mfaError = await checkMfaEnforcementForUser(user);
+  if (mfaError) {
+    return { error: mfaError };
   }
   return { user };
 }
@@ -172,6 +236,10 @@ export async function assertDoctor(): Promise<{ user: AppUser } | { error: strin
   }
   if (!isDoctor(user.role)) {
     return { error: "Недостатньо прав. Доступ лише для медичного штабу (лікаря)." };
+  }
+  const mfaError = await checkMfaEnforcementForUser(user);
+  if (mfaError) {
+    return { error: mfaError };
   }
   return { user };
 }

@@ -1,5 +1,6 @@
 import { createClient } from "@/utils/supabase/server";
 import { getCurrentUser, DEFAULT_CLUB_ID } from "@/lib/auth";
+import { loadClubPlayerPhotos } from "@/lib/player-photos";
 import Link from "next/link";
 import Image from "next/image";
 import Card from "@/components/ui/Card";
@@ -56,7 +57,9 @@ export default async function PlayersPage({
     );
   }
 
-  const [teamsRes, photosRes] = await Promise.all([
+  const clubIdForPhotos = user?.clubId || DEFAULT_CLUB_ID;
+
+  const [teamsRes, photoMap] = await Promise.all([
     supabase
       .from("teams")
       .select(`
@@ -67,33 +70,15 @@ export default async function PlayersPage({
           maturation_assessments ( risk_zone, growth_phase, created_at )
         )
       `)
-      .eq("club_id", user?.clubId || DEFAULT_CLUB_ID)
+      .eq("club_id", clubIdForPhotos)
       .order("sort_order", { ascending: true }),
-    supabase
-      .from("injury_logs")
-      .select("*")
-      .like("note", "[PLAYER_PHOTO]%")
-      .order("date", { ascending: false }),
+    loadClubPlayerPhotos(clubIdForPhotos),
   ]);
 
   let rawTeams = teamsRes.data || [];
   if (isCoach) {
     rawTeams = rawTeams.filter((t) => coachTeams.includes(t.id));
   }
-
-  // Карта фото гравців
-  const photoMap: Record<string, string> = {};
-  (photosRes.data || []).forEach((l) => {
-    try {
-      const rawJson = l.note.replace("[PLAYER_PHOTO] ", "");
-      const parsed = JSON.parse(rawJson);
-      if (parsed.player_id && !photoMap[parsed.player_id]) {
-        photoMap[parsed.player_id] = parsed.photo_url;
-      }
-    } catch {
-      // ignore
-    }
-  });
 
   // Усі доступні команди для фільтра
   const teamOptions = rawTeams.map((t) => ({ id: t.id, name: t.name }));

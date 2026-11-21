@@ -27,6 +27,13 @@ export default function VoiceNoteTextarea({
   const [voiceError, setVoiceError] = useState<string | null>(null);
 
   const recognitionRef = useRef<any>(null);
+  const valueRef = useRef(value);
+  const onChangeRef = useRef(onChange);
+
+  useEffect(() => {
+    valueRef.current = value;
+    onChangeRef.current = onChange;
+  }, [value, onChange]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -48,8 +55,11 @@ export default function VoiceNoteTextarea({
 
           if (transcript.trim()) {
             setHasUsedVoice(true);
+            const currentVal = valueRef.current;
             // Додаємо розпізнаний текст до наявного поля
-            onChange(value ? `${value.trim()} ${transcript.trim()}` : transcript.trim());
+            onChangeRef.current(
+              currentVal ? `${currentVal.trim()} ${transcript.trim()}` : transcript.trim()
+            );
           }
         };
 
@@ -75,7 +85,7 @@ export default function VoiceNoteTextarea({
         } catch {}
       }
     };
-  }, [value, onChange]);
+  }, []);
 
   const toggleListening = () => {
     if (!recognitionRef.current) return;

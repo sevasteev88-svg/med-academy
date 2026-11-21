@@ -1,9 +1,15 @@
 "use server";
 
 import { createClient } from "@/utils/supabase/server";
+import { createAdminClient } from "@/utils/supabase/admin";
 import { revalidatePath } from "next/cache";
 import { assertDoctor, assertPlayerAccess } from "@/lib/auth";
 import { hasConsent } from "@/lib/consents";
+import {
+  PLAYER_PHOTOS_BUCKET,
+  parseDataUrlImage,
+  formatStoragePhotoRef,
+} from "@/lib/player-photo-utils";
 import type { PlayerPhoto } from "@/types/photo";
 
 export async function savePlayerPhotoAction(input: {
@@ -25,13 +31,67 @@ export async function savePlayerPhotoAction(input: {
     return { error: "Потрібна згода батьків (область: Фото профілю)." };
   }
 
+  const parsed = parseDataUrlImage(input.photoUrl);
+  if ("error" in parsed) {
+    return { error: parsed.error };
+  }
+
+  const photoId = `photo_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const uploadedAt = new Date().toISOString();
+
+  // 1. Основний шлях: приватний Supabase Storage (player-photos) + players.photo_url
+  try {
+    const admin = createAdminClient();
+    const storagePath = `${clubId}/${input.playerId}/avatar.${parsed.ext}`;
+
+    const { error: uploadErr } = await admin.storage
+      .from(PLAYER_PHOTOS_BUCKET)
+      .upload(storagePath, parsed.buffer, {
+        contentType: parsed.mimeType,
+        upsert: true,
+      });
+
+    if (!uploadErr) {
+      const storageRef = formatStoragePhotoRef(storagePath);
+      const { error: updateErr } = await admin
+        .from("players")
+        .update({ photo_url: storageRef } as any)
+        .eq("id", input.playerId)
+        .eq("club_id", clubId);
+
+      if (!updateErr) {
+        const { data: signedData } = await admin.storage
+          .from(PLAYER_PHOTOS_BUCKET)
+          .createSignedUrl(storagePath, 3600);
+
+        revalidatePath(`/players/${input.playerId}`);
+        revalidatePath(`/players`);
+        revalidatePath(`/availability`);
+        revalidatePath(`/rtp`);
+
+        return {
+          success: true,
+          photo: {
+            id: photoId,
+            player_id: input.playerId,
+            photo_url: signedData?.signedUrl || input.photoUrl,
+            uploaded_at: uploadedAt,
+          } satisfies PlayerPhoto,
+        };
+      }
+    }
+  } catch (err) {
+    console.warn("[savePlayerPhotoAction] Storage/players.photo_url fallback to injury_logs:", err);
+  }
+
+  // 2. Fallback якщо міграцію 20261121160000 ще не застосовано в Supabase
   const supabase = await createClient();
 
   const photoRecord: PlayerPhoto = {
-    id: `photo_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    id: photoId,
     player_id: input.playerId,
     photo_url: input.photoUrl,
-    uploaded_at: new Date().toISOString(),
+    uploaded_at: uploadedAt,
   };
 
   const payload = `[PLAYER_PHOTO] ${JSON.stringify(photoRecord)}`;
@@ -59,6 +119,7 @@ export async function savePlayerPhotoAction(input: {
   revalidatePath(`/players/${input.playerId}`);
   revalidatePath(`/players`);
   revalidatePath(`/availability`);
+  revalidatePath(`/rtp`);
 
   return { success: true, photo: photoRecord };
 }

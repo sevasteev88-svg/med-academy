@@ -15,10 +15,10 @@ import {
   memoryPlayerDevices,
 } from "@/lib/player-device-auth";
 import {
-  checkRateLimit,
-  recordFailedAttempt,
-  resetAttempts,
-} from "@/lib/player-rate-limit";
+  checkRateLimitPersistent,
+  recordFailedAttemptPersistent,
+  resetAttemptsPersistent,
+} from "@/lib/player-rate-limit-server";
 import type {
   PlayerDevice,
   PlayerActivationToken,
@@ -37,14 +37,14 @@ export async function verifyAndActivateDeviceInternal(
   const userAgent = options?.userAgent || (await getClientUserAgent());
 
   if (!token || typeof token !== "string" || token.trim().length === 0) {
-    recordFailedAttempt(ip, true);
+    await recordFailedAttemptPersistent(ip, true);
     return { success: false, error: "Токен активації не передано" };
   }
 
   const cleanToken = token.trim();
   const tokenHash = hashTokenSha256(cleanToken);
 
-  const ipLimit = checkRateLimit(ip, true);
+  const ipLimit = await checkRateLimitPersistent(ip, true);
   if (ipLimit.isLocked) {
     return {
       success: false,
@@ -53,7 +53,7 @@ export async function verifyAndActivateDeviceInternal(
     };
   }
 
-  const tokenLimit = checkRateLimit(tokenHash, false);
+  const tokenLimit = await checkRateLimitPersistent(tokenHash, false);
   if (tokenLimit.isLocked) {
     return {
       success: false,
@@ -78,8 +78,10 @@ export async function verifyAndActivateDeviceInternal(
   }
 
   if (!tokenRecord) {
-    recordFailedAttempt(ip, true);
-    recordFailedAttempt(tokenHash, false);
+    await Promise.all([
+      recordFailedAttemptPersistent(ip, true),
+      recordFailedAttemptPersistent(tokenHash, false),
+    ]);
     return {
       success: false,
       error: "QR-код недійсний. Зверніться до тренера або лікаря клубу.",
@@ -87,8 +89,10 @@ export async function verifyAndActivateDeviceInternal(
   }
 
   if (tokenRecord.used_at) {
-    recordFailedAttempt(ip, true);
-    recordFailedAttempt(tokenHash, false);
+    await Promise.all([
+      recordFailedAttemptPersistent(ip, true),
+      recordFailedAttemptPersistent(tokenHash, false),
+    ]);
     return {
       success: false,
       error: "Цей QR-код вже був використаний для активації пристрою. Зверніться до лікаря або тренера для отримання нового QR.",
@@ -98,8 +102,10 @@ export async function verifyAndActivateDeviceInternal(
   const now = new Date();
   const expiresAt = new Date(tokenRecord.expires_at);
   if (now > expiresAt) {
-    recordFailedAttempt(ip, true);
-    recordFailedAttempt(tokenHash, false);
+    await Promise.all([
+      recordFailedAttemptPersistent(ip, true),
+      recordFailedAttemptPersistent(tokenHash, false),
+    ]);
     return {
       success: false,
       error: "Термін дії цього QR-коду закінчився. Зверніться до тренера/лікаря для генерації нового коду.",
@@ -201,8 +207,10 @@ export async function verifyAndActivateDeviceInternal(
     await setDeviceSessionCookie(deviceId, deviceSessionSecret, playerId);
   }
 
-  resetAttempts(ip, true);
-  resetAttempts(tokenHash, false);
+  await Promise.all([
+    resetAttemptsPersistent(ip, true),
+    resetAttemptsPersistent(tokenHash, false),
+  ]);
 
   await logAudit({
     action: "activate_player_device",
