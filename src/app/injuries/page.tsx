@@ -270,12 +270,16 @@ export default async function InjuriesListPage({
   const { data: rawInjuries, error } = await query;
 
   if (error) {
+    console.error("[injuries/page] query error:", error.message);
     return (
-      <div className="min-h-screen bg-[#070A13] text-rose-400 p-8">
-        <h1 className="text-lg font-bold mb-4">Помилка запиту травм:</h1>
-        <pre className="text-xs bg-slate-900/80 p-4 rounded-xl border border-rose-500/20 overflow-auto whitespace-pre-wrap">
-          {JSON.stringify(error, null, 2)}
-        </pre>
+      <div className="min-h-screen bg-[#070A13] text-slate-200 p-6 sm:p-8 flex items-center justify-center">
+        <div className="max-w-md w-full rounded-2xl bg-slate-900/90 border border-rose-500/30 p-6 text-center space-y-3">
+          <div className="text-2xl">⚠️</div>
+          <h1 className="text-base font-bold text-white">Не вдалося завантажити список травм</h1>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            Спробуйте оновити сторінку або зверніться до адміністратора, якщо помилка повторюється.
+          </p>
+        </div>
       </div>
     );
   }

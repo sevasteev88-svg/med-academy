@@ -200,10 +200,10 @@ export default function RiskAlertsCenter({
 
               <div className="flex items-center justify-between pt-2 border-t border-white/5 text-[10px]">
                 <Link
-                  href={`/players/${alert.playerId}`}
+                  href={alert.type === "pharmacy" ? "/pharmacy" : `/players/${alert.playerId}`}
                   className="text-sky-400 hover:text-sky-300 font-semibold"
                 >
-                  Перейти в профіль →
+                  {alert.type === "pharmacy" ? "Перейти в аптеку →" : "Перейти в профіль →"}
                 </Link>
                 <button
                   onClick={() => dismissAlert(alert.id)}
@@ -364,11 +364,11 @@ export default function RiskAlertsCenter({
 
                         <div className="flex items-center justify-between pt-1 text-[10px]">
                           <Link
-                            href={`/players/${alert.playerId}`}
+                            href={alert.type === "pharmacy" ? "/pharmacy" : `/players/${alert.playerId}`}
                             onClick={() => setIsOpen(false)}
                             className="text-sky-400 hover:text-sky-300 font-semibold"
                           >
-                            Картка гравця →
+                            {alert.type === "pharmacy" ? "Відкрити аптеку →" : "Картка гравця →"}
                           </Link>
                           <button
                             onClick={() => dismissAlert(alert.id)}

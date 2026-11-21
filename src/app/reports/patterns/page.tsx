@@ -1,4 +1,5 @@
 import { createClient } from "@/utils/supabase/server";
+import { getCurrentUser } from "@/lib/auth";
 import InjuryPatternsAI, {
   AggregatedPatternsData,
   PatternsSummary,
@@ -7,7 +8,44 @@ import { calculateExposureMetrics } from "@/lib/exposure-calculator";
 import Link from "next/link";
 
 export default async function InjuryPatternsPage() {
-  const supabase = await createClient();
+  const [supabase, user] = await Promise.all([createClient(), getCurrentUser()]);
+  const clubId = user?.clubId ?? null;
+
+  let injuriesQuery = supabase
+    .from("injuries")
+    .select(
+      `id, injury_type, location, side, severity, mechanism, vas_score,
+       status, date_of_injury, expected_return_date, actual_return_date, activity_type,
+       players!inner (
+         id, first_name, last_name, position, date_of_birth, sex,
+         teams!inner ( id, name )
+       )`
+    )
+    .order("date_of_injury", { ascending: false });
+
+  let maturationQuery = supabase
+    .from("maturation_assessments")
+    .select(
+      `player_id, consensus_offset, consensus_phv_age, growth_phase,
+       risk_zone, height_velocity, age_at_measurement, created_at,
+       players!inner ( first_name, last_name, date_of_birth, teams!inner ( name ) )`
+    )
+    .order("created_at", { ascending: false });
+
+  let teamPlayersQuery = supabase
+    .from("players")
+    .select("id, teams!inner ( id, name )");
+
+  let exposuresQuery = supabase
+    .from("exposures")
+    .select("id, team_id, date, type, minutes, players_count");
+
+  if (clubId) {
+    injuriesQuery = injuriesQuery.eq("club_id", clubId);
+    maturationQuery = maturationQuery.eq("club_id", clubId);
+    teamPlayersQuery = teamPlayersQuery.eq("club_id", clubId);
+    exposuresQuery = exposuresQuery.eq("club_id", clubId);
+  }
 
   // 1. Запити до бази даних
   const [
@@ -16,31 +54,10 @@ export default async function InjuryPatternsPage() {
     { data: teamPlayersRaw },
     { data: exposuresRaw },
   ] = await Promise.all([
-    supabase
-      .from("injuries")
-      .select(
-        `id, injury_type, location, side, severity, mechanism, vas_score,
-         status, date_of_injury, expected_return_date, actual_return_date, activity_type,
-         players!inner (
-           id, first_name, last_name, position, date_of_birth, sex,
-           teams!inner ( id, name )
-         )`
-      )
-      .order("date_of_injury", { ascending: false }),
-    supabase
-      .from("maturation_assessments")
-      .select(
-        `player_id, consensus_offset, consensus_phv_age, growth_phase,
-         risk_zone, height_velocity, age_at_measurement, created_at,
-         players!inner ( first_name, last_name, date_of_birth, teams!inner ( name ) )`
-      )
-      .order("created_at", { ascending: false }),
-    supabase
-      .from("players")
-      .select("id, teams!inner ( id, name )"),
-    supabase
-      .from("exposures")
-      .select("id, team_id, date, type, minutes, players_count"),
+    injuriesQuery,
+    maturationQuery,
+    teamPlayersQuery,
+    exposuresQuery,
   ]);
 
   // ─── Форматування ────────────────────────────────────────
@@ -219,9 +236,11 @@ export default async function InjuryPatternsPage() {
     },
     teamStats,
     exposureMetrics: {
-      hasData: false,
-      hours1000Rate: null,
-      placeholderNote: "Показники на 1000 годин з'являться після задачі 4.2",
+      hasData: exposureMetrics.hasSufficientData,
+      hours1000Rate: exposureMetrics.overallIncidence,
+      placeholderNote: exposureMetrics.hasSufficientData
+        ? `${exposureMetrics.displayLabel} (тренування: ${exposureMetrics.trainingDisplayLabel}, матчі: ${exposureMetrics.matchDisplayLabel}; тягар: ${exposureMetrics.burdenDisplayLabel})`
+        : "Недостатньо годин експозиції для розрахунку показника на 1000 годин",
     },
   };
 

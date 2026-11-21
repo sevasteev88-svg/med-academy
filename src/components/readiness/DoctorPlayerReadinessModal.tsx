@@ -285,9 +285,26 @@ export function DoctorPlayerReadinessModal({
   useEffect(() => {
     fetchLatestRecommendation();
     const timer = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
       fetchLatestRecommendation();
     }, 6000);
-    return () => clearInterval(timer);
+
+    const handleVisibilityChange = () => {
+      if (typeof document !== "undefined" && !document.hidden) {
+        fetchLatestRecommendation();
+      }
+    };
+
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+    }
+
+    return () => {
+      clearInterval(timer);
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
+      }
+    };
   }, [fetchLatestRecommendation]);
 
   const handleManualRefresh = async () => {

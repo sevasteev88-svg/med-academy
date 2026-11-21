@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { createClient } from "@/utils/supabase/server";
 import { assertAuth } from "@/lib/auth";
+import { getClubDate } from "@/lib/club-timezone";
 import WorkloadClient from "@/components/workload/WorkloadClient";
 import type {
   PlayerWorkloadSummary,
@@ -20,55 +21,84 @@ export default async function WorkloadPage({
 }: {
   searchParams: Promise<{ playerId?: string }>;
 }) {
-  await assertAuth();
+  const auth = await assertAuth();
+  const user = "user" in auth ? auth.user : null;
+  const clubId = user?.clubId ?? null;
+  const isCoach = user?.role === "coach";
+  const coachTeams = isCoach
+    ? (user?.teamIds && user.teamIds.length > 0 ? user.teamIds : (user?.teamId ? [user.teamId] : []))
+    : [];
+
   const { playerId } = await searchParams;
   const supabase = await createClient();
 
-  // 1. Fetch players (1.6 виключаємо архівних гравців)
-  const { data: players } = await supabase
-    .from("players")
-    .select("id, first_name, last_name, position, teams(name)")
-    .is("archived_at", null)
-    .order("last_name");
+  // 1. Fetch players (1.6 виключаємо архівних гравців та ізолюємо за клубом і командами тренера)
+  let players: any[] = [];
+  if (!isCoach || coachTeams.length > 0) {
+    let playersQuery = supabase
+      .from("players")
+      .select("id, first_name, last_name, position, team_id, teams(name)")
+      .is("archived_at", null)
+      .order("last_name");
+    if (clubId) playersQuery = playersQuery.eq("club_id", clubId);
+    if (isCoach && coachTeams.length > 0) {
+      playersQuery = playersQuery.in("team_id", coachTeams);
+    }
+    const { data: playersData } = await playersQuery;
+    players = playersData ?? [];
+  }
 
-  // 2. Fetch recent workload sessions
+  const visiblePlayerIds = players.map((p: any) => p.id).filter(Boolean);
+  const visiblePlayerIdSet = new Set<string>(visiblePlayerIds);
+
+  // Дати за часовим поясом клубу (60 днів для повного ACWR вікна + запас історії без обрізки limit(300))
+  const now = new Date();
+  const d7Ago = getClubDate("Europe/Kyiv", new Date(now.getTime() - 7 * 86400000));
+  const d28Ago = getClubDate("Europe/Kyiv", new Date(now.getTime() - 28 * 86400000));
+  const d60Ago = getClubDate("Europe/Kyiv", new Date(now.getTime() - 60 * 86400000));
+
+  // 2. Fetch recent workload sessions for visible players
   let workloadEntries: SessionRpeEntry[] = [];
 
-  const { data: directSessions } = await supabase
-    .from("workload_sessions")
-    .select("*")
-    .order("date", { ascending: false })
-    .limit(300);
-
-  if (directSessions && directSessions.length > 0) {
-    workloadEntries = directSessions as any;
-  } else {
-    // Fallback: читаємо з injury_logs [WORKLOAD]
-    const { data: logs } = await supabase
-      .from("injury_logs")
+  if (visiblePlayerIds.length > 0) {
+    const { data: directSessions } = await supabase
+      .from("workload_sessions")
       .select("*")
-      .like("note", "[WORKLOAD]%")
-      .order("date", { ascending: false })
-      .limit(300);
+      .in("player_id", visiblePlayerIds)
+      .gte("date", d60Ago)
+      .order("date", { ascending: false });
 
-    if (logs) {
-      workloadEntries = logs
-        .map((l) => {
-          try {
-            const rawJson = l.note.replace("[WORKLOAD] ", "");
-            return JSON.parse(rawJson) as SessionRpeEntry;
-          } catch {
-            return null;
-          }
-        })
-        .filter(Boolean) as SessionRpeEntry[];
+    if (directSessions && directSessions.length > 0) {
+      workloadEntries = directSessions as any;
+    } else {
+      // Fallback: читаємо з injury_logs [WORKLOAD]
+      let logsQuery = supabase
+        .from("injury_logs")
+        .select("*")
+        .like("note", "[WORKLOAD]%")
+        .gte("date", d60Ago)
+        .order("date", { ascending: false });
+      if (clubId) logsQuery = logsQuery.eq("club_id", clubId);
+      const { data: logs } = await logsQuery;
+
+      if (logs) {
+        workloadEntries = logs
+          .map((l) => {
+            try {
+              const rawJson = l.note.replace("[WORKLOAD] ", "");
+              return JSON.parse(rawJson) as SessionRpeEntry;
+            } catch {
+              return null;
+            }
+          })
+          .filter((entry): entry is SessionRpeEntry =>
+            Boolean(entry && visiblePlayerIdSet.has(entry.player_id))
+          );
+      }
     }
   }
 
   // 3. Розрахунок ACWR для кожного гравця
-  const now = new Date();
-  const d7Ago = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-  const d28Ago = new Date(now.getTime() - 28 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
 
   const summaries: PlayerWorkloadSummary[] = (players || []).map((p: any) => {
     const pSessions = workloadEntries.filter((e) => e.player_id === p.id);

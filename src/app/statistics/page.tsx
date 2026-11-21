@@ -224,7 +224,7 @@ function RankingCard({
           <div key={item.name} className="flex justify-between items-center">
             <span className="text-sm text-slate-300 min-w-0 truncate">{item.name}</span>
             <div className="flex items-center gap-2 shrink-0">
-              <div className={`h-1.5 rounded-full ${colorClass}/30 w-16 overflow-hidden`}>
+              <div className="h-1.5 rounded-full bg-slate-800/80 w-16 overflow-hidden">
                 <div
                   className={`h-full rounded-full ${colorClass}`}
                   style={{ width: `${(item.count / max) * 100}%` }}

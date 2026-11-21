@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useTransition, useEffect } from "react";
+import { Suspense, useState, useTransition, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import { enterDemoClubAction } from "@/actions/demo-actions";
 
-export default function DemoLandingPage() {
+function DemoLandingContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const autoEnter = searchParams.get("auto") === "1";
@@ -134,5 +134,13 @@ export default function DemoLandingPage() {
         MedAcademy SaaS · Спортивна медицина та підписки для футбольних академій
       </div>
     </div>
+  );
+}
+
+export default function DemoLandingPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-950" />}>
+      <DemoLandingContent />
+    </Suspense>
   );
 }

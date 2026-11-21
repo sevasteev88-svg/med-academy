@@ -65,15 +65,16 @@ export default function RehabPortalClient({
   const [activeTab, setActiveTab] = useState<"plan" | "checkin" | "progress">("checkin");
 
   // Режим відображення щоденної анкети: Quiz (інтерактивний покроковий) або швидка компактна форма
-  const [checkinMode, setCheckinMode] = useState<"quiz" | "compact">(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const saved = localStorage.getItem("med_player_checkin_mode");
-        if (saved === "compact" || saved === "quiz") return saved;
-      } catch {}
-    }
-    return "quiz";
-  });
+  const [checkinMode, setCheckinMode] = useState<"quiz" | "compact">("quiz");
+
+  React.useEffect(() => {
+    try {
+      const saved = localStorage.getItem("med_player_checkin_mode");
+      if (saved === "compact" || saved === "quiz") {
+        setCheckinMode(saved);
+      }
+    } catch {}
+  }, []);
 
   // Exercises & Quests state
   const [exercises, setExercises] = useState<RehabExerciseItem[]>([]);

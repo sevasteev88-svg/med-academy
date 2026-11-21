@@ -1,6 +1,5 @@
-const CACHE_NAME = "med-academy-v2";
+const CACHE_NAME = "med-academy-v3";
 const STATIC_ASSETS = [
-  "/",
   "/manifest.json",
   "/icon-192.png",
   "/icon-512.png",
@@ -32,8 +31,8 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
-  // Network first with cache fallback for navigation and static assets
-  if (event.request.method !== "GET") return;
+  // Ніколи не кешуємо HTML-навігацію з медичними даними
+  if (event.request.method !== "GET" || event.request.mode === "navigate") return;
 
   event.respondWith(
     fetch(event.request).catch(() => {

@@ -91,10 +91,22 @@ export default async function AvailabilityPage() {
       }),
   }));
 
+  const scopedSummary = isCoach
+    ? (() => {
+        const scopedPlayers = activeTeams.flatMap((t: any) => t.players);
+        return {
+          total: scopedPlayers.length,
+          available: scopedPlayers.filter((p: any) => p.status === "available").length,
+          restricted: scopedPlayers.filter((p: any) => p.status === "restricted").length,
+          unavailable: scopedPlayers.filter((p: any) => p.status === "unavailable").length,
+        };
+      })()
+    : availabilityReport.summary;
+
   return (
     <AvailabilityClient
       teams={activeTeams as any}
-      summary={availabilityReport.summary}
+      summary={scopedSummary}
     />
   );
 }

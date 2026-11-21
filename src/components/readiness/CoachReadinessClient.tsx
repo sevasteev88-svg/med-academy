@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useTransition } from "react";
+import React, { useState, useTransition, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   type PlayerReadinessResult,
   type ReadinessColor,
@@ -19,6 +20,13 @@ import { sendMorningWellnessRemindersAction } from "@/actions/telegram-actions";
 import { DoctorPlayerReadinessModal } from "./DoctorPlayerReadinessModal";
 import CoachParentAlertsBanner from "@/components/coach/CoachParentAlertsBanner";
 import type { CoachParentAlertItem } from "@/types/parent-portal";
+
+function formatUtcDate(d: Date): string {
+  const year = d.getUTCFullYear();
+  const month = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 
 interface Props {
   initialPlayers: PlayerReadinessResult[];
@@ -41,6 +49,7 @@ export default function CoachReadinessClient({
   teamCompliance,
   parentAlerts = [],
 }: Props) {
+  const router = useRouter();
   const [players, setPlayers] = useState<PlayerReadinessResult[]>(initialPlayers);
   const [selectedTeamId, setSelectedTeamId] = useState(currentTeamId);
   const [filterStatus, setFilterStatus] = useState<"all" | "attention" | "green" | "gray">("all");
@@ -52,6 +61,14 @@ export default function CoachReadinessClient({
   const [isSendingReminder, setIsSendingReminder] = useState(false);
   const [isGuideOpen, setIsGuideOpen] = useState(true);
   const [, startTransition] = useTransition();
+
+  useEffect(() => {
+    setPlayers(initialPlayers);
+  }, [initialPlayers]);
+
+  useEffect(() => {
+    setSelectedTeamId(currentTeamId);
+  }, [currentTeamId]);
 
   const isDoctorOrAdmin = userRole === "doctor" || userRole === "admin";
 
@@ -69,23 +86,21 @@ export default function CoachReadinessClient({
   const changeDate = (newDate: string) => {
     const url = new URL(window.location.href);
     url.searchParams.set("date", newDate);
-    window.location.href = url.toString();
+    router.push(`${url.pathname}${url.search}`);
   };
 
   const handlePrevDay = () => {
     const parts = currentDate.split("-").map(Number);
     const d = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
     d.setUTCDate(d.getUTCDate() - 1);
-    const prevStr = d.toISOString().split("T")[0];
-    changeDate(prevStr);
+    changeDate(formatUtcDate(d));
   };
 
   const handleNextDay = () => {
     const parts = currentDate.split("-").map(Number);
     const d = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
     d.setUTCDate(d.getUTCDate() + 1);
-    const nextStr = d.toISOString().split("T")[0];
-    changeDate(nextStr);
+    changeDate(formatUtcDate(d));
   };
 
   const handleSendTelegramReminder = async () => {
@@ -281,7 +296,7 @@ export default function CoachReadinessClient({
                   setSelectedTeamId(e.target.value);
                   const url = new URL(window.location.href);
                   url.searchParams.set("teamId", e.target.value);
-                  window.location.href = url.toString();
+                  router.push(`${url.pathname}${url.search}`);
                 }}
                 className="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-xl px-3 py-1.5 focus:outline-none focus:border-sky-500"
               >
