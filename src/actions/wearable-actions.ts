@@ -4,11 +4,9 @@ import { createClient } from "@/utils/supabase/server";
 import { createAdminClient } from "@/utils/supabase/admin";
 import { revalidatePath } from "next/cache";
 import {
-  assertAuth,
   assertDoctor,
-  isDoctor,
-  isCoach,
-  DEFAULT_CLUB_ID,
+  assertPlayerAccess,
+  assertPlayerOrStaffAccess,
 } from "@/lib/auth";
 import { getPlayerConsentSummary } from "@/lib/consents";
 import { getClubDate, getPlayerClubTimezone } from "@/lib/club-timezone";
@@ -57,16 +55,31 @@ export async function checkPlayerWearablesAccessAction(playerId: string): Promis
     };
   }
 
-  const summary = await getPlayerConsentSummary(playerId);
+  const authCheck = await assertPlayerOrStaffAccess(playerId, { allowCoach: false });
+  if ("error" in authCheck) {
+    return {
+      canUseWearables: false,
+      isMinor: false,
+      wearablesConsentGranted: false,
+      aiScreenshotEnabled: false,
+      aiProcessingConsentGranted: false,
+      reason: authCheck.error,
+    };
+  }
+
+  const [{ clubId }, summary] = await Promise.all([
+    getPlayerClubTimezone(playerId),
+    getPlayerConsentSummary(playerId),
+  ]);
   const supabase = createAdminClient();
 
-  // Отримуємо налаштування клубу
+  // Отримуємо налаштування клубу гравця
   let aiScreenshotEnabled = false;
   try {
     const { data: club } = await supabase
       .from("clubs")
       .select("settings")
-      .eq("id", DEFAULT_CLUB_ID)
+      .eq("id", clubId)
       .maybeSingle();
 
     aiScreenshotEnabled = Boolean(
@@ -115,7 +128,12 @@ export async function getTodayWearableEntryAction(playerId: string): Promise<{
 }> {
   if (!playerId) return { entry: null, today: "" };
 
-  const { clubId, timezone } = await getPlayerClubTimezone(playerId);
+  const authCheck = await assertPlayerOrStaffAccess(playerId, { allowCoach: false });
+  if ("error" in authCheck) {
+    return { entry: null, today: "" };
+  }
+
+  const { timezone } = await getPlayerClubTimezone(playerId);
   const today = getClubDate(timezone);
   const supabase = createAdminClient();
 
@@ -149,19 +167,10 @@ export async function submitWearableEntryAction(
     return { success: false, error: "Не вказано гравця" };
   }
 
-  // 1. Перевірка авторизації
-  const auth = await assertAuth();
-  if ("error" in auth) {
-    return { success: false, error: auth.error };
-  }
-  const { user } = auth;
-
-  // ТРЕНЕРУ СУВОРО ЗАБОРОНЕНО ВНОСИТИ ЧИ РЕДАГУВАТИ ДАНІ ГОДИННИКА
-  if (isCoach(user.role)) {
-    return {
-      success: false,
-      error: "Недостатньо прав. Доступ лише для гравця або медичного штабу.",
-    };
+  // 1. Перевірка авторизації (гравець для себе або лікар/адмін клубу; тренерам заборонено)
+  const authCheck = await assertPlayerOrStaffAccess(input.playerId, { allowCoach: false });
+  if ("error" in authCheck) {
+    return { success: false, error: authCheck.error };
   }
 
   // 2. Перевірка згоди для неповнолітніх
@@ -274,17 +283,15 @@ export async function getWearableBaselineReportAction(
     return { error: "Не вказано гравця" };
   }
 
-  // Перевірка ролі: ТІЛЬКИ лікар та адмін (або сам гравець для свого профілю)
-  const auth = await assertAuth();
+  // Перевірка ролі та клубу: ТІЛЬКИ лікар та адмін клубу
+  const auth = await assertDoctor();
   if ("error" in auth) {
     return { error: auth.error };
   }
-  const { user } = auth;
 
-  if (isCoach(user.role)) {
-    return {
-      error: "Доступ заборонено. Біометричні дані з годинника доступні лише лікарю та адміністратору.",
-    };
+  const access = await assertPlayerAccess(auth.user, playerId, { allowCoach: false });
+  if ("error" in access) {
+    return { error: access.error };
   }
 
   const { clubId, timezone } = await getPlayerClubTimezone(playerId);
@@ -364,6 +371,25 @@ export async function parseWearableScreenshotAction(input: {
       success: false,
       disclaimer: WEARABLES_DISCLAIMER_TEXT,
       error: "Необхідно надати зображення для аналізу",
+    };
+  }
+
+  // Захист від перевантаження пам'яті: максимальний розмір зображення 5 МБ (~6.8M символів Base64)
+  const MAX_BASE64_LENGTH = 7_000_000;
+  if (input.imageBase64.length > MAX_BASE64_LENGTH) {
+    return {
+      success: false,
+      disclaimer: WEARABLES_DISCLAIMER_TEXT,
+      error: "Розмір зображення перевищує максимально допустимі 5 МБ. Будь ласка, завантажте менший скріншот.",
+    };
+  }
+
+  const authCheck = await assertPlayerOrStaffAccess(input.playerId, { allowCoach: false });
+  if ("error" in authCheck) {
+    return {
+      success: false,
+      disclaimer: WEARABLES_DISCLAIMER_TEXT,
+      error: authCheck.error,
     };
   }
 

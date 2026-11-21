@@ -9,6 +9,14 @@ export async function createRehabPhasesFromTemplate(injuryId: string) {
   if ("error" in auth) return { error: auth.error };
 
   const supabase = await createClient();
+  const { data: inj } = await supabase
+    .from("injuries")
+    .select("id")
+    .eq("id", injuryId)
+    .eq("club_id", auth.user.clubId)
+    .maybeSingle();
+  if (!inj) return { error: "Травму не знайдено або доступ заборонено" };
+
   const phases = REHAB_TEMPLATE.map((name, i) => ({
     club_id: auth.user.clubId,
     injury_id: injuryId,
@@ -28,6 +36,14 @@ export async function addCustomRehabPhase(injuryId: string, name: string, afterO
   if ("error" in auth) return { error: auth.error };
 
   const supabase = await createClient();
+  const { data: inj } = await supabase
+    .from("injuries")
+    .select("id")
+    .eq("id", injuryId)
+    .eq("club_id", auth.user.clubId)
+    .maybeSingle();
+  if (!inj) return { error: "Травму не знайдено або доступ заборонено" };
+
   const { error } = await supabase.from("rehab_phases").insert({
     club_id: auth.user.clubId,
     injury_id: injuryId,
@@ -49,7 +65,11 @@ export async function updateRehabPhaseStatus(phaseId: string, newStatus: string,
   const today = new Date().toISOString().split("T")[0];
   if (newStatus === "in_progress") update.started_at = today;
   if (newStatus === "completed") update.completed_at = today;
-  const { error } = await supabase.from("rehab_phases").update(update).eq("id", phaseId);
+  const { error } = await supabase
+    .from("rehab_phases")
+    .update(update)
+    .eq("id", phaseId)
+    .eq("club_id", auth.user.clubId);
   if (error) return { error: error.message };
   revalidatePath(`/injuries/${injuryId}`);
   return { success: true };

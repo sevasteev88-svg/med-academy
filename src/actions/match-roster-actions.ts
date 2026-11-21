@@ -2,8 +2,14 @@
 
 import { createClient } from "@/utils/supabase/server";
 import { createAdminClient } from "@/utils/supabase/admin";
-import { assertAuth, DEFAULT_CLUB_ID } from "@/lib/auth";
+import {
+  assertTeamStaff,
+  assertTeamAccess,
+  isCoach,
+  DEFAULT_CLUB_ID,
+} from "@/lib/auth";
 import { canUserAccessTeam, isDoctorRole } from "@/lib/team-access";
+import { getClubDate, getClubTimezone } from "@/lib/club-timezone";
 import type { MatchdayRoster } from "@/types/roster";
 import { revalidatePath } from "next/cache";
 
@@ -20,25 +26,27 @@ export async function getMatchdayRosterAction(
   teamName: string,
   matchDate?: string
 ): Promise<{ roster: MatchdayRoster | null; error?: string }> {
-  const auth = await assertAuth();
+  const auth = await assertTeamStaff();
   if ("error" in auth) {
     return { roster: null, error: auth.error };
   }
 
   const { user } = auth;
-  const clubId = user.clubId || DEFAULT_CLUB_ID;
+  const clubId = user.clubId;
   const admin = createAdminClient();
-  const date = matchDate || new Date().toISOString().split("T")[0];
+  const timezone = await getClubTimezone(clubId);
+  const date = matchDate || getClubDate(timezone);
 
-  // Перевірка прав тренера: шукаємо команду за назвою для звірки teamId
-  if (user.role === "coach") {
+  // Перевірка прав тренера: шукаємо команду за назвою у межах клубу для звірки teamId
+  if (isCoach(user.role)) {
     const { data: teamData } = await admin
       .from("teams")
       .select("id, name")
+      .eq("club_id", clubId)
       .eq("name", teamName)
       .maybeSingle();
 
-    if (teamData && !canUserAccessTeam(user, teamData.id)) {
+    if (!teamData || !canUserAccessTeam(user, teamData.id)) {
       return {
         roster: null,
         error: "У вас немає доступу до цієї вікової категорії (команди).",
@@ -112,47 +120,51 @@ export async function getMatchdayRosterAction(
 export async function saveMatchdayRosterAction(
   roster: MatchdayRoster
 ): Promise<SaveRosterResult> {
-  const auth = await assertAuth();
+  const auth = await assertTeamStaff();
   if ("error" in auth) {
     return { error: auth.error };
   }
 
   const { user } = auth;
-  const clubId = user.clubId || DEFAULT_CLUB_ID;
+  const clubId = user.clubId;
   const admin = createAdminClient();
 
-  // Перевірка доступу тренера
-  if (user.role === "coach") {
-    let targetTeamId = roster.teamId;
-    if (!targetTeamId) {
-      const { data: teamData } = await admin
-        .from("teams")
-        .select("id")
-        .eq("name", roster.teamName)
-        .maybeSingle();
-      targetTeamId = teamData?.id;
+  let resolvedTeamId = roster.teamId;
+  if (resolvedTeamId) {
+    const teamAccess = await assertTeamAccess(user, resolvedTeamId, {
+      allowCoach: true,
+    });
+    if ("error" in teamAccess) {
+      return { error: teamAccess.error };
     }
+    resolvedTeamId = teamAccess.team.id;
+  } else {
+    const { data: teamData } = await admin
+      .from("teams")
+      .select("id")
+      .eq("club_id", clubId)
+      .eq("name", roster.teamName)
+      .maybeSingle();
 
-    if (targetTeamId && !canUserAccessTeam(user, targetTeamId)) {
+    if (isCoach(user.role) && !teamData) {
       return {
         error: "У вас немає прав на зміну заявки для цієї команди.",
       };
     }
-  }
-
-  // Знаходимо team_id якщо не передано
-  let resolvedTeamId = roster.teamId;
-  if (!resolvedTeamId) {
-    const { data: t } = await admin
-      .from("teams")
-      .select("id")
-      .eq("name", roster.teamName)
-      .maybeSingle();
-    resolvedTeamId = t?.id;
+    if (teamData) {
+      const teamAccess = await assertTeamAccess(user, teamData.id, {
+        allowCoach: true,
+      });
+      if ("error" in teamAccess) {
+        return { error: teamAccess.error };
+      }
+      resolvedTeamId = teamAccess.team.id;
+    }
   }
 
   const nowIso = new Date().toISOString();
-  const matchDate = roster.matchDate || nowIso.split("T")[0];
+  const timezone = await getClubTimezone(clubId);
+  const matchDate = roster.matchDate || getClubDate(timezone);
 
   // 1. Спроба збереження в таблицю match_rosters
   try {
@@ -181,6 +193,7 @@ export async function saveMatchdayRosterAction(
           updated_at: nowIso,
         })
         .eq("id", existing.id)
+        .eq("club_id", clubId)
         .select()
         .single();
 
@@ -314,43 +327,64 @@ export type PostMatchReportResult = {
 export async function savePostMatchReportAction(
   input: SavePostMatchReportInput
 ): Promise<PostMatchReportResult> {
-  const auth = await assertAuth();
+  const auth = await assertTeamStaff();
   if ("error" in auth) {
     return { error: auth.error };
   }
 
   const { user } = auth;
-  const clubId = user.clubId || DEFAULT_CLUB_ID;
+  const clubId = user.clubId;
   const admin = createAdminClient();
 
-  // Перевірка прав тренера
-  if (user.role === "coach") {
-    let targetTeamId = input.teamId;
-    if (!targetTeamId) {
-      const { data: teamData } = await admin
-        .from("teams")
-        .select("id")
-        .eq("name", input.teamName)
-        .maybeSingle();
-      targetTeamId = teamData?.id;
+  let resolvedTeamId = input.teamId;
+  if (resolvedTeamId) {
+    const teamAccess = await assertTeamAccess(user, resolvedTeamId, {
+      allowCoach: true,
+    });
+    if ("error" in teamAccess) {
+      return { error: teamAccess.error };
     }
+    resolvedTeamId = teamAccess.team.id;
+  } else {
+    const { data: teamData } = await admin
+      .from("teams")
+      .select("id")
+      .eq("club_id", clubId)
+      .eq("name", input.teamName)
+      .maybeSingle();
 
-    if (targetTeamId && !canUserAccessTeam(user, targetTeamId)) {
+    if (isCoach(user.role) && !teamData) {
       return {
         error: "У вас немає доступу для внесення звіту по цій команді.",
       };
     }
+    if (teamData) {
+      const teamAccess = await assertTeamAccess(user, teamData.id, {
+        allowCoach: true,
+      });
+      if ("error" in teamAccess) {
+        return { error: teamAccess.error };
+      }
+      resolvedTeamId = teamAccess.team.id;
+    }
   }
 
-  // Отримуємо команду id
-  let resolvedTeamId = input.teamId;
-  if (!resolvedTeamId) {
-    const { data: t } = await admin
-      .from("teams")
-      .select("id")
-      .eq("name", input.teamName)
-      .maybeSingle();
-    resolvedTeamId = t?.id;
+  const allowedPlayerIds = new Set<string>();
+  const inputPlayerIds = Array.from(
+    new Set(input.players.map((p) => p.playerId).filter(Boolean))
+  );
+  if (inputPlayerIds.length > 0) {
+    const { data: validPlayers } = await admin
+      .from("players")
+      .select("id, team_id")
+      .eq("club_id", clubId)
+      .in("id", inputPlayerIds);
+
+    for (const vp of validPlayers || []) {
+      if (!isCoach(user.role) || canUserAccessTeam(user, vp.team_id)) {
+        allowedPlayerIds.add(vp.id);
+      }
+    }
   }
 
   // Отримуємо поточні обмеження гравців клубу для виявлення перенавантажень
@@ -380,6 +414,10 @@ export async function savePostMatchReportAction(
   let playersWithMinutesCount = 0;
 
   for (const p of input.players) {
+    if (!allowedPlayerIds.has(p.playerId)) {
+      continue;
+    }
+
     const played = Math.max(0, Number(p.minutesPlayed) || 0);
     const rpe = Math.max(1, Math.min(10, Number(p.rpeScore) || Number(input.matchRpe) || 7));
     const workloadAu = played * rpe;
@@ -414,6 +452,7 @@ export async function savePostMatchReportAction(
       await admin
         .from("workload_sessions")
         .delete()
+        .eq("club_id", clubId)
         .eq("player_id", p.playerId)
         .eq("date", input.matchDate);
 
@@ -437,25 +476,28 @@ export async function savePostMatchReportAction(
   }
 
   // 2. Запис у exposures для розрахунку incidence rate на 1000 матч-годин
-  try {
-    await admin
-      .from("exposures")
-      .delete()
-      .eq("team_id", resolvedTeamId)
-      .eq("date", input.matchDate);
+  if (resolvedTeamId) {
+    try {
+      await admin
+        .from("exposures")
+        .delete()
+        .eq("club_id", clubId)
+        .eq("team_id", resolvedTeamId)
+        .eq("date", input.matchDate);
 
-    if (playersWithMinutesCount > 0) {
-      await admin.from("exposures").insert({
-        club_id: clubId,
-        team_id: resolvedTeamId,
-        date: input.matchDate,
-        type: "match",
-        minutes: 90,
-        players_count: playersWithMinutesCount,
-        notes: `Календарний матч: ${input.teamName} — ${input.opponent} (${input.score || "фінальний рахунок"}).`,
-      });
-    }
-  } catch {}
+      if (playersWithMinutesCount > 0) {
+        await admin.from("exposures").insert({
+          club_id: clubId,
+          team_id: resolvedTeamId,
+          date: input.matchDate,
+          type: "match",
+          minutes: 90,
+          players_count: playersWithMinutesCount,
+          notes: `Календарний матч: ${input.teamName} — ${input.opponent} (${input.score || "фінальний рахунок"}).`,
+        });
+      }
+    } catch {}
+  }
 
   revalidatePath("/reports/matchday");
   revalidatePath("/training");

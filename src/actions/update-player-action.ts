@@ -3,7 +3,7 @@
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { assertDoctor } from "@/lib/auth";
+import { assertDoctor, assertPlayerAccess, assertTeamAccess } from "@/lib/auth";
 import { normalizePosition, toDbPositionEn } from "@/lib/dictionaries";
 
 export type UpdatePlayerState = {
@@ -33,6 +33,12 @@ export async function updatePlayerAction(
     return { error: "Заповніть всі обов'язкові поля" };
   }
 
+  const playerAccess = await assertPlayerAccess(auth.user, playerId, { allowCoach: false });
+  if ("error" in playerAccess) return { error: playerAccess.error };
+
+  const teamAccess = await assertTeamAccess(auth.user, teamId, { allowCoach: false });
+  if ("error" in teamAccess) return { error: teamAccess.error };
+
   const baseUpdate = {
     team_id: teamId,
     first_name: firstName.trim(),
@@ -46,13 +52,15 @@ export async function updatePlayerAction(
   let { error } = await supabase
     .from("players")
     .update({ ...baseUpdate, position: toDbPositionEn(position) })
-    .eq("id", playerId);
+    .eq("id", playerId)
+    .eq("club_id", auth.user.clubId);
 
   if (error?.message?.includes("chk_player_canonical_position")) {
     const retry = await supabase
       .from("players")
       .update({ ...baseUpdate, position: normalizePosition(position) })
-      .eq("id", playerId);
+      .eq("id", playerId)
+      .eq("club_id", auth.user.clubId);
     error = retry.error;
   }
 

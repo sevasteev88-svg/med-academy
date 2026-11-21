@@ -2,7 +2,7 @@
 
 import { createClient } from "@/utils/supabase/server";
 import { createAdminClient } from "@/utils/supabase/admin";
-import { assertDoctor, DEFAULT_CLUB_ID } from "@/lib/auth";
+import { assertAuth, assertDoctor, isAdmin, DEFAULT_CLUB_ID } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import {
   type MatchdayProtocolClubSettings,
@@ -30,6 +30,10 @@ export interface ClubFullSettings {
     maskedBotToken: string;
     maskedChatId: string;
     botUsername: string;
+    isMedicalChatConfigured: boolean;
+    maskedMedicalChatId: string;
+    doctorTelegram: string;
+    doctorPhone: string;
   };
   teams: Array<{
     id: string;
@@ -44,9 +48,14 @@ export interface ClubFullSettings {
  * Отримує налаштування передматчевого протоколу клубу
  */
 export async function getMatchdayProtocolSettingsAction(
-  clubId?: string
+  _clubId?: string
 ): Promise<MatchdayProtocolClubSettings> {
-  const targetClubId = clubId || DEFAULT_CLUB_ID;
+  const auth = await assertAuth();
+  if ("error" in auth || !auth.user.clubId) {
+    return DEFAULT_PROTOCOL_SETTINGS;
+  }
+
+  const targetClubId = auth.user.clubId;
   const admin = createAdminClient();
 
   try {
@@ -85,7 +94,7 @@ export async function saveMatchdayProtocolSettingsAction(
   const auth = await assertDoctor();
   if ("error" in auth) return { error: auth.error };
 
-  const targetClubId = auth.user.clubId || DEFAULT_CLUB_ID;
+  const targetClubId = auth.user.clubId;
   const admin = createAdminClient();
 
   try {
@@ -137,7 +146,7 @@ export async function getComprehensiveClubSettingsAction(): Promise<{
   const auth = await assertDoctor();
   if ("error" in auth) return { error: auth.error };
 
-  const targetClubId = auth.user.clubId || DEFAULT_CLUB_ID;
+  const targetClubId = auth.user.clubId;
   const admin = createAdminClient();
 
   try {
@@ -162,8 +171,10 @@ export async function getComprehensiveClubSettingsAction(): Promise<{
 
     const rawEncryptedToken = settings.telegram?.encrypted_token || "";
     const rawEncryptedChatId = settings.telegram?.encrypted_chat_id || "";
+    const rawEncryptedMedicalChatId = settings.telegram?.encrypted_medical_chat_id || "";
     const decryptedToken = decryptServerSecret(rawEncryptedToken);
     const decryptedChatId = decryptServerSecret(rawEncryptedChatId);
+    const decryptedMedicalChatId = decryptServerSecret(rawEncryptedMedicalChatId);
 
     const teams = (teamsData || []).map((t: any) => ({
       id: t.id,
@@ -197,6 +208,10 @@ export async function getComprehensiveClubSettingsAction(): Promise<{
           maskedBotToken: decryptedToken ? maskSecretValue(decryptedToken) : "",
           maskedChatId: decryptedChatId ? maskSecretValue(decryptedChatId) : "",
           botUsername: settings.telegram?.bot_username || "",
+          isMedicalChatConfigured: Boolean(decryptedMedicalChatId),
+          maskedMedicalChatId: decryptedMedicalChatId ? maskSecretValue(decryptedMedicalChatId) : "",
+          doctorTelegram: settings.telegram?.doctor_telegram || "",
+          doctorPhone: settings.telegram?.doctor_phone || "",
         },
         teams,
       },
@@ -222,11 +237,14 @@ export async function saveComprehensiveClubSettingsAction(input: {
   newTelegramToken?: string;
   newTelegramChatId?: string;
   telegramBotUsername?: string;
+  newMedicalChatId?: string;
+  doctorTelegram?: string;
+  doctorPhone?: string;
 }): Promise<{ success?: boolean; error?: string }> {
   const auth = await assertDoctor();
   if ("error" in auth) return { error: auth.error };
 
-  const targetClubId = auth.user.clubId || DEFAULT_CLUB_ID;
+  const targetClubId = auth.user.clubId;
   const admin = createAdminClient();
 
   try {
@@ -249,6 +267,21 @@ export async function saveComprehensiveClubSettingsAction(input: {
     if (input.newTelegramChatId && input.newTelegramChatId.trim().length > 0) {
       encryptedChatId = encryptServerSecret(input.newTelegramChatId.trim());
     }
+
+    let encryptedMedicalChatId = currentTelegram.encrypted_medical_chat_id || "";
+    if (input.newMedicalChatId && input.newMedicalChatId.trim().length > 0) {
+      encryptedMedicalChatId = encryptServerSecret(input.newMedicalChatId.trim());
+    }
+
+    const updatedDoctorTelegram =
+      input.doctorTelegram !== undefined
+        ? input.doctorTelegram.trim()
+        : (currentTelegram.doctor_telegram || "");
+
+    const updatedDoctorPhone =
+      input.doctorPhone !== undefined
+        ? input.doctorPhone.trim()
+        : (currentTelegram.doctor_phone || "");
 
     const updatedSettings = {
       ...currentSettings,
@@ -274,7 +307,10 @@ export async function saveComprehensiveClubSettingsAction(input: {
         ...currentTelegram,
         encrypted_token: encryptedToken,
         encrypted_chat_id: encryptedChatId,
+        encrypted_medical_chat_id: encryptedMedicalChatId,
         bot_username: input.telegramBotUsername?.trim() || currentTelegram.bot_username || "",
+        doctor_telegram: updatedDoctorTelegram,
+        doctor_phone: updatedDoctorPhone,
       },
     };
 
@@ -293,6 +329,7 @@ export async function saveComprehensiveClubSettingsAction(input: {
     revalidatePath("/admin/club-settings");
     revalidatePath("/");
     revalidatePath("/reports/matchday");
+    revalidatePath("/rehab-portal");
 
     return { success: true };
   } catch (err: any) {
@@ -310,7 +347,7 @@ export async function createClubTeamAction(input: {
   const auth = await assertDoctor();
   if ("error" in auth) return { error: auth.error };
 
-  const targetClubId = auth.user.clubId || DEFAULT_CLUB_ID;
+  const targetClubId = auth.user.clubId;
   const admin = createAdminClient();
 
   try {
@@ -344,6 +381,7 @@ export async function deleteClubTeamAction(
   const auth = await assertDoctor();
   if ("error" in auth) return { error: auth.error };
 
+  const targetClubId = auth.user.clubId;
   const admin = createAdminClient();
 
   try {
@@ -351,6 +389,7 @@ export async function deleteClubTeamAction(
     const { count } = await admin
       .from("players")
       .select("id", { count: "exact", head: true })
+      .eq("club_id", targetClubId)
       .eq("team_id", teamId);
 
     if (count && count > 0) {
@@ -359,7 +398,11 @@ export async function deleteClubTeamAction(
       };
     }
 
-    const { error } = await admin.from("teams").delete().eq("id", teamId);
+    const { error } = await admin
+      .from("teams")
+      .delete()
+      .eq("id", teamId)
+      .eq("club_id", targetClubId);
     if (error) return { error: error.message };
 
     revalidatePath("/admin/club-settings");
@@ -381,7 +424,11 @@ export async function inviteClubUserAction(input: {
   const auth = await assertDoctor();
   if ("error" in auth) return { error: auth.error };
 
-  const targetClubId = auth.user.clubId || DEFAULT_CLUB_ID;
+  if (input.role === "admin" && !isAdmin(auth.user.role)) {
+    return { error: "Тільки адміністратор клубу може запрошувати адміністраторів." };
+  }
+
+  const targetClubId = auth.user.clubId;
   const admin = createAdminClient();
 
   try {
@@ -463,8 +510,24 @@ export async function importPlayersFromCsvAction(
     .eq("club_id", targetClubId);
 
   const teamNameToId = new Map<string, string>();
+  const validClubTeamIds = new Set<string>();
   for (const t of clubTeams || []) {
     teamNameToId.set(t.name.trim().toLowerCase(), t.id);
+    validClubTeamIds.add(t.id);
+  }
+
+  const safeDefaultTeamId =
+    defaultTeamId && validClubTeamIds.has(defaultTeamId)
+      ? defaultTeamId
+      : undefined;
+
+  if (defaultTeamId && !safeDefaultTeamId) {
+    return {
+      success: false,
+      totalRows: 0,
+      importedCount: 0,
+      errors: [{ row: 0, name: "Team", error: "Обрана команда не належить вашому клубу" }],
+    };
   }
 
   const lines = csvContent
@@ -570,7 +633,7 @@ export async function importPlayersFromCsvAction(
     const standardPos = posMapUaToEn[rawPos] || rawPos;
 
     // 4. Валідація команди
-    let teamId = defaultTeamId;
+    let teamId = safeDefaultTeamId;
     if (rawTeam && teamNameToId.has(rawTeam.toLowerCase())) {
       teamId = teamNameToId.get(rawTeam.toLowerCase());
     }

@@ -95,6 +95,7 @@ export async function callAI(options: AICallOptions): Promise<AICallResult> {
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify(requestBody),
+    signal: AbortSignal.timeout(45000),
   });
 
   if (!response.ok) {

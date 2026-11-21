@@ -2,7 +2,7 @@
 
 import { createAdminClient } from "@/utils/supabase/admin";
 import { createClient } from "@/utils/supabase/server";
-import { getCurrentUser } from "@/lib/auth";
+import { assertDoctor, getCurrentUser } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { normalizePosition, toDbPositionEn } from "@/lib/dictionaries";
 import {
@@ -43,7 +43,7 @@ export async function enterDemoClubAction(): Promise<{ success: boolean; error?:
       .eq("club_id", DEMO_CLUB_ID);
 
     if (!playerCount || playerCount < 26) {
-      const resetRes = await resetDemoClubAction();
+      const resetRes = await resetDemoClubInternal();
       if (!resetRes.success) {
         console.warn("Попередження авто-посіву демо:", resetRes.error);
       }
@@ -127,7 +127,7 @@ export async function enterDemoClubAction(): Promise<{ success: boolean; error?:
 /**
  * Атомарне скидання та повторне наповнення демо-даних (Reset Demo)
  */
-export async function resetDemoClubAction(): Promise<{
+async function resetDemoClubInternal(): Promise<{
   success: boolean;
   message?: string;
   error?: string;
@@ -162,31 +162,41 @@ export async function resetDemoClubAction(): Promise<{
       return { success: false, error: `Помилка ініціалізації клубу: ${clubErr.message}` };
     }
 
-    // 2. Очищення старих демо-даних (каскадно)
-    // Отримуємо існуючі id гравців та травм клубу для точкового видалення
-    const { data: existingPlayers } = await admin
-      .from("players")
-      .select("id")
-      .eq("club_id", DEMO_CLUB_ID);
+    // 2. Очищення старих демо-даних (паралельно з урахуванням зовнішніх ключів)
+    const [{ data: existingPlayers }, { data: existingInjuries }] = await Promise.all([
+      admin.from("players").select("id").eq("club_id", DEMO_CLUB_ID),
+      admin.from("injuries").select("id").eq("club_id", DEMO_CLUB_ID),
+    ]);
 
     const existingPlayerIds = (existingPlayers || []).map((p) => p.id);
-
-    // Видаляємо логи травм клубу
-    const { data: existingInjuries } = await admin
-      .from("injuries")
-      .select("id")
-      .eq("club_id", DEMO_CLUB_ID);
-
     const existingInjuryIds = (existingInjuries || []).map((i) => i.id);
+
+    const depDeletes: PromiseLike<any>[] = [
+      admin.from("player_screenings").delete().eq("club_id", DEMO_CLUB_ID),
+      admin.from("player_subscriptions").delete().eq("club_id", DEMO_CLUB_ID),
+      admin.from("guardians").delete().eq("club_id", DEMO_CLUB_ID),
+      admin.from("pharmacy_items").delete().eq("club_id", DEMO_CLUB_ID),
+      admin.from("exposures").delete().eq("club_id", DEMO_CLUB_ID),
+      admin.from("match_rosters").delete().eq("club_id", DEMO_CLUB_ID),
+    ];
+
     if (existingInjuryIds.length > 0) {
-      await admin.from("injury_logs").delete().in("injury_id", existingInjuryIds);
+      depDeletes.push(admin.from("injury_logs").delete().in("injury_id", existingInjuryIds));
     }
 
     if (existingPlayerIds.length > 0) {
-      await admin.from("wellness_surveys").delete().in("player_id", existingPlayerIds);
-      await admin.from("anthropometry_logs").delete().in("player_id", existingPlayerIds);
-      await admin.from("workload_sessions").delete().in("player_id", existingPlayerIds);
+      depDeletes.push(
+        admin.from("wellness_surveys").delete().in("player_id", existingPlayerIds),
+        admin.from("wellness_entries").delete().in("player_id", existingPlayerIds),
+        admin.from("anthropometry_logs").delete().in("player_id", existingPlayerIds),
+        admin.from("workload_sessions").delete().in("player_id", existingPlayerIds)
+      );
+    }
 
+    await Promise.all(depDeletes);
+    await admin.from("injuries").delete().eq("club_id", DEMO_CLUB_ID);
+
+    if (existingPlayerIds.length > 0) {
       // Якщо користувач створив додаткових гравців, яких немає у стандартному наборі DEMO_PLAYERS:
       const defaultDemoPlayerIds = new Set(DEMO_PLAYERS.map((p) => p.id));
       const customPlayerIds = existingPlayerIds.filter((id) => !defaultDemoPlayerIds.has(id));
@@ -198,14 +208,6 @@ export async function resetDemoClubAction(): Promise<{
         }
       }
     }
-
-    await admin.from("player_screenings").delete().eq("club_id", DEMO_CLUB_ID);
-    await admin.from("player_subscriptions").delete().eq("club_id", DEMO_CLUB_ID);
-    await admin.from("guardians").delete().eq("club_id", DEMO_CLUB_ID);
-    await admin.from("injuries").delete().eq("club_id", DEMO_CLUB_ID);
-    await admin.from("pharmacy_items").delete().eq("club_id", DEMO_CLUB_ID);
-    await admin.from("exposures").delete().eq("club_id", DEMO_CLUB_ID);
-    await admin.from("match_rosters").delete().eq("club_id", DEMO_CLUB_ID);
 
     // 3. Синхронізація (upsert) 3 команд (запобігає duplicate key teams_pkey)
     const { error: teamsErr } = await admin.from("teams").upsert(DEMO_TEAMS);
@@ -253,7 +255,7 @@ export async function resetDemoClubAction(): Promise<{
       return { success: false, error: `Помилка створення гравців: ${playersErr.message}` };
     }
 
-    // 4b. Вставка B2B2C підписок (21 активна, 2 квоти, 3 очікують оплати)
+    // Підготовка всіх залежних масивів даних для паралельної вставки
     const subsToInsert = DEMO_SUBSCRIPTIONS.map((s) => ({
       id: s.id,
       club_id: DEMO_CLUB_ID,
@@ -281,12 +283,6 @@ export async function resetDemoClubAction(): Promise<{
       metadata: s.metadata || {},
     }));
 
-    const { error: subsErr } = await admin.from("player_subscriptions").insert(subsToInsert);
-    if (subsErr) {
-      console.warn("Попередження створення підписок:", subsErr.message);
-    }
-
-    // 4c. Вставка законних представників (guardians)
     const guardiansToInsert = DEMO_GUARDIANS.map((g) => ({
       id: g.id,
       club_id: DEMO_CLUB_ID,
@@ -298,20 +294,13 @@ export async function resetDemoClubAction(): Promise<{
       telegram_chat_id: g.telegram_chat_id || null,
       is_primary: g.is_primary ?? true,
     }));
-    const { error: guardErr } = await admin.from("guardians").insert(guardiansToInsert);
-    if (guardErr) {
-      console.warn("Попередження створення законних представників:", guardErr.message);
-    }
 
-    // 5. Вставка антропометрії (3–6 замірів зросту за останні 12 місяців для кожного гравця)
     const anthroLogs: any[] = [];
     const now = new Date();
 
     for (const p of DEMO_PLAYERS) {
-      // 5 замірів: 360 днів тому, 270 днів тому, 180 днів тому, 90 днів тому, сьогодні
       const intervals = [360, 270, 180, 90, 0];
       const isU15 = p.team_id === DEMO_TEAMS[2].id;
-      // У юніорів U-15 більший річний приріст (PHV ~7-9 см), у U-19 менший (~1-2 см)
       const annualGrowth = isU15 ? 7.5 : p.team_id === DEMO_TEAMS[1].id ? 4.0 : 1.2;
       const annualWeightGain = isU15 ? 6.0 : 3.5;
 
@@ -320,7 +309,6 @@ export async function resetDemoClubAction(): Promise<{
         const progressFrac = (360 - daysAgo) / 360;
         const heightAtDate = +(p.current_height - annualGrowth * (1 - progressFrac)).toFixed(1);
         const weightAtDate = +(p.current_weight - annualWeightGain * (1 - progressFrac)).toFixed(1);
-        const sittingHeightAtDate = +(p.sitting_height - (annualGrowth * 0.5) * (1 - progressFrac)).toFixed(1);
 
         anthroLogs.push({
           club_id: DEMO_CLUB_ID,
@@ -334,83 +322,8 @@ export async function resetDemoClubAction(): Promise<{
       });
     }
 
-    await admin.from("anthropometry_logs").insert(anthroLogs);
-
-    // 6. Вставка травм
-    let injRows: any[] = DEMO_INJURIES.map((inj) => ({
-      id: inj.id,
-      club_id: DEMO_CLUB_ID,
-      player_id: inj.player_id,
-      injury_type: inj.injury_type,
-      location: inj.location,
-      side: inj.side || "left",
-      date_of_injury: inj.date_of_injury,
-      actual_return_date: (inj as any).actual_return_date || null,
-      expected_return_date: (inj as any).expected_return_date || null,
-      status: inj.status,
-      vas_score: inj.vas_score ?? 0,
-      description: inj.description || "Травма",
-      severity: inj.severity || "moderate",
-      mechanism: inj.mechanism || "non_contact",
-      osiics_code: inj.osiics_code,
-      activity_type: "training",
-      onset: "acute",
-      occurrence: "new",
-    }));
-
-    let { error: injErr } = await admin.from("injuries").insert(injRows);
-    if (injErr && (injErr.message.includes("column") || injErr.message.includes("does not exist"))) {
-      injRows = DEMO_INJURIES.map((inj) => ({
-        id: inj.id,
-        club_id: DEMO_CLUB_ID,
-        player_id: inj.player_id,
-        injury_type: inj.injury_type,
-        location: inj.location,
-        side: inj.side || "left",
-        date_of_injury: inj.date_of_injury,
-        actual_return_date: (inj as any).actual_return_date || null,
-        expected_return_date: (inj as any).expected_return_date || null,
-        status: inj.status,
-        vas_score: inj.vas_score ?? 0,
-        description: inj.description || "Травма",
-        severity: inj.severity || "moderate",
-        mechanism: inj.mechanism || "non_contact",
-      }));
-      const retryInj = await admin.from("injuries").insert(injRows);
-      injErr = retryInj.error;
-    }
-
-    if (injErr) {
-      console.warn("Попередження створення травм:", injErr.message);
-    }
-
-    // 7. Вставка RTP-логів у injury_logs для відкритих травм
-    const rtpLogsToInsert: any[] = [];
-    for (const inj of DEMO_INJURIES) {
-      const phaseNum = (inj as any).rtp_phase || 1;
-      const rtpPayload = {
-        injury_id: inj.id,
-        player_id: inj.player_id,
-        phase: phaseNum,
-        target_date: (inj as any).expected_return_date || "2026-11-01",
-        doctor_note: `RTP Етап ${phaseNum}: клінічний прогрес згідно з протоколом клубу.`,
-        criteria_met: phaseNum >= 4 ? ["no_swelling", "full_rom", "functional_tests_ok"] : ["no_resting_pain"],
-        updated_at: new Date().toISOString(),
-      };
-
-      rtpLogsToInsert.push({
-        injury_id: inj.id,
-        club_id: DEMO_CLUB_ID,
-        date: inj.date_of_injury,
-        author: "Д-р Андрій Коваленко",
-        note: `[RTP_PHASE] ${JSON.stringify(rtpPayload)}`,
-      });
-    }
-
-    // Додаємо передсезонні скринінги (player_screenings) для всіх 26 гравців
     const demoScreeningsToInsert: any[] = [];
     for (const p of DEMO_PLAYERS) {
-      // Гравці #5 (Кравченко) та #19 (Сидоренко) мають статус provisional (умовний допуск, 45 хв)
       const isRestricted = p.id === DEMO_PLAYERS[4].id || p.id === DEMO_PLAYERS[18].id;
       const overallStatus = isRestricted ? "provisional" : "cleared";
       const restrictionsNotes = isRestricted
@@ -447,32 +360,19 @@ export async function resetDemoClubAction(): Promise<{
       });
     }
 
-    if (demoScreeningsToInsert.length > 0) {
-      await admin.from("player_screenings").insert(demoScreeningsToInsert);
-    }
-
-    if (rtpLogsToInsert.length > 0) {
-      await admin.from("injury_logs").insert(rtpLogsToInsert);
-    }
-
-    // 8. Вставка навантаження за 6 тижнів (42 дні)
     const workloadRows: any[] = [];
     const baseDate = new Date(now.getTime() - 42 * 86400000);
-
     for (let day = 0; day < 42; day++) {
       const curDate = new Date(baseDate.getTime() + day * 86400000);
       const dateStr = curDate.toISOString().split("T")[0];
-      const dayOfWeek = curDate.getDay(); // 0 - Sun, 6 - Sat
-
-      // Неділя - вихідний
+      const dayOfWeek = curDate.getDay();
       if (dayOfWeek === 0) continue;
 
-      const isMatch = dayOfWeek === 6; // Субота - матч
+      const isMatch = dayOfWeek === 6;
       const sessionType = isMatch ? "match" : dayOfWeek === 3 ? "tactical_high" : "training";
       const duration = isMatch ? 90 : dayOfWeek === 3 ? 85 : 70;
       const rpe = isMatch ? 8 : dayOfWeek === 3 ? 7 : 5;
 
-      // Генеруємо сесії для перших 10 здорових гравців
       for (let i = 0; i < 10; i++) {
         const pl = DEMO_PLAYERS[i];
         workloadRows.push({
@@ -488,27 +388,26 @@ export async function resetDemoClubAction(): Promise<{
       }
     }
 
-    if (workloadRows.length > 0) {
-      await admin.from("workload_sessions").insert(workloadRows);
-    }
-
-    // 9. Вставка велнес-анкет за останні 14 днів у обидві таблиці (wellness_entries та wellness_surveys)
     const wellnessRows: any[] = [];
     const surveysRows: any[] = [];
-
     for (let day = 0; day < 14; day++) {
       const curDate = new Date(now.getTime() - day * 86400000);
       const dateStr = curDate.toISOString().split("T")[0];
 
       DEMO_PLAYERS.forEach((pl, idx) => {
-        // Травмовані гравці відмічають біль у відповідних зонах
         const isHamstringInjured = idx === 1;
         const isAnkleInjured = idx === 7;
         const isGroinInjured = idx === 13;
 
         const hasPain = isHamstringInjured || isAnkleInjured || isGroinInjured;
         const painVas = isHamstringInjured ? 6 : isAnkleInjured ? 4 : isGroinInjured ? 2 : null;
-        const painArea = isHamstringInjured ? "Праве стегно (задня поверхня)" : isAnkleInjured ? "Лівий гомілкостоп" : isGroinInjured ? "Пах / аддуктор" : null;
+        const painArea = isHamstringInjured
+          ? "Праве стегно (задня поверхня)"
+          : isAnkleInjured
+          ? "Лівий гомілкостоп"
+          : isGroinInjured
+          ? "Пах / аддуктор"
+          : null;
 
         wellnessRows.push({
           player_id: pl.id,
@@ -541,28 +440,16 @@ export async function resetDemoClubAction(): Promise<{
       });
     }
 
-    if (wellnessRows.length > 0) {
-      await admin.from("wellness_entries").insert(wellnessRows);
-    }
-    if (surveysRows.length > 0) {
-      await admin.from("wellness_surveys").insert(surveysRows);
-    }
-
-    // 10. Вставка аптечного складу
     const pharmacyRows = DEMO_PHARMACY_ITEMS.map((item) => ({
       club_id: DEMO_CLUB_ID,
       ...item,
     }));
 
-    await admin.from("pharmacy_items").insert(pharmacyRows);
-
-    // 11. Вставка експозиції за останні 6 тижнів
     const exposuresRows: any[] = [];
     for (let w = 0; w < 6; w++) {
       const matchDate = new Date(now.getTime() - (w * 7 + 1) * 86400000).toISOString().split("T")[0];
       const trainDate = new Date(now.getTime() - (w * 7 + 3) * 86400000).toISOString().split("T")[0];
 
-      // Для U-19
       exposuresRows.push({
         club_id: DEMO_CLUB_ID,
         team_id: DEMO_TEAMS[0].id,
@@ -581,7 +468,108 @@ export async function resetDemoClubAction(): Promise<{
       });
     }
 
-    await admin.from("exposures").insert(exposuresRows);
+    const insertInjuriesWithFallback = async () => {
+      const injRows: any[] = DEMO_INJURIES.map((inj) => ({
+        id: inj.id,
+        club_id: DEMO_CLUB_ID,
+        player_id: inj.player_id,
+        injury_type: inj.injury_type,
+        location: inj.location,
+        side: inj.side || "left",
+        date_of_injury: inj.date_of_injury,
+        actual_return_date: (inj as any).actual_return_date || null,
+        expected_return_date: (inj as any).expected_return_date || null,
+        status: inj.status,
+        vas_score: inj.vas_score ?? 0,
+        description: inj.description || "Травма",
+        severity: inj.severity || "moderate",
+        mechanism: inj.mechanism || "non_contact",
+        osiics_code: inj.osiics_code,
+        activity_type: "training",
+        onset: "acute",
+        occurrence: "new",
+      }));
+
+      let { error: injErr } = await admin.from("injuries").insert(injRows);
+      if (injErr && (injErr.message.includes("column") || injErr.message.includes("does not exist"))) {
+        const fallbackInjRows = DEMO_INJURIES.map((inj) => ({
+          id: inj.id,
+          club_id: DEMO_CLUB_ID,
+          player_id: inj.player_id,
+          injury_type: inj.injury_type,
+          location: inj.location,
+          side: inj.side || "left",
+          date_of_injury: inj.date_of_injury,
+          actual_return_date: (inj as any).actual_return_date || null,
+          expected_return_date: (inj as any).expected_return_date || null,
+          status: inj.status,
+          vas_score: inj.vas_score ?? 0,
+          description: inj.description || "Травма",
+          severity: inj.severity || "moderate",
+          mechanism: inj.mechanism || "non_contact",
+        }));
+        const retryInj = await admin.from("injuries").insert(fallbackInjRows);
+        injErr = retryInj.error;
+      }
+      if (injErr) {
+        console.warn("Попередження створення травм:", injErr.message);
+      }
+    };
+
+    // 5. Паралельна вставка усіх залежних від гравців таблиць
+    const [subsRes, guardRes] = await Promise.all([
+      admin.from("player_subscriptions").insert(subsToInsert),
+      admin.from("guardians").insert(guardiansToInsert),
+      admin.from("anthropometry_logs").insert(anthroLogs),
+      demoScreeningsToInsert.length > 0
+        ? admin.from("player_screenings").insert(demoScreeningsToInsert)
+        : Promise.resolve(),
+      workloadRows.length > 0
+        ? admin.from("workload_sessions").insert(workloadRows)
+        : Promise.resolve(),
+      wellnessRows.length > 0
+        ? admin.from("wellness_entries").insert(wellnessRows)
+        : Promise.resolve(),
+      surveysRows.length > 0
+        ? admin.from("wellness_surveys").insert(surveysRows)
+        : Promise.resolve(),
+      admin.from("pharmacy_items").insert(pharmacyRows),
+      admin.from("exposures").insert(exposuresRows),
+      insertInjuriesWithFallback(),
+    ]);
+
+    if (subsRes?.error) {
+      console.warn("Попередження створення підписок:", subsRes.error.message);
+    }
+    if (guardRes?.error) {
+      console.warn("Попередження створення законних представників:", guardRes.error.message);
+    }
+
+    // 6. Вставка RTP-логів у injury_logs після вставки травм
+    const rtpLogsToInsert: any[] = DEMO_INJURIES.map((inj) => {
+      const phaseNum = (inj as any).rtp_phase || 1;
+      const rtpPayload = {
+        injury_id: inj.id,
+        player_id: inj.player_id,
+        phase: phaseNum,
+        target_date: (inj as any).expected_return_date || "2026-11-01",
+        doctor_note: `RTP Етап ${phaseNum}: клінічний прогрес згідно з протоколом клубу.`,
+        criteria_met: phaseNum >= 4 ? ["no_swelling", "full_rom", "functional_tests_ok"] : ["no_resting_pain"],
+        updated_at: new Date().toISOString(),
+      };
+
+      return {
+        injury_id: inj.id,
+        club_id: DEMO_CLUB_ID,
+        date: inj.date_of_injury,
+        author: "Д-р Андрій Коваленко",
+        note: `[RTP_PHASE] ${JSON.stringify(rtpPayload)}`,
+      };
+    });
+
+    if (rtpLogsToInsert.length > 0) {
+      await admin.from("injury_logs").insert(rtpLogsToInsert);
+    }
 
     // Оновлюємо кеш шляхів
     try {
@@ -605,4 +593,19 @@ export async function resetDemoClubAction(): Promise<{
   } catch (err: any) {
     return { success: false, error: err.message || "Помилка скидання демо-режиму." };
   }
+}
+
+export async function resetDemoClubAction(): Promise<{
+  success: boolean;
+  message?: string;
+  error?: string;
+}> {
+  const auth = await assertDoctor();
+  if ("error" in auth) {
+    return { success: false, error: auth.error };
+  }
+  if (auth.user.clubId !== DEMO_CLUB_ID) {
+    return { success: false, error: "Скидання демо-клубу дозволено лише в демо-акаунті" };
+  }
+  return resetDemoClubInternal();
 }

@@ -260,10 +260,20 @@ export async function archiveInjuryAttachmentAction(
       archived_at: new Date().toISOString(),
       archived_by: user.id,
     } as any)
-    .eq("id", attachmentId);
+    .eq("id", attachmentId)
+    .eq("club_id", user.clubId);
 
   if (updateError) {
     return { success: false, error: `Помилка архівації: ${updateError.message}` };
+  }
+
+  // Видаляємо фізичний об'єкт зі сховища при архівації/видаленні вкладення
+  if (attachment.storage_path) {
+    try {
+      await supabase.storage
+        .from(INJURY_ATTACHMENT_CONFIG.BUCKET_NAME)
+        .remove([attachment.storage_path]);
+    } catch {}
   }
 
   // Запис в Audit Log
@@ -320,7 +330,8 @@ export async function restoreInjuryAttachmentAction(
       archived_at: null,
       archived_by: null,
     } as any)
-    .eq("id", attachmentId);
+    .eq("id", attachmentId)
+    .eq("club_id", user.clubId);
 
   if (updateError) {
     return { success: false, error: `Помилка відновлення: ${updateError.message}` };

@@ -1,7 +1,12 @@
 "use server";
 
 import { createAdminClient } from "@/utils/supabase/admin";
-import { assertDoctor, DEFAULT_CLUB_ID } from "@/lib/auth";
+import {
+  assertDoctor,
+  assertClubTeamsValid,
+  assertMemberInUserClub,
+  DEFAULT_CLUB_ID,
+} from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { logAudit } from "@/lib/audit";
 
@@ -189,31 +194,34 @@ export async function updateCoachTeamAssignmentsAction(input: {
     return { success: false, error: "Не вказано ідентифікатор тренера." };
   }
 
-  const targetClubId = auth.user.clubId || DEFAULT_CLUB_ID;
+  const targetClubId = auth.user.clubId;
   const admin = createAdminClient();
 
   try {
     // 1. Перевіряємо, чи цей користувач дійсно є тренером у цьому клубі
-    const { data: member, error: memberErr } = await admin
-      .from("club_members")
-      .select("user_id, role")
-      .eq("club_id", targetClubId)
-      .eq("user_id", coachUserId)
-      .maybeSingle();
-
-    if (memberErr || !member) {
-      return { success: false, error: "Тренера не знайдено в цьому клубі." };
+    const memberCheck = await assertMemberInUserClub(auth.user, coachUserId, {
+      allowedRoles: ["coach"],
+    });
+    if ("error" in memberCheck) {
+      return { success: false, error: memberCheck.error };
     }
 
-    // 2. Видаляємо всі попередні призначення в coach_team_assignments
+    // 2. Перевіряємо, що всі обрані команди належать цьому клубу
+    const rawTeamIds = Array.from(new Set(teamIds.filter(Boolean)));
+    const teamsCheck = await assertClubTeamsValid(targetClubId, rawTeamIds);
+    if ("error" in teamsCheck) {
+      return { success: false, error: teamsCheck.error };
+    }
+    const uniqueTeamIds = teamsCheck.validTeamIds;
+
+    // 3. Видаляємо всі попередні призначення в coach_team_assignments
     await admin
       .from("coach_team_assignments")
       .delete()
       .eq("club_id", targetClubId)
       .eq("coach_user_id", coachUserId);
 
-    // 3. Вставляємо нові призначення, якщо вибрано хоча б одну команду
-    const uniqueTeamIds = Array.from(new Set(teamIds.filter(Boolean)));
+    // 4. Вставляємо нові призначення, якщо вибрано хоча б одну команду
     if (uniqueTeamIds.length > 0) {
       const insertRows = uniqueTeamIds.map((tid) => ({
         club_id: targetClubId,
@@ -301,10 +309,17 @@ export async function removeCoachFromStaffAction(input: {
     return { success: false, error: "Не вказано користувача для видалення." };
   }
 
-  const targetClubId = auth.user.clubId || DEFAULT_CLUB_ID;
+  const targetClubId = auth.user.clubId;
   const admin = createAdminClient();
 
   try {
+    const memberCheck = await assertMemberInUserClub(auth.user, coachUserId, {
+      allowedRoles: ["coach"],
+    });
+    if ("error" in memberCheck) {
+      return { success: false, error: memberCheck.error };
+    }
+
     // 1. Видаляємо всі призначення команд
     await admin
       .from("coach_team_assignments")
@@ -319,13 +334,20 @@ export async function removeCoachFromStaffAction(input: {
       .eq("club_id", targetClubId)
       .eq("user_id", coachUserId);
 
-    // 3. Скидаємо роль у profiles (якщо це гравець або помилковий акаунт)
-    try {
-      await admin
-        .from("profiles")
-        .update({ role: "player", team_id: null })
-        .eq("id", coachUserId);
-    } catch {}
+    // 3. Скидаємо роль у profiles тільки якщо не залишилось активного членства в інших клубах
+    const { count: remainingMemberships } = await admin
+      .from("club_members")
+      .select("club_id", { count: "exact", head: true })
+      .eq("user_id", coachUserId);
+
+    if ((remainingMemberships ?? 0) === 0) {
+      try {
+        await admin
+          .from("profiles")
+          .update({ role: "player", team_id: null })
+          .eq("id", coachUserId);
+      } catch {}
+    }
 
     // 4. Логуємо аудит
     await logAudit({
@@ -380,12 +402,20 @@ export async function createOrInviteCoachAction(input: {
     return { success: false, error: "Введіть повне ім'я тренера." };
   }
 
-  const targetClubId = auth.user.clubId || DEFAULT_CLUB_ID;
+  const targetClubId = auth.user.clubId;
   const admin = createAdminClient();
 
   try {
+    const rawTeamIds = Array.from(new Set(teamIds.filter(Boolean)));
+    const teamsCheck = await assertClubTeamsValid(targetClubId, rawTeamIds);
+    if ("error" in teamsCheck) {
+      return { success: false, error: teamsCheck.error };
+    }
+    const validTeamIds = teamsCheck.validTeamIds;
+
     // Шукаємо або створюємо користувача в Auth
     let userId: string | null = null;
+    let isExistingUser = false;
     const { data: userRes, error: userErr } = await admin.auth.admin.createUser({
       email,
       email_confirm: true,
@@ -399,6 +429,7 @@ export async function createOrInviteCoachAction(input: {
     if (userRes?.user?.id) {
       userId = userRes.user.id;
     } else if (userErr && userErr.message.includes("already registered")) {
+      isExistingUser = true;
       const { data: existingProf } = await admin
         .from("profiles")
         .select("id")
@@ -413,34 +444,36 @@ export async function createOrInviteCoachAction(input: {
       return { success: false, error: userErr?.message || "Не вдалося зареєструвати тренера." };
     }
 
-    // Оновлюємо профіль і призначаємо роль coach
-    await admin.from("profiles").upsert({
-      id: userId,
-      email,
-      full_name: fullName,
-      role: "coach",
-      team_id: teamIds[0] || null,
-    });
+    // Створюємо профіль тільки для нового користувача, не перезаписуючи глобальну роль існуючого
+    if (!isExistingUser) {
+      await admin.from("profiles").upsert({
+        id: userId,
+        email,
+        full_name: fullName,
+        role: "coach",
+        team_id: validTeamIds[0] || null,
+      });
+    }
 
     await admin.from("club_members").upsert(
       {
         user_id: userId,
         club_id: targetClubId,
         role: "coach",
-        team_id: teamIds[0] || null,
+        team_id: validTeamIds[0] || null,
       },
       { onConflict: "user_id, club_id" }
     );
 
     // Призначаємо команди в coach_team_assignments
-    if (teamIds.length > 0) {
+    if (validTeamIds.length > 0) {
       await admin
         .from("coach_team_assignments")
         .delete()
         .eq("club_id", targetClubId)
         .eq("coach_user_id", userId);
 
-      const rows = teamIds.map((tid) => ({
+      const rows = validTeamIds.map((tid) => ({
         club_id: targetClubId,
         coach_user_id: userId,
         team_id: tid,
@@ -456,7 +489,7 @@ export async function createOrInviteCoachAction(input: {
       entityId: userId,
       meta: {
         email,
-        assignedTeamsCount: teamIds.length,
+        assignedTeamsCount: validTeamIds.length,
         invitedBy: auth.user.id,
       },
     });

@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/utils/supabase/admin";
 import { DEFAULT_CLUB_ID } from "@/lib/auth";
+import { getClubTelegramConfig } from "@/lib/club-telegram";
 import type { ClubSettings, ConsentChannel } from "@/types/database";
 
 export type OutgoingMessagePayload = {
@@ -89,8 +90,8 @@ export async function sendClubMessage(
   // LIVE-режим через обраного клубом провайдера:
   try {
     if (payload.channel === "telegram") {
-      const botToken =
-        msgConfig.telegram_bot_token || process.env.TELEGRAM_BOT_TOKEN;
+      const { botToken: clubBotToken } = await getClubTelegramConfig(clubId);
+      const botToken = msgConfig.telegram_bot_token || clubBotToken;
       if (!botToken) {
         console.info(`[MESSAGING_FALLBACK_STUB] Missing Telegram token -> ${payload.text}`);
         return {
@@ -111,6 +112,7 @@ export async function sendClubMessage(
             text: payload.text,
             disable_web_page_preview: true,
           }),
+          signal: AbortSignal.timeout(15000),
         }
       );
       const data = await res.json();

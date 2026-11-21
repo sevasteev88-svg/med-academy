@@ -15,6 +15,18 @@ export async function addInjuryLogAction(_prev: AddLogState, formData: FormData)
   const date = formData.get("date") as string;
   const category = (formData.get("category") as string) || "note";
   if (!injuryId || !note) return { error: "Введіть текст запису" };
+
+  const { data: injuryCheck } = await supabase
+    .from("injuries")
+    .select("id")
+    .eq("id", injuryId)
+    .eq("club_id", auth.user.clubId)
+    .maybeSingle();
+
+  if (!injuryCheck) {
+    return { error: "Травму не знайдено або доступ заборонено" };
+  }
+
   const { error } = await supabase.from("injury_logs").insert({
     club_id: auth.user.clubId,
     injury_id: injuryId,

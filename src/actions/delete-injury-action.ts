@@ -2,15 +2,23 @@
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { assertDoctor } from "@/lib/auth";
+import { assertDoctor, assertPlayerAccess } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 
 export async function deleteInjuryAction(injuryId: string, playerId: string) {
   const auth = await assertDoctor();
   if ("error" in auth) return { error: auth.error };
 
+  const playerAccess = await assertPlayerAccess(auth.user, playerId, { allowCoach: false });
+  if ("error" in playerAccess) return { error: playerAccess.error };
+
   const supabase = await createClient();
-  const { error } = await supabase.from("injuries").delete().eq("id", injuryId);
+  const { error } = await supabase
+    .from("injuries")
+    .delete()
+    .eq("id", injuryId)
+    .eq("player_id", playerId)
+    .eq("club_id", auth.user.clubId);
   if (error) return { error: error.message };
 
   await logAudit({

@@ -39,6 +39,7 @@ export async function saveAnthropometryWithPhv(input: SaveAnthropometryInput) {
     .from("players")
     .select("date_of_birth, sex")
     .eq("id", input.playerId)
+    .eq("club_id", auth.user.clubId)
     .single();
 
   if (playerErr || !player) return { error: "Гравця не знайдено" };

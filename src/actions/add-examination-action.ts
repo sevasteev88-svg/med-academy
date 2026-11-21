@@ -32,6 +32,17 @@ export async function addExaminationAction(
 
   if (!injuryId || !date) return { error: "Заповніть обов'язкові поля" };
 
+  const { data: injuryCheck } = await supabase
+    .from("injuries")
+    .select("id, player_id")
+    .eq("id", injuryId)
+    .eq("club_id", auth.user.clubId)
+    .maybeSingle();
+
+  if (!injuryCheck) {
+    return { error: "Травму не знайдено або доступ заборонено" };
+  }
+
   // 1. Зберігаємо структурований огляд
   const { error: examErr } = await supabase.from("injury_examinations").insert({
     club_id: auth.user.clubId,
@@ -65,6 +76,7 @@ export async function addExaminationAction(
     .from("injuries")
     .update(injuryUpdate)
     .eq("id", injuryId)
+    .eq("club_id", auth.user.clubId)
     .select("player_id")
     .single();
 

@@ -8,6 +8,7 @@ interface SubscriptionPaywallProps {
   playerName: string;
   teamName: string;
   playerId: string;
+  parentToken?: string;
   subscription?: {
     status?: string;
     amount_uah?: number;
@@ -21,6 +22,7 @@ export default function SubscriptionPaywall({
   playerName,
   teamName,
   playerId,
+  parentToken,
   subscription,
   onPaymentSuccess,
 }: SubscriptionPaywallProps) {
@@ -40,6 +42,7 @@ export default function SubscriptionPaywall({
         const res = await createCheckoutSessionAction({
           planCode: selectedPlan,
           playerId,
+          parentToken,
           payerPhone: payerPhone || undefined,
         });
 

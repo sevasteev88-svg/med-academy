@@ -13,6 +13,18 @@ export async function saveConcussionAction(
 
   const supabase = await createClient();
 
+  // Перевіряємо, що травма належить клубу поточного лікаря
+  const { data: injury } = await supabase
+    .from("injuries")
+    .select("id, club_id, player_id")
+    .eq("id", input.injury_id)
+    .eq("club_id", auth.user.clubId)
+    .maybeSingle();
+
+  if (!injury) {
+    return { error: "Травму не знайдено у вашому клубі" };
+  }
+
   const record: ConcussionAssessment = {
     ...input,
     id: `scat_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
@@ -22,6 +34,7 @@ export async function saveConcussionAction(
   const payload = `[CONCUSSION] ${JSON.stringify(record)}`;
 
   const { error } = await supabase.from("injury_logs").insert({
+    club_id: auth.user.clubId,
     injury_id: input.injury_id,
     date: input.date,
     category: "examination",
@@ -31,6 +44,9 @@ export async function saveConcussionAction(
   if (error) return { error: error.message };
 
   revalidatePath(`/injuries/${input.injury_id}`);
+  if (injury.player_id) {
+    revalidatePath(`/players/${injury.player_id}`);
+  }
 
   return { success: true, assessment: record };
 }

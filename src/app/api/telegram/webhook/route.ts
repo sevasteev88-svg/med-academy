@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { processTelegramWebhookUpdateAction } from "@/actions/telegram-actions";
+import { processTelegramWebhookUpdate } from "@/lib/telegram-webhook-server";
+import { verifyTimingSafeSecret } from "@/lib/server-secrets";
 import type { TelegramWebhookUpdate } from "@/types/telegram";
 
 /**
@@ -8,9 +9,22 @@ import type { TelegramWebhookUpdate } from "@/types/telegram";
  */
 export async function POST(request: Request) {
   try {
+    const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+    if (!expectedSecret) {
+      return NextResponse.json(
+        { ok: false, error: "TELEGRAM_WEBHOOK_SECRET is not configured" },
+        { status: 500 }
+      );
+    }
+
+    const providedSecret = request.headers.get("x-telegram-bot-api-secret-token");
+    if (!verifyTimingSafeSecret(providedSecret, expectedSecret)) {
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    }
+
     const update: TelegramWebhookUpdate = await request.json();
 
-    const result = await processTelegramWebhookUpdateAction(update);
+    const result = await processTelegramWebhookUpdate(update);
 
     return NextResponse.json({ ok: true, result });
   } catch (err: any) {

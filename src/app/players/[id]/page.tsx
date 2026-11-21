@@ -58,19 +58,27 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
   const { id } = await params; const { from, to, tab } = await searchParams;
   const supabase = await createClient();
 
-  // Логуємо перегляд картки гравця (Audit Log)
-  await logAudit({
-    action: "view_player",
-    entity: "player",
-    entityId: id,
-    playerId: id,
-  });
-
   let injuryQuery = supabase.from("injuries").select("*").eq("player_id", id).order("date_of_injury", { ascending: false });
   if (from) injuryQuery = injuryQuery.gte("date_of_injury", from);
   if (to) injuryQuery = injuryQuery.lte("date_of_injury", to);
 
-  const [playerRes, injuriesRes, anthroRes, matRes, screeningLogsRes, nutritionLogsRes, photoLogsRes, wearableLogsRes, rehabLogsRes, pinLogsRes, lsiLogsRes, planLogsRes, workloadRes, wellnessRes, workloadLogsRes, wellnessLogsRes, treatmentLogsRes, anamnesisLogsRes] = await Promise.all([
+  const [
+    currentUser,
+    playerRes,
+    injuriesRes,
+    anthroRes,
+    matRes,
+    screeningLogsRes,
+    nutritionLogsRes,
+    rehabLogsRes,
+    lsiLogsRes,
+    planLogsRes,
+    workloadRes,
+    wellnessRes,
+    treatmentLogsRes,
+    anamnesisLogsRes,
+  ] = await Promise.all([
+    getCurrentUser(),
     supabase.from("players").select("*, teams ( name, category )").eq("id", id).single(),
     injuryQuery,
     supabase.from("anthropometry_logs").select("*").eq("player_id", id).order("date", { ascending: false }),
@@ -91,28 +99,10 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
       .eq("player_id", id)
       .order("date", { ascending: false }),
     supabase
-      .from("injury_logs")
-      .select("*")
-      .like("note", `[PLAYER_PHOTO] %"player_id":"${id}"%`)
-      .order("date", { ascending: false })
-      .limit(10),
-    supabase
-      .from("injury_logs")
-      .select("*")
-      .like("note", `[WEARABLE] %"player_id":"${id}"%`)
-      .order("date", { ascending: false })
-      .limit(100),
-    supabase
       .from("rehab_checkins")
       .select("*")
       .eq("player_id", id)
       .order("date", { ascending: false }),
-    supabase
-      .from("injury_logs")
-      .select("note")
-      .like("note", `[PLAYER_PIN] %"player_id":"${id}"%`)
-      .order("date", { ascending: false })
-      .limit(1),
     supabase
       .from("lsi_assessments")
       .select("*")
@@ -137,18 +127,6 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
       .order("date", { ascending: false })
       .limit(50),
     supabase
-      .from("injury_logs")
-      .select("date, note")
-      .like("note", `[WORKLOAD] %"player_id":"${id}"%`)
-      .order("date", { ascending: false })
-      .limit(100),
-    supabase
-      .from("injury_logs")
-      .select("date, note")
-      .like("note", `[WELLNESS%"player_id":"${id}"%`)
-      .order("date", { ascending: false })
-      .limit(100),
-    supabase
       .from("medical_treatments")
       .select("*")
       .eq("player_id", id)
@@ -164,6 +142,117 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
 
   const { data: player, error } = playerRes;
   if (error || !player) return notFound();
+
+  // Сувора міжклубна ізоляція картки гравця
+  if (currentUser?.clubId && player.club_id && player.club_id !== currentUser.clubId) {
+    return notFound();
+  }
+
+  const isAdminUser = currentUser?.role === "admin";
+  const isCoachUser = currentUser?.role === "coach";
+
+  // Якщо це тренер — перевіряємо, чи має він доступ до команди цього футболіста
+  if (isCoachUser && !canUserAccessTeam(currentUser, player.team_id)) {
+    return (
+      <div className="min-h-[70vh] flex items-center justify-center p-4">
+        <div className="p-8 rounded-2xl bg-slate-900 border border-rose-500/30 text-center space-y-3 max-w-md shadow-2xl">
+          <div className="text-4xl">⛔</div>
+          <h2 className="text-lg font-bold text-white">Доступ обмежено</h2>
+          <p className="text-xs text-slate-300 leading-relaxed">
+            Цей футболіст грає за іншу вікову категорію ({player.teams?.name || "інша команда"}). Ви маєте доступ лише до гравців закріплених за вами команд.
+          </p>
+          <Link
+            href="/players"
+            className="inline-block mt-3 px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold shadow-lg shadow-blue-600/30 hover:bg-blue-500 transition-all"
+          >
+            ← Повернутися до списку моїх гравців
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  // Неблокуюче логування перегляду картки гравця
+  void logAudit({
+    action: "view_player",
+    entity: "player",
+    entityId: id,
+    playerId: id,
+    userId: currentUser?.id,
+    clubId: player.club_id || currentUser?.clubId,
+  }).catch(() => {});
+
+  const scopedClubId = currentUser?.clubId || player.club_id;
+  const needWorkloadFallback = (workloadRes?.data || []).length === 0;
+  const needWellnessFallback = (wellnessRes?.data || []).length === 0;
+
+  let photoLogsQuery = supabase
+    .from("injury_logs")
+    .select("*")
+    .like("note", `[PLAYER_PHOTO] %"player_id":"${id}"%`)
+    .order("date", { ascending: false })
+    .limit(10);
+  if (scopedClubId) photoLogsQuery = photoLogsQuery.eq("club_id", scopedClubId);
+
+  let wearableLogsQuery = supabase
+    .from("injury_logs")
+    .select("*")
+    .like("note", `[WEARABLE] %"player_id":"${id}"%`)
+    .order("date", { ascending: false })
+    .limit(100);
+  if (scopedClubId) wearableLogsQuery = wearableLogsQuery.eq("club_id", scopedClubId);
+
+  const activeDocumentsPromise = getActiveConsentDocuments(player.club_id);
+
+  const [
+    photoLogsRes,
+    wearableLogsRes,
+    workloadLogsRes,
+    wellnessLogsRes,
+    portalToken,
+    activeDocuments,
+    consentSummary,
+    devicesRes,
+    telegramRes,
+    subRes,
+    parentAccessState,
+  ] = await Promise.all([
+    photoLogsQuery,
+    wearableLogsQuery,
+    needWorkloadFallback
+      ? (() => {
+          let q = supabase
+            .from("injury_logs")
+            .select("date, note")
+            .like("note", `[WORKLOAD] %"player_id":"${id}"%`)
+            .order("date", { ascending: false })
+            .limit(100);
+          if (scopedClubId) q = q.eq("club_id", scopedClubId);
+          return q;
+        })()
+      : Promise.resolve({ data: [] as any[] }),
+    needWellnessFallback
+      ? (() => {
+          let q = supabase
+            .from("injury_logs")
+            .select("date, note")
+            .like("note", `[WELLNESS%"player_id":"${id}"%`)
+            .order("date", { ascending: false })
+            .limit(100);
+          if (scopedClubId) q = q.eq("club_id", scopedClubId);
+          return q;
+        })()
+      : Promise.resolve({ data: [] as any[] }),
+    getOrGeneratePlayerPortalToken(id),
+    activeDocumentsPromise,
+    activeDocumentsPromise.then((docs) =>
+      getPlayerConsentSummary(id, player.date_of_birth, player.club_id, docs)
+    ),
+    getPlayerActiveDevicesAction(id),
+    getPlayerTelegramStatusAction(id),
+    supabase.from("player_subscriptions").select("*").eq("player_id", id).maybeSingle(),
+    getPlayerParentAccessStateAction(id),
+  ]);
 
   const injuryList = injuriesRes.data ?? [];
   const measurements = anthroRes.data ?? [];
@@ -253,8 +342,6 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
     stress_level: row.stress_level ?? row.data?.stress_level,
   }));
 
-  const portalToken = await getOrGeneratePlayerPortalToken(id);
-
   const lsiRecords: LsiAssessmentRecord[] = (lsiLogsRes.data || []).map((row: any) => ({
     ...((row.data as LsiAssessmentRecord) || {}),
     id: row.data?.id || row.id,
@@ -325,30 +412,6 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
   for (const inj of injuryList) { const d = calcDaysMissed(inj); daysByType[inj.injury_type] = (daysByType[inj.injury_type]??0)+d; daysByLocation[inj.location] = (daysByLocation[inj.location]??0)+d; }
   const activeInjuries = injuryList.filter(i => i.status === "active" || i.status === "rehabilitation");
   const periodLabel = from ? `${from}${to ? ` — ${to}` : " — сьогодні"}` : "За весь час";
-  const currentUser = await getCurrentUser();
-  const isAdminUser = currentUser?.role === "admin";
-  const isCoachUser = currentUser?.role === "coach";
-
-  // Якщо це тренер — перевіряємо, чи має він доступ до команди цього футболіста
-  if (isCoachUser && !canUserAccessTeam(currentUser, player.team_id)) {
-    return (
-      <div className="min-h-[70vh] flex items-center justify-center p-4">
-        <div className="p-8 rounded-2xl bg-slate-900 border border-rose-500/30 text-center space-y-3 max-w-md shadow-2xl">
-          <div className="text-4xl">⛔</div>
-          <h2 className="text-lg font-bold text-white">Доступ обмежено</h2>
-          <p className="text-xs text-slate-300 leading-relaxed">
-            Цей футболіст грає за іншу вікову категорію ({player.teams?.name || "інша команда"}). Ви маєте доступ лише до гравців закріплених за вами команд.
-          </p>
-          <Link
-            href="/players"
-            className="inline-block mt-3 px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold shadow-lg shadow-blue-600/30 hover:bg-blue-500 transition-all"
-          >
-            ← Повернутися до списку моїх гравців
-          </Link>
-        </div>
-      </div>
-    );
-  }
 
   // Обчислення зіграних хвилин для тренерського профілю (7 та 28 днів)
   const d7AgoDateStr = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString().split("T")[0];
@@ -429,23 +492,6 @@ export default async function PlayerDetailPage({ params, searchParams }: { param
   const latestWellnessScore = playerWellnessList[0]?.total_score ?? null;
 
   const initials = `${player.last_name?.[0] ?? ""}${player.first_name?.[0] ?? ""}`;
-
-  // Перевіряємо згоди: consentSummary містить дозволи за кожною областю
-  const [
-    consentSummary,
-    activeDocuments,
-    devicesRes,
-    telegramRes,
-    subRes,
-    parentAccessState,
-  ] = await Promise.all([
-    getPlayerConsentSummary(id, player.date_of_birth, player.club_id),
-    getActiveConsentDocuments(player.club_id),
-    getPlayerActiveDevicesAction(id),
-    getPlayerTelegramStatusAction(id),
-    supabase.from("player_subscriptions").select("*").eq("player_id", id).maybeSingle(),
-    getPlayerParentAccessStateAction(id),
-  ]);
 
   const playerSub = subRes?.data || null;
 

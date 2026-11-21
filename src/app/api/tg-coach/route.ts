@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/utils/supabase/admin";
+import { DEFAULT_CLUB_ID } from "@/lib/auth";
+import { getClubTelegramConfig } from "@/lib/club-telegram";
 import { verifyTelegramWebAppInitData } from "@/lib/telegram-webapp-auth";
 import { calculatePlayerAvailability } from "@/lib/availability-rules";
+import { getClubDate, getClubTimezone } from "@/lib/club-timezone";
 import {
   finalizeCoachTrainingSession,
   getCoachSession,
   updateCoachSession,
-} from "@/actions/coach-telegram-actions";
+} from "@/lib/coach-telegram-server";
 import { memoryCoachBindings } from "@/lib/coach-telegram-state";
 import type { PreSeasonScreening } from "@/types/screening";
 import type { RtpPhaseLog } from "@/types/rtp";
@@ -14,15 +17,53 @@ import type { TrainingSessionType, RpeScore } from "@/types/workload";
 
 export const dynamic = "force-dynamic";
 
-async function resolveCoachByTelegram(initData: string) {
-  const token = process.env.TELEGRAM_BOT_TOKEN || "";
-  const verified = verifyTelegramWebAppInitData(initData, token);
-  if (!verified.ok) {
-    return { error: verified.error, status: 401 as const };
+async function resolveCoachByTelegram(initData: string, requestedClubId?: string | null) {
+  const supabase = createAdminClient();
+  const cleanClubId = requestedClubId?.trim() || "";
+
+  let verified: ReturnType<typeof verifyTelegramWebAppInitData> | null = null;
+  let verifiedClubId = "";
+
+  if (cleanClubId) {
+    const { botToken } = await getClubTelegramConfig(cleanClubId);
+    const candidate = verifyTelegramWebAppInitData(initData, botToken);
+    if (!candidate.ok) {
+      return { error: candidate.error, status: 401 as const };
+    }
+    verified = candidate;
+    verifiedClubId = cleanClubId;
+  } else {
+    const defaultToken = process.env.TELEGRAM_BOT_TOKEN || "";
+    const defaultCandidate = verifyTelegramWebAppInitData(initData, defaultToken);
+    if (defaultCandidate.ok) {
+      verified = defaultCandidate;
+      verifiedClubId = DEFAULT_CLUB_ID;
+    } else {
+      try {
+        const { data: clubsData } = await supabase
+          .from("clubs")
+          .select("id, settings")
+          .not("settings->telegram->encrypted_token", "is", null);
+
+        for (const c of clubsData || []) {
+          const { botToken: clubToken } = await getClubTelegramConfig(c.id);
+          if (!clubToken) continue;
+          const candidate = verifyTelegramWebAppInitData(initData, clubToken);
+          if (candidate.ok) {
+            verified = candidate;
+            verifiedClubId = c.id;
+            break;
+          }
+        }
+      } catch {}
+
+      if (!verified || !verified.ok) {
+        return { error: defaultCandidate.error, status: 401 as const };
+      }
+    }
   }
 
   const chatId = String(verified.user.id);
-  const supabase = createAdminClient();
 
   let binding: { coach_user_id: string; club_id?: string | null } | null = null;
   try {
@@ -30,14 +71,15 @@ async function resolveCoachByTelegram(initData: string) {
       .from("coach_telegram_bindings")
       .select("coach_user_id, club_id, status")
       .eq("telegram_chat_id", chatId)
+      .eq("club_id", verifiedClubId)
       .eq("status", "active")
       .maybeSingle();
     if (data) binding = data;
   } catch {}
 
   if (!binding) {
-    const mem = memoryCoachBindings.get(chatId);
-    if (mem && mem.status === "active") {
+    const mem = memoryCoachBindings.get(`${verifiedClubId}:${chatId}`);
+    if (mem && mem.club_id === verifiedClubId && mem.status === "active") {
       binding = mem;
     }
   }
@@ -51,22 +93,55 @@ async function resolveCoachByTelegram(initData: string) {
 
   const coachUserId = binding.coach_user_id;
 
+  let memberQuery = supabase
+    .from("club_members")
+    .select("club_id, team_id, role")
+    .eq("user_id", coachUserId);
+  if (binding.club_id) {
+    memberQuery = memberQuery.eq("club_id", binding.club_id);
+  }
+
   const [profileRes, memberRes, assignmentsRes] = await Promise.all([
     supabase.from("profiles").select("full_name, team_id").eq("id", coachUserId).maybeSingle(),
-    supabase.from("club_members").select("club_id, team_id").eq("user_id", coachUserId).limit(1).maybeSingle(),
-    supabase.from("coach_team_assignments").select("team_id").eq("coach_user_id", coachUserId),
+    memberQuery.limit(1).maybeSingle(),
+    supabase.from("coach_team_assignments").select("team_id, club_id").eq("coach_user_id", coachUserId),
   ]);
 
-  const clubId = binding.club_id || memberRes.data?.club_id || null;
-  const teamIds = Array.from(
+  const member = memberRes.data;
+  if (
+    !member?.club_id ||
+    !["coach", "doctor", "admin"].includes(String(member.role || ""))
+  ) {
+    return {
+      error: "Акаунт не має активного доступу до клубу.",
+      status: 403 as const,
+    };
+  }
+
+  const clubId = member.club_id;
+  const role = member.role as "coach" | "doctor" | "admin";
+
+  const candidateTeamIds = Array.from(
     new Set(
       [
-        ...(assignmentsRes.data || []).map((a: any) => a.team_id),
-        memberRes.data?.team_id,
+        ...(assignmentsRes.data || [])
+          .filter((a: any) => !a.club_id || a.club_id === clubId)
+          .map((a: any) => a.team_id),
+        member.team_id,
         profileRes.data?.team_id,
       ].filter(Boolean)
     )
   ) as string[];
+
+  let teamIds: string[] = [];
+  if (candidateTeamIds.length > 0) {
+    const { data: clubTeams } = await supabase
+      .from("teams")
+      .select("id")
+      .eq("club_id", clubId)
+      .in("id", candidateTeamIds);
+    teamIds = (clubTeams || []).map((t: any) => t.id);
+  }
 
   const coachName =
     profileRes.data?.full_name ||
@@ -77,6 +152,7 @@ async function resolveCoachByTelegram(initData: string) {
     coachUserId,
     chatId,
     clubId,
+    role,
     teamIds,
     coachName,
   };
@@ -87,24 +163,37 @@ export async function GET(req: NextRequest) {
     req.headers.get("x-telegram-init-data") ||
     req.nextUrl.searchParams.get("initData") ||
     "";
+  const requestedClubId =
+    req.nextUrl.searchParams.get("clubId") || req.headers.get("x-club-id");
 
-  const auth = await resolveCoachByTelegram(initData);
+  const auth = await resolveCoachByTelegram(initData, requestedClubId);
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
   const supabase = createAdminClient();
-  const todayStr = new Date().toISOString().split("T")[0];
+  const timezone = await getClubTimezone(auth.clubId);
+  const todayStr = getClubDate(timezone);
+
+  if (auth.role === "coach" && auth.teamIds.length === 0) {
+    const session = await getCoachSession(auth.coachUserId, auth.chatId);
+    return NextResponse.json({
+      coachName: auth.coachName,
+      todayDate: todayStr,
+      preferredMode: (session?.session_draft as any)?.preferred_mode || "miniapp",
+      teams: [],
+      players: [],
+    });
+  }
 
   let teamsQuery = supabase
     .from("teams")
     .select("id, name, category, sort_order")
+    .eq("club_id", auth.clubId)
     .order("sort_order", { ascending: true });
 
-  if (auth.teamIds.length > 0) {
+  if (auth.role === "coach" || auth.teamIds.length > 0) {
     teamsQuery = teamsQuery.in("id", auth.teamIds);
-  } else if (auth.clubId) {
-    teamsQuery = teamsQuery.eq("club_id", auth.clubId);
   }
 
   let playersQuery = supabase
@@ -114,36 +203,45 @@ export async function GET(req: NextRequest) {
       teams ( id, name, category, sort_order ),
       injuries ( id, status, injury_type, location, vas_score, date_of_injury, expected_return_date, description )
     `)
+    .eq("club_id", auth.clubId)
     .is("archived_at", null);
 
-  if (auth.teamIds.length > 0) {
+  if (auth.role === "coach" || auth.teamIds.length > 0) {
     playersQuery = playersQuery.in("team_id", auth.teamIds);
-  } else if (auth.clubId) {
-    playersQuery = playersQuery.eq("club_id", auth.clubId);
   }
 
-  let screeningsQuery = supabase
+  const screeningsQuery = supabase
     .from("player_screenings")
     .select("id, player_id, date, season, examiner_doctor, overall_status, valid_until, cardio_clearance, restrictions_notes, data, created_at")
+    .eq("club_id", auth.clubId)
     .order("date", { ascending: false })
     .limit(300);
 
-  if (auth.clubId) {
-    screeningsQuery = screeningsQuery.eq("club_id", auth.clubId);
-  }
-
-  const [teamsRes, playersRes, rtpLogsRes, screeningLogsRes, session] = await Promise.all([
+  const [teamsRes, playersRes, screeningLogsRes, session] = await Promise.all([
     teamsQuery,
     playersQuery,
-    supabase
-      .from("injury_logs")
-      .select("injury_id, note, date, created_at")
-      .like("note", "[RTP_PHASE]%")
-      .order("created_at", { ascending: false })
-      .limit(300),
     screeningsQuery,
     getCoachSession(auth.coachUserId, auth.chatId),
   ]);
+
+  const playerInjuryIds = Array.from(
+    new Set(
+      (playersRes.data || []).flatMap((p: any) =>
+        Array.isArray(p.injuries) ? p.injuries.map((inj: any) => inj?.id).filter(Boolean) : []
+      )
+    )
+  ) as string[];
+
+  const rtpLogsRes =
+    playerInjuryIds.length > 0
+      ? await supabase
+          .from("injury_logs")
+          .select("injury_id, note, date, created_at")
+          .in("injury_id", playerInjuryIds)
+          .like("note", "[RTP_PHASE]%")
+          .order("created_at", { ascending: false })
+          .limit(300)
+      : { data: [] };
 
   const latestRtpByInjury: Record<string, Partial<RtpPhaseLog>> = {};
   for (const log of rtpLogsRes.data || []) {
@@ -218,7 +316,11 @@ export async function POST(req: NextRequest) {
   }
 
   const initData = req.headers.get("x-telegram-init-data") || body?.initData || "";
-  const auth = await resolveCoachByTelegram(initData);
+  const requestedClubId =
+    req.nextUrl.searchParams.get("clubId") ||
+    req.headers.get("x-club-id") ||
+    body?.clubId;
+  const auth = await resolveCoachByTelegram(initData, requestedClubId);
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
@@ -226,16 +328,42 @@ export async function POST(req: NextRequest) {
   const action = body?.action;
 
   if (action === "save_training") {
-    const res = await finalizeCoachTrainingSession(auth.coachUserId, auth.chatId, {
-      team_id: body.teamId || auth.teamIds[0],
-      date: new Date().toISOString().split("T")[0],
-      session_type: (body.sessionType || "training_team") as TrainingSessionType,
-      duration_minutes: Number(body.durationMinutes) || 90,
-      rpe_score: (Number(body.rpeScore) || 5) as RpeScore,
-      surface: body.surface || "Не вказано",
-      incident: body.incident === "injury" ? "injury" : "none",
-      notes: body.notes || "",
-    });
+    const targetTeamId = String(body.teamId || auth.teamIds[0] || "").trim();
+    if (!targetTeamId) {
+      return NextResponse.json({ error: "Оберіть команду" }, { status: 400 });
+    }
+    if (auth.role === "coach" && !auth.teamIds.includes(targetTeamId)) {
+      return NextResponse.json({ error: "Немає доступу до цієї команди" }, { status: 403 });
+    }
+
+    const supabaseAdmin = createAdminClient();
+    const { data: teamCheck } = await supabaseAdmin
+      .from("teams")
+      .select("id")
+      .eq("id", targetTeamId)
+      .eq("club_id", auth.clubId)
+      .maybeSingle();
+
+    if (!teamCheck) {
+      return NextResponse.json({ error: "Команду не знайдено у вашому клубі" }, { status: 403 });
+    }
+
+    const timezone = await getClubTimezone(auth.clubId);
+    const res = await finalizeCoachTrainingSession(
+      auth.coachUserId,
+      auth.chatId,
+      {
+        team_id: targetTeamId,
+        date: getClubDate(timezone),
+        session_type: (body.sessionType || "training_team") as TrainingSessionType,
+        duration_minutes: Number(body.durationMinutes) || 90,
+        rpe_score: (Number(body.rpeScore) || 5) as RpeScore,
+        surface: body.surface || "Не вказано",
+        incident: body.incident === "injury" ? "injury" : "none",
+        notes: body.notes || "",
+      },
+      auth.clubId
+    );
     return NextResponse.json(res, { status: res.success ? 200 : 400 });
   }
 
@@ -248,17 +376,23 @@ export async function POST(req: NextRequest) {
     }
 
     const supabase = createAdminClient();
-    const todayStr = new Date().toISOString().split("T")[0];
+    const timezone = await getClubTimezone(auth.clubId);
+    const todayStr = getClubDate(timezone);
 
     // Знаходимо або створюємо прив'язку до травми для логу, або пишемо в audit_logs
     const { data: player } = await supabase
       .from("players")
-      .select("id, first_name, last_name, club_id")
+      .select("id, first_name, last_name, club_id, team_id")
       .eq("id", playerId)
+      .eq("club_id", auth.clubId)
       .maybeSingle();
 
     if (!player) {
       return NextResponse.json({ error: "Гравця не знайдено" }, { status: 404 });
+    }
+
+    if (auth.role === "coach" && (!player.team_id || !auth.teamIds.includes(player.team_id))) {
+      return NextResponse.json({ error: "Немає доступу до гравця цієї команди" }, { status: 403 });
     }
 
     const payload = {
@@ -295,6 +429,7 @@ export async function POST(req: NextRequest) {
 
       if (latestInj?.id) {
         await supabase.from("injury_logs").insert({
+          club_id: player.club_id || auth.clubId,
           injury_id: latestInj.id,
           date: todayStr,
           note: `[COACH_FIELD_REPORT] ${JSON.stringify(payload)}`,

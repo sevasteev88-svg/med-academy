@@ -1,17 +1,11 @@
 import crypto from "crypto";
 import type { PlayerDevice } from "../types/player-device.ts";
+import { getPlayerSessionSecret } from "./server-secrets.ts";
 
 export const DEVICE_COOKIE_NAME = "rehab_device_session";
 export const DEVICE_SESSION_MAX_AGE_SECONDS = 365 * 24 * 60 * 60; // 365 днів (1 сезон)
 export const ACTIVATION_TOKEN_MAX_AGE_SECONDS = 365 * 24 * 60 * 60; // 365 днів (1 сезон)
 export const MAX_ACTIVE_DEVICES_PER_PLAYER = 2; // Максимум 2 активні пристрої
-
-/**
- * Отримує секретний ключ для підпису сесійних токенів
- */
-function getSigningSecret(): string {
-  return process.env.PLAYER_SESSION_SECRET || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "med-academy-portal-secure-salt";
-}
 
 /**
  * Генерує криптографічно стійкий 128-бітний токен активації (16 байт = 32 hex-символи)
@@ -94,7 +88,7 @@ export async function getClientUserAgent(): Promise<string> {
 export function createDeviceSessionCookieValue(deviceId: string, sessionSecret: string, playerId: string): string {
   const payloadStr = JSON.stringify({ deviceId, sessionSecret, playerId, iat: Math.floor(Date.now() / 1000) });
   const encoded = Buffer.from(payloadStr).toString("base64url");
-  const signature = crypto.createHmac("sha256", getSigningSecret()).update(encoded).digest("base64url");
+  const signature = crypto.createHmac("sha256", getPlayerSessionSecret()).update(encoded).digest("base64url");
   return `${encoded}.${signature}`;
 }
 
@@ -106,7 +100,7 @@ export function verifyDeviceSessionCookieValue(cookieVal: string): { deviceId: s
   const [encoded, signature] = cookieVal.split(".");
   if (!encoded || !signature) return null;
 
-  const expectedSig = crypto.createHmac("sha256", getSigningSecret()).update(encoded).digest("base64url");
+  const expectedSig = crypto.createHmac("sha256", getPlayerSessionSecret()).update(encoded).digest("base64url");
   const sigBuf = Buffer.from(signature);
   const expBuf = Buffer.from(expectedSig);
   if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
@@ -151,7 +145,7 @@ export async function setDeviceSessionCookie(deviceId: string, sessionSecret: st
     };
     const jsonStr = JSON.stringify(standardPayload);
     const encodedPayload = Buffer.from(jsonStr).toString("base64url");
-    const signature = crypto.createHmac("sha256", getSigningSecret()).update(encodedPayload).digest("base64url");
+    const signature = crypto.createHmac("sha256", getPlayerSessionSecret()).update(encodedPayload).digest("base64url");
 
     cookieStore.set("rehab_player_session", `${encodedPayload}.${signature}`, {
       httpOnly: true,

@@ -14,7 +14,7 @@ import RiskAlertsCenter from "@/components/alerts/RiskAlertsCenter";
 import { getRiskAlerts } from "@/lib/get-risk-alerts";
 import { getPlayerAvailability } from "@/lib/availability";
 import { calculateExposureMetrics, INSUFFICIENT_EXPOSURE_DATA_MSG } from "@/lib/exposure-calculator";
-import { getClubDate, getClubTimezone } from "@/lib/club-timezone";
+import { getClubDate } from "@/lib/club-timezone";
 
 // ─── Типи ────────────────────────────────────────────────────────────────────
 type StatCard = {
@@ -122,43 +122,92 @@ function StatCardItem({ icon, value, label, accent, href }: StatCard) {
 
 // ─── Головний компонент ───────────────────────────────────────────────────────
 export default async function Home() {
-  const supabase = await createClient();
-  const user = await getCurrentUser();
-  const todayStr = new Date().toISOString().split("T")[0];
-  const weekAgoStr = new Date(Date.now() - 7 * 86400000).toISOString().split("T")[0];
-  const weekAheadStr = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0];
+  const [supabase, user] = await Promise.all([createClient(), getCurrentUser()]);
+  const clubId = user?.clubId ?? null;
 
   let clubName = "Академія";
-  if (user?.clubId) {
-    const { data: club } = await supabase.from("clubs").select("name").eq("id", user.clubId).maybeSingle();
+  let timezone = "Europe/Kyiv";
+  let wellnessStore: Record<string, any> = {};
+
+  if (clubId) {
+    const { data: club } = await supabase
+      .from("clubs")
+      .select("name, settings")
+      .eq("id", clubId)
+      .maybeSingle();
     if (club?.name) clubName = club.name;
+    const rawTz = (club as any)?.settings?.timezone;
+    if (rawTz && typeof rawTz === "string" && rawTz.trim().length > 0) {
+      timezone = rawTz.trim();
+    }
+    const rawStore = (club as any)?.settings?.wellness_entries_store;
+    if (rawStore && typeof rawStore === "object") {
+      wellnessStore = rawStore;
+    }
+  }
+
+  const now = new Date();
+  const todayClubDate = getClubDate(timezone, now);
+  const yesterdayObj = new Date(now);
+  yesterdayObj.setDate(yesterdayObj.getDate() - 1);
+  const yesterdayClubDate = getClubDate(timezone, yesterdayObj);
+  const weekAgoStr = getClubDate(timezone, new Date(now.getTime() - 7 * 86400000));
+  const weekAheadStr = getClubDate(timezone, new Date(now.getTime() + 7 * 86400000));
+
+  let scheduledExamsQuery = supabase
+    .from("injuries")
+    .select("*", { count: "exact", head: true })
+    .in("status", ["active", "rehabilitation"])
+    .not("next_exam_date", "is", null)
+    .lte("next_exam_date", weekAheadStr);
+  let examsPastWeekQuery = supabase
+    .from("injury_examinations")
+    .select("*", { count: "exact", head: true })
+    .gte("date", weekAgoStr);
+  let allInjuriesQuery = supabase
+    .from("injuries")
+    .select("id, activity_type, date_of_injury, actual_return_date, expected_return_date, status");
+  let allExposuresQuery = supabase
+    .from("exposures")
+    .select("id, team_id, date, type, minutes, players_count");
+  let rawTriageQuery = supabase
+    .from("injuries")
+    .select(`
+      id, player_id, location, injury_type, vas_score, status,
+      is_classified, mlgr_code, bamic_code, munich_type, rtp_min_days, rtp_max_days, rtp_risk,
+      players ( id, first_name, last_name, position, teams ( name ), maturation_assessments ( risk_zone, created_at ) )
+    `)
+    .in("status", ["active", "rehabilitation"]);
+
+  if (clubId) {
+    scheduledExamsQuery = scheduledExamsQuery.eq("club_id", clubId);
+    examsPastWeekQuery = examsPastWeekQuery.eq("club_id", clubId);
+    allInjuriesQuery = allInjuriesQuery.eq("club_id", clubId);
+    allExposuresQuery = allExposuresQuery.eq("club_id", clubId);
+    rawTriageQuery = rawTriageQuery.eq("club_id", clubId);
   }
 
   // ── Статистика (лічильники та доступність через єдине джерело) ──
   const [
-    { count: activeInjuries },
-    { count: onRehab },
     { count: scheduledExamsCount },
     { count: examsPastWeekCount },
     alerts,
     availability,
     { data: allInjuriesForExposure },
     { data: allExposures },
+    { data: rawTriageInjuries },
   ] = await Promise.all([
-    supabase.from("injuries").select("*", { count: "exact", head: true }).eq("status", "active"),
-    supabase.from("injuries").select("*", { count: "exact", head: true }).eq("status", "rehabilitation"),
-    supabase
-      .from("injuries")
-      .select("*", { count: "exact", head: true })
-      .in("status", ["active", "rehabilitation"])
-      .not("next_exam_date", "is", null)
-      .lte("next_exam_date", weekAheadStr),
-    supabase.from("injury_examinations").select("*", { count: "exact", head: true }).gte("date", weekAgoStr),
+    scheduledExamsQuery,
+    examsPastWeekQuery,
     getRiskAlerts({ includePharmacy: user?.role !== "coach" }),
-    getPlayerAvailability(user?.clubId),
-    supabase.from("injuries").select("id, activity_type, date_of_injury, actual_return_date, expected_return_date, status"),
-    supabase.from("exposures").select("id, team_id, date, type, minutes, players_count"),
+    getPlayerAvailability(clubId ?? undefined, todayClubDate),
+    allInjuriesQuery,
+    allExposuresQuery,
+    rawTriageQuery,
   ]);
+
+  const activeInjuries = (allInjuriesForExposure ?? []).filter((i: any) => i.status === "active").length;
+  const onRehab = (allInjuriesForExposure ?? []).filter((i: any) => i.status === "rehabilitation").length;
 
   // Розрахунок метрик експозиції та захворюваності (травми на 1000 годин)
   const exposureMetrics = calculateExposureMetrics(
@@ -180,13 +229,13 @@ export default async function Home() {
   const STAT_CARDS: StatCard[] = isCoach
     ? [
         { icon: <CheckCircle size={14} />, value: readyCount, label: "Готові до матчу", accent: "green", href: "/availability" },
-        { icon: <Activity size={14} />, value: onRehab ?? 0, label: "На реабілітації", accent: "amber", href: "/rtp" },
+        { icon: <Activity size={14} />, value: onRehab, label: "На реабілітації", accent: "amber", href: "/rtp" },
         { icon: <Activity size={14} />, value: totalPlayers, label: "Всього у складі", accent: "blue", href: "/coach-briefing" },
         { icon: <Calendar size={14} />, value: "Сесія", label: "Внести тренування", accent: "blue", href: "/training" },
       ]
     : [
-        { icon: <Bandage size={14} />, value: activeInjuries ?? 0, label: "Активні травми", accent: "red", href: "/injuries" },
-        { icon: <Activity size={14} />, value: onRehab ?? 0, label: "На реабілітації", accent: "amber", href: "/rtp" },
+        { icon: <Bandage size={14} />, value: activeInjuries, label: "Активні травми", accent: "red", href: "/injuries" },
+        { icon: <Activity size={14} />, value: onRehab, label: "На реабілітації", accent: "amber", href: "/rtp" },
         { icon: <CheckCircle size={14} />, value: readyCount, label: "Готові до матчу", accent: "green", href: "/availability" },
         {
           icon: <Calendar size={14} />,
@@ -199,22 +248,7 @@ export default async function Home() {
 
   const displayAlerts = isCoach ? alerts.filter((a: any) => a.type !== "pharmacy") : alerts;
 
-  // ── Тріаж: активні + реабілітація, динамічний ВАШ із ранкового світлофора ──
-  const timezone = await getClubTimezone(user?.clubId || undefined);
-  const todayClubDate = getClubDate(timezone);
-  const yesterdayObj = new Date();
-  yesterdayObj.setDate(yesterdayObj.getDate() - 1);
-  const yesterdayClubDate = getClubDate(timezone, yesterdayObj);
-
-  const { data: rawTriageInjuries } = await supabase
-    .from("injuries")
-    .select(`
-      id, player_id, location, injury_type, vas_score, status,
-      is_classified, mlgr_code, bamic_code, munich_type, rtp_min_days, rtp_max_days, rtp_risk,
-      players ( id, first_name, last_name, position, teams ( name ), maturation_assessments ( risk_zone, created_at ) )
-    `)
-    .in("status", ["active", "rehabilitation"]);
-
+  // ── Тріаж та реабілітація: паралельне завантаження wellness та RTP логів ──
   const injuredPlayerIds = Array.from(
     new Set(
       (rawTriageInjuries ?? [])
@@ -222,63 +256,94 @@ export default async function Home() {
         .filter(Boolean)
     )
   );
+  const injuredPlayerIdSet = new Set(injuredPlayerIds);
 
-  let wellnessList: Array<{ player_id: string; date: string; pain?: boolean | null; pain_vas?: number | null }> = [];
-  if (injuredPlayerIds.length > 0) {
-    try {
-      const { data: weData } = await supabase
-        .from("wellness_entries")
-        .select("player_id, date, pain, pain_vas")
-        .in("player_id", injuredPlayerIds)
-        .gte("date", yesterdayClubDate)
-        .lte("date", todayClubDate);
-      if (weData) wellnessList.push(...weData);
-    } catch {}
+  const rehabInjuries = (rawTriageInjuries ?? [])
+    .filter((inj: any) => inj.status === "rehabilitation")
+    .slice(0, 5);
+  const rehabInjuryIds = rehabInjuries.map((inj: any) => inj.id).filter(Boolean);
 
-    try {
-      const { data: wsData } = await supabase
-        .from("wellness_surveys")
-        .select("player_id, date, notes")
-        .in("player_id", injuredPlayerIds)
-        .gte("date", yesterdayClubDate)
-        .lte("date", todayClubDate);
-      if (wsData) {
-        for (const s of wsData) {
-          let extra: any = {};
-          if (s.notes && typeof s.notes === "string" && s.notes.startsWith("{")) {
-            try { extra = JSON.parse(s.notes); } catch {}
+  const [weData, wsData, rtpClearanceLogs] = await Promise.all([
+    injuredPlayerIds.length > 0
+      ? (async () => {
+          try {
+            let q = supabase
+              .from("wellness_entries")
+              .select("player_id, date, pain, pain_vas")
+              .in("player_id", injuredPlayerIds)
+              .gte("date", yesterdayClubDate)
+              .lte("date", todayClubDate);
+            if (clubId) q = q.eq("club_id", clubId);
+            const { data } = await q;
+            return data ?? [];
+          } catch {
+            return [];
           }
-          wellnessList.push({
-            player_id: s.player_id,
-            date: s.date,
-            pain: extra.pain ?? false,
-            pain_vas: extra.pain_vas ?? null,
-          });
-        }
-      }
-    } catch {}
-
-    try {
-      if (user?.clubId) {
-        const { data: clubSettingsData } = await supabase
-          .from("clubs")
-          .select("settings")
-          .eq("id", user.clubId)
-          .maybeSingle();
-        const store = (clubSettingsData as any)?.settings?.wellness_entries_store || {};
-        for (const [, val] of Object.entries(store)) {
-          const entry = val as any;
-          if (injuredPlayerIds.includes(entry.player_id) && (entry.date === todayClubDate || entry.date === yesterdayClubDate)) {
-            wellnessList.push({
-              player_id: entry.player_id,
-              date: entry.date,
-              pain: entry.pain ?? false,
-              pain_vas: entry.pain_vas ?? null,
-            });
+        })()
+      : Promise.resolve([] as any[]),
+    injuredPlayerIds.length > 0
+      ? (async () => {
+          try {
+            let q = supabase
+              .from("wellness_surveys")
+              .select("player_id, date, notes")
+              .in("player_id", injuredPlayerIds)
+              .gte("date", yesterdayClubDate)
+              .lte("date", todayClubDate);
+            if (clubId) q = q.eq("club_id", clubId);
+            const { data } = await q;
+            return data ?? [];
+          } catch {
+            return [];
           }
-        }
+        })()
+      : Promise.resolve([] as any[]),
+    rehabInjuryIds.length > 0
+      ? (async () => {
+          let q = supabase
+            .from("injury_logs")
+            .select("injury_id, note, created_at")
+            .in("injury_id", rehabInjuryIds)
+            .like("note", "[RTP_CLEARANCE]%")
+            .order("created_at", { ascending: false })
+            .limit(50);
+          if (clubId) q = q.eq("club_id", clubId);
+          const { data } = await q;
+          return data ?? [];
+        })()
+      : Promise.resolve([] as any[]),
+  ]);
+
+  const wellnessList: Array<{ player_id: string; date: string; pain?: boolean | null; pain_vas?: number | null }> = [];
+  if (weData.length > 0) wellnessList.push(...weData);
+  for (const s of wsData) {
+    let extra: any = {};
+    if (s.notes && typeof s.notes === "string" && s.notes.startsWith("{")) {
+      try { extra = JSON.parse(s.notes); } catch {}
+    }
+    wellnessList.push({
+      player_id: s.player_id,
+      date: s.date,
+      pain: extra.pain ?? false,
+      pain_vas: extra.pain_vas ?? null,
+    });
+  }
+  if (injuredPlayerIdSet.size > 0) {
+    for (const [, val] of Object.entries(wellnessStore)) {
+      const entry = val as any;
+      if (
+        entry &&
+        injuredPlayerIdSet.has(entry.player_id) &&
+        (entry.date === todayClubDate || entry.date === yesterdayClubDate)
+      ) {
+        wellnessList.push({
+          player_id: entry.player_id,
+          date: entry.date,
+          pain: entry.pain ?? false,
+          pain_vas: entry.pain_vas ?? null,
+        });
       }
-    } catch {}
+    }
   }
 
   // Обчислюємо динамічний ВАШ:
@@ -328,23 +393,6 @@ export default async function Home() {
     })
     .slice(0, 5);
 
-  // ── Реабілітація: фази з прогресом (RTP Clearance + RTP Phases) ──
-  const [{ data: rehabInjuries }, { data: rtpClearanceLogs }] = await Promise.all([
-    supabase
-      .from("injuries")
-      .select(`
-        id, location, injury_type,
-        players ( first_name, last_name )
-      `)
-      .eq("status", "rehabilitation")
-      .limit(5),
-    supabase
-      .from("injury_logs")
-      .select("injury_id, note, created_at")
-      .like("note", "[RTP_CLEARANCE]%")
-      .order("created_at", { ascending: false }),
-  ]);
-
   // Словник останнього прогресу допуску по травмах
   const clearanceByInjury: Record<string, { pct: number; passed: number; total: number }> = {};
   for (const log of rtpClearanceLogs ?? []) {
@@ -364,7 +412,7 @@ export default async function Home() {
   }
 
   // Рахуємо прогрес реабілітації
-  const rehabRows = (rehabInjuries ?? []).map((inj: any) => {
+  const rehabRows = rehabInjuries.map((inj: any) => {
     const clr = clearanceByInjury[inj.id];
     const pct = clr ? clr.pct : 0;
     return {

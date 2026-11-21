@@ -1,7 +1,7 @@
 "use server";
 
 import { createClient } from "@/utils/supabase/server";
-import { assertAuth, assertDoctor, assertTeamStaff } from "@/lib/auth";
+import { assertAuth, assertDoctor, assertTeamStaff, assertPlayerAccess, assertTeamAccess } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { revalidatePath } from "next/cache";
 import { resolveOfflineConflict, buildConflictAuditMeta } from "@/lib/offline-conflict";
@@ -45,12 +45,25 @@ export async function syncOfflineBatchAction(
           details.push({ id: item.id, type: "injury", success: false, error: docAuth.error });
           continue;
         }
+        const targetPlayerId = payload.player_id || payload.playerId;
+        if (!targetPlayerId) {
+          failed++;
+          details.push({ id: item.id, type: "injury", success: false, error: "Не вказано гравця" });
+          continue;
+        }
+        const playerAccess = await assertPlayerAccess(user, targetPlayerId, { allowCoach: false });
+        if ("error" in playerAccess) {
+          failed++;
+          details.push({ id: item.id, type: "injury", success: false, error: playerAccess.error });
+          continue;
+        }
         // Синхронізація форми «Фіксувати травму»
         const injuryId = payload.id || item.id;
         const { data: existing } = await supabase
           .from("injuries")
           .select("*")
           .eq("id", injuryId)
+          .eq("club_id", user.clubId)
           .maybeSingle();
 
         if (existing) {
@@ -69,9 +82,11 @@ export async function syncOfflineBatchAction(
               .from("injuries")
               .update({
                 ...payload,
+                club_id: user.clubId,
                 updated_at: new Date().toISOString(),
               })
-              .eq("id", injuryId);
+              .eq("id", injuryId)
+              .eq("club_id", user.clubId);
           }
 
           if (resolution.isConflict) {
@@ -121,24 +136,14 @@ export async function syncOfflineBatchAction(
           continue;
         }
 
-        const { data: playerRow } = await supabase
-          .from("players")
-          .select("team_id")
-          .eq("id", playerId)
-          .maybeSingle();
-
-        if (user.role === "coach" && !playerRow?.team_id) {
+        const playerAccess = await assertPlayerAccess(user, playerId, { allowCoach: true });
+        if ("error" in playerAccess) {
           failed++;
-          details.push({
-            id: item.id,
-            type: "wellness",
-            success: false,
-            error: "Недостатньо прав. Гравець не закріплений за командою.",
-          });
+          details.push({ id: item.id, type: "wellness", success: false, error: playerAccess.error });
           continue;
         }
 
-        const staffAuth = await assertTeamStaff(playerRow?.team_id || undefined);
+        const staffAuth = await assertTeamStaff(playerAccess.player.team_id || undefined);
         if ("error" in staffAuth) {
           failed++;
           details.push({ id: item.id, type: "wellness", success: false, error: staffAuth.error });
@@ -268,12 +273,28 @@ export async function syncOfflineBatchAction(
           continue;
         }
 
+        const teamAccess = await assertTeamAccess(user, teamId, { allowCoach: true });
+        if ("error" in teamAccess) {
+          failed++;
+          details.push({ id: item.id, type: "workload", success: false, error: teamAccess.error });
+          continue;
+        }
+
         if (Array.isArray(payload.players)) {
           const trainRes = await saveTeamTrainingAction(payload);
           if (!trainRes.success) {
             throw new Error(trainRes.error || "Помилка збереження тренування");
           }
         } else {
+          const targetPlayerId = payload.player_id || payload.playerId;
+          if (targetPlayerId) {
+            const pAccess = await assertPlayerAccess(user, targetPlayerId, { allowCoach: true });
+            if ("error" in pAccess) {
+              failed++;
+              details.push({ id: item.id, type: "workload", success: false, error: pAccess.error });
+              continue;
+            }
+          }
           // Синхронізація одиничного навантаження (session-RPE)
           await supabase.from("training_load_records").insert({
             ...payload,
@@ -289,6 +310,18 @@ export async function syncOfflineBatchAction(
         if ("error" in docAuth) {
           failed++;
           details.push({ id: item.id, type: "prescription", success: false, error: docAuth.error });
+          continue;
+        }
+        const targetPlayerId = payload.player_id || payload.playerId;
+        if (!targetPlayerId) {
+          failed++;
+          details.push({ id: item.id, type: "prescription", success: false, error: "Не вказано гравця" });
+          continue;
+        }
+        const playerAccess = await assertPlayerAccess(user, targetPlayerId, { allowCoach: false });
+        if ("error" in playerAccess) {
+          failed++;
+          details.push({ id: item.id, type: "prescription", success: false, error: playerAccess.error });
           continue;
         }
         // Синхронізація призначень медикаментів (аптека)

@@ -117,7 +117,8 @@ export async function classifyInjury(
   const { error } = await supabase
     .from("injuries")
     .update(updatePayload)
-    .eq("id", input.injuryId);
+    .eq("id", input.injuryId)
+    .eq("club_id", auth.user.clubId);
 
   if (error) return { error: error.message };
 

@@ -41,6 +41,7 @@ export async function archivePlayerAction(playerId: string, reason: string) {
     .from("players")
     .select("id, first_name, last_name, club_id")
     .eq("id", playerId)
+    .eq("club_id", auth.user.clubId)
     .maybeSingle();
 
   if (fetchError || !player) {
@@ -55,7 +56,8 @@ export async function archivePlayerAction(playerId: string, reason: string) {
       archived_at: archivedAt,
       archive_reason: trimmedReason,
     })
-    .eq("id", playerId);
+    .eq("id", playerId)
+    .eq("club_id", auth.user.clubId);
 
   if (updateError) {
     return { error: updateError.message };
@@ -93,6 +95,7 @@ export async function restorePlayerAction(playerId: string) {
     .from("players")
     .select("id, first_name, last_name, club_id")
     .eq("id", playerId)
+    .eq("club_id", auth.user.clubId)
     .maybeSingle();
 
   if (fetchError || !player) {
@@ -105,7 +108,8 @@ export async function restorePlayerAction(playerId: string) {
       archived_at: null,
       archive_reason: null,
     })
-    .eq("id", playerId);
+    .eq("id", playerId)
+    .eq("club_id", auth.user.clubId);
 
   if (updateError) {
     return { error: updateError.message };
@@ -150,6 +154,7 @@ export async function hardDeletePlayerAction(
     .from("players")
     .select("id, first_name, last_name, club_id")
     .eq("id", playerId)
+    .eq("club_id", auth.user.clubId)
     .maybeSingle();
 
   if (fetchError || !player) {
@@ -171,6 +176,7 @@ export async function hardDeletePlayerAction(
     .from("injuries")
     .select("id, injury_type, status")
     .eq("player_id", playerId)
+    .eq("club_id", auth.user.clubId)
     .in("status", ["active", "rehabilitation"]);
 
   if (injError) {
@@ -202,7 +208,8 @@ export async function hardDeletePlayerAction(
   const { error: deleteError } = await supabase
     .from("players")
     .delete()
-    .eq("id", playerId);
+    .eq("id", playerId)
+    .eq("club_id", auth.user.clubId);
 
   if (deleteError) {
     return { error: deleteError.message };

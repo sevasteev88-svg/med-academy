@@ -2,16 +2,22 @@
 // src/app/injuries/ArchiveSection.tsx
 // Згортуваний блок архіву закритих травм
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export default function ArchiveSection({
   count,
+  defaultOpen = false,
   children,
 }: {
   count: number;
+  defaultOpen?: boolean;
   children: React.ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
+
+  useEffect(() => {
+    if (defaultOpen) setOpen(true);
+  }, [defaultOpen]);
 
   return (
     <section className="mb-4">

@@ -744,7 +744,7 @@ export interface DemoSubscription {
   metadata?: Record<string, any>;
 }
 
-export const DEMO_SUBSCRIPTIONS: DemoSubscription[] = [
+const RAW_DEMO_SUBSCRIPTIONS: DemoSubscription[] = [
   // --- U-19 (10 гравців: 8 активних, 1 квота, 1 очікує оплати) ---
   {
     id: "00000000-0000-0000-0004-000000000001",
@@ -773,8 +773,8 @@ export const DEMO_SUBSCRIPTIONS: DemoSubscription[] = [
     amount_uah: 200,
     currency: "UAH",
     billing_interval: "month",
-    current_period_start: "2026-10-15T00:00:00Z",
-    current_period_end: "2026-11-15T23:59:59Z",
+    current_period_start: "2026-11-15T00:00:00Z",
+    current_period_end: "2026-12-15T23:59:59Z",
     payer_name: "Коваленко Сергій Володимирович",
     payer_phone: "+380671234502",
     payer_email: "kovalenko.serg@ukr.net",
@@ -881,8 +881,8 @@ export const DEMO_SUBSCRIPTIONS: DemoSubscription[] = [
     amount_uah: 200,
     currency: "UAH",
     billing_interval: "month",
-    current_period_start: "2026-10-14T00:00:00Z",
-    current_period_end: "2026-11-14T23:59:59Z",
+    current_period_start: "2026-11-14T00:00:00Z",
+    current_period_end: "2026-12-14T23:59:59Z",
     payer_name: "Поліщук Володимир Іванович",
     payer_phone: "+380671234508",
     payer_email: "polishchuk.v@gmail.com",
@@ -1222,6 +1222,21 @@ export const DEMO_SUBSCRIPTIONS: DemoSubscription[] = [
     card_type: "Mastercard",
   },
 ];
+
+export const DEMO_SUBSCRIPTIONS: DemoSubscription[] = RAW_DEMO_SUBSCRIPTIONS.map((sub): DemoSubscription => {
+  if (
+    (sub.status === "active" || sub.status === "comped") &&
+    new Date(sub.current_period_end).getTime() <= Date.now()
+  ) {
+    const daysToAdd = sub.billing_interval === "year" ? 300 : 25;
+    return {
+      ...sub,
+      current_period_start: new Date(Date.now() - 5 * 86400000).toISOString(),
+      current_period_end: new Date(Date.now() + daysToAdd * 86400000).toISOString(),
+    };
+  }
+  return sub;
+});
 
 // Законні представники (батьки) для 26 гравців Демо-Клубу
 export interface DemoGuardian {

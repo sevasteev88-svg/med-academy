@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/utils/supabase/server";
-import { assertDoctor } from "@/lib/auth";
+import { assertDoctor, assertPlayerAccess } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import {
   evaluateTueExpiry,
@@ -43,6 +43,11 @@ export async function createTueCaseAction(
 
   if (!input.player_id || !input.substance.trim() || !input.reason.trim()) {
     return { success: false, error: "Будь ласка, заповніть обов'язкові поля: гравець, субстанція та діагноз" };
+  }
+
+  const playerAccess = await assertPlayerAccess(user, input.player_id, { allowCoach: false });
+  if ("error" in playerAccess) {
+    return { success: false, error: playerAccess.error };
   }
 
   const supabase = await createClient();

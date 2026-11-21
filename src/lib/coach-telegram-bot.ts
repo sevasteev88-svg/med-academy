@@ -1,17 +1,26 @@
 import { createAdminClient } from "@/utils/supabase/admin";
 import {
-  sendCoachMorningDigestAction,
+  sendCoachMorningDigestInternal as sendCoachMorningDigestAction,
   getCoachSession,
   updateCoachSession,
   resetCoachSession,
   finalizeCoachTrainingSession,
-} from "@/actions/coach-telegram-actions";
-import { sendMorningWellnessRemindersAction } from "@/actions/telegram-actions";
+} from "@/lib/coach-telegram-server";
+import { sendMorningWellnessRemindersInternal } from "@/lib/telegram-reminders-server";
 import type { CoachTelegramBinding } from "@/types/telegram";
 import type { TrainingSessionType, RpeScore } from "@/types/workload";
 import { getClubTelegramConfig } from "@/lib/club-telegram";
+import { getClubDate } from "@/lib/club-timezone";
 
-async function resolveCoachBotToken(chatId: string): Promise<string> {
+async function resolveCoachBotToken(
+  chatId: string,
+  clubId?: string | null
+): Promise<string> {
+  if (clubId) {
+    const { botToken } = await getClubTelegramConfig(clubId);
+    return botToken;
+  }
+
   try {
     const supabase = createAdminClient();
     const { data } = await supabase
@@ -19,6 +28,7 @@ async function resolveCoachBotToken(chatId: string): Promise<string> {
       .select("club_id")
       .eq("telegram_chat_id", chatId)
       .eq("status", "active")
+      .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
     const { botToken } = await getClubTelegramConfig(data?.club_id);
@@ -53,8 +63,9 @@ async function sendOrEditMessage(params: {
   messageId?: number;
   text: string;
   replyMarkup?: any;
+  clubId?: string | null;
 }) {
-  const token = await resolveCoachBotToken(params.chatId);
+  const token = await resolveCoachBotToken(params.chatId, params.clubId);
   if (!token) return;
 
   if (params.messageId) {
@@ -69,6 +80,7 @@ async function sendOrEditMessage(params: {
           parse_mode: "Markdown",
           reply_markup: params.replyMarkup,
         }),
+        signal: AbortSignal.timeout(15000),
       });
       if (res.ok) return;
     } catch {}
@@ -85,12 +97,21 @@ async function sendOrEditMessage(params: {
         parse_mode: "Markdown",
         reply_markup: params.replyMarkup,
       }),
+      signal: AbortSignal.timeout(15000),
     });
   } catch {}
 }
 
-async function answerCallback(callbackQueryId: string, text?: string, chatId?: string) {
-  const token = chatId ? await resolveCoachBotToken(chatId) : (process.env.TELEGRAM_BOT_TOKEN || "");
+async function answerCallback(
+  callbackQueryId: string,
+  text?: string,
+  chatId?: string,
+  clubId?: string | null
+) {
+  const token =
+    clubId || chatId
+      ? await resolveCoachBotToken(chatId || "", clubId)
+      : process.env.TELEGRAM_BOT_TOKEN || "";
   if (!token) return;
   try {
     await fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
@@ -100,6 +121,7 @@ async function answerCallback(callbackQueryId: string, text?: string, chatId?: s
         callback_query_id: callbackQueryId,
         text: text || "",
       }),
+      signal: AbortSignal.timeout(15000),
     });
   } catch {}
 }
@@ -110,7 +132,8 @@ async function answerCallback(callbackQueryId: string, text?: string, chatId?: s
 export async function sendCoachMainMenu(
   chatId: string,
   messageId?: number,
-  coachName?: string
+  coachName?: string,
+  clubId?: string | null
 ) {
   const greeting = coachName ? `Вітаємо, *${coachName}*!` : "👋 Вітаємо в кабінеті тренера!";
   const text =
@@ -121,8 +144,11 @@ export async function sendCoachMainMenu(
   const inlineKeyboard: any[][] = [];
 
   if (appUrl.startsWith("https://")) {
+    const miniAppUrl = clubId
+      ? `${appUrl}/tg-coach?clubId=${encodeURIComponent(clubId)}`
+      : `${appUrl}/tg-coach`;
     inlineKeyboard.push([
-      { text: "📱 Відкрити Міні-додаток", web_app: { url: `${appUrl}/tg-coach` } },
+      { text: "📱 Відкрити Міні-додаток", web_app: { url: miniAppUrl } },
     ]);
   }
 
@@ -143,6 +169,7 @@ export async function sendCoachMainMenu(
     messageId,
     text,
     replyMarkup: { inline_keyboard: inlineKeyboard },
+    clubId,
   });
 }
 
@@ -153,11 +180,12 @@ async function renderStepSelectType(
   coachUserId: string,
   chatId: string,
   messageId?: number,
-  teamId?: string
+  teamId?: string,
+  clubId?: string | null
 ) {
   await updateCoachSession(coachUserId, chatId, "select_type", {
     team_id: teamId,
-    date: new Date().toISOString().split("T")[0],
+    date: getClubDate(),
   });
 
   const text =
@@ -183,6 +211,7 @@ async function renderStepSelectType(
     messageId,
     text,
     replyMarkup: { inline_keyboard: inlineKeyboard },
+    clubId,
   });
 }
 
@@ -192,7 +221,8 @@ async function renderStepSelectType(
 async function renderStepSelectDuration(
   coachUserId: string,
   chatId: string,
-  messageId?: number
+  messageId?: number,
+  clubId?: string | null
 ) {
   await updateCoachSession(coachUserId, chatId, "select_duration", {});
 
@@ -223,6 +253,7 @@ async function renderStepSelectDuration(
     messageId,
     text,
     replyMarkup: { inline_keyboard: inlineKeyboard },
+    clubId,
   });
 }
 
@@ -232,7 +263,8 @@ async function renderStepSelectDuration(
 async function renderStepSelectRpe(
   coachUserId: string,
   chatId: string,
-  messageId?: number
+  messageId?: number,
+  clubId?: string | null
 ) {
   await updateCoachSession(coachUserId, chatId, "select_rpe", {});
 
@@ -259,6 +291,7 @@ async function renderStepSelectRpe(
     messageId,
     text,
     replyMarkup: { inline_keyboard: inlineKeyboard },
+    clubId,
   });
 }
 
@@ -268,7 +301,8 @@ async function renderStepSelectRpe(
 async function renderStepSelectSurface(
   coachUserId: string,
   chatId: string,
-  messageId?: number
+  messageId?: number,
+  clubId?: string | null
 ) {
   await updateCoachSession(coachUserId, chatId, "select_surface", {});
 
@@ -296,6 +330,7 @@ async function renderStepSelectSurface(
     messageId,
     text,
     replyMarkup: { inline_keyboard: inlineKeyboard },
+    clubId,
   });
 }
 
@@ -305,7 +340,8 @@ async function renderStepSelectSurface(
 async function renderStepCheckInjuries(
   coachUserId: string,
   chatId: string,
-  messageId?: number
+  messageId?: number,
+  clubId?: string | null
 ) {
   await updateCoachSession(coachUserId, chatId, "check_injuries", {});
 
@@ -330,6 +366,7 @@ async function renderStepCheckInjuries(
     messageId,
     text,
     replyMarkup: { inline_keyboard: inlineKeyboard },
+    clubId,
   });
 }
 
@@ -339,7 +376,8 @@ async function renderStepCheckInjuries(
 async function renderStepFinalize(
   coachUserId: string,
   chatId: string,
-  messageId?: number
+  messageId?: number,
+  clubId?: string | null
 ) {
   await updateCoachSession(coachUserId, chatId, "finalize_notes", {});
 
@@ -369,6 +407,7 @@ async function renderStepFinalize(
     messageId,
     text,
     replyMarkup: { inline_keyboard: inlineKeyboard },
+    clubId,
   });
 }
 
@@ -383,12 +422,13 @@ export async function processCoachCallbackQuery(
   const messageId = callbackQuery.message?.message_id;
   const data = callbackQuery.data || "";
   const coachUserId = coachBinding.coach_user_id;
+  const clubId = coachBinding.club_id || undefined;
 
-  await answerCallback(callbackQuery.id);
+  await answerCallback(callbackQuery.id, undefined, chatId, clubId);
 
   if (data === "coach_main_menu") {
     await resetCoachSession(coachUserId, chatId);
-    await sendCoachMainMenu(chatId, messageId);
+    await sendCoachMainMenu(chatId, messageId, undefined, clubId);
     return;
   }
 
@@ -396,6 +436,7 @@ export async function processCoachCallbackQuery(
     await sendCoachMorningDigestAction({
       coachUserId,
       chatId,
+      clubId,
     });
     return;
   }
@@ -404,9 +445,22 @@ export async function processCoachCallbackQuery(
     const targetParam = data.split(":")[1] || "all";
     const supabase = createAdminClient();
 
+    let assignQ = supabase
+      .from("coach_team_assignments")
+      .select("team_id")
+      .eq("coach_user_id", coachUserId);
+    let memberQ = supabase
+      .from("club_members")
+      .select("team_id")
+      .eq("user_id", coachUserId);
+    if (clubId) {
+      assignQ = assignQ.eq("club_id", clubId);
+      memberQ = memberQ.eq("club_id", clubId);
+    }
+
     const [assignmentsRes, memberRes, profileRes] = await Promise.all([
-      supabase.from("coach_team_assignments").select("team_id").eq("coach_user_id", coachUserId),
-      supabase.from("club_members").select("team_id").eq("user_id", coachUserId).limit(1).maybeSingle(),
+      assignQ,
+      memberQ.limit(1).maybeSingle(),
       supabase.from("profiles").select("team_id").eq("id", coachUserId).maybeSingle(),
     ]);
 
@@ -432,9 +486,9 @@ export async function processCoachCallbackQuery(
     let lastError = "";
 
     if (targetTeamIds.length === 0) {
-      const res = await sendMorningWellnessRemindersAction({
+      const res = await sendMorningWellnessRemindersInternal({
+        clubId,
         baseUrl: appUrl || undefined,
-        isCron: true,
       });
       totalSent += res.sentCount || 0;
       totalSkipped += res.skippedCount || 0;
@@ -442,10 +496,10 @@ export async function processCoachCallbackQuery(
       if (!res.success && res.error) lastError = res.error;
     } else {
       for (const tid of targetTeamIds) {
-        const res = await sendMorningWellnessRemindersAction({
+        const res = await sendMorningWellnessRemindersInternal({
+          clubId,
           teamId: tid,
           baseUrl: appUrl || undefined,
-          isCron: true,
         });
         totalSent += res.sentCount || 0;
         totalSkipped += res.skippedCount || 0;
@@ -467,6 +521,7 @@ export async function processCoachCallbackQuery(
       replyMarkup: {
         inline_keyboard: [[{ text: "🏠 Головне меню", callback_data: "coach_main_menu" }]],
       },
+      clubId,
     });
     return;
   }
@@ -486,6 +541,7 @@ export async function processCoachCallbackQuery(
       replyMarkup: {
         inline_keyboard: [[{ text: "🏠 Головне меню", callback_data: "coach_main_menu" }]],
       },
+      clubId,
     });
     return;
   }
@@ -512,6 +568,7 @@ export async function processCoachCallbackQuery(
           [{ text: "🏠 Головне меню", callback_data: "coach_main_menu" }],
         ],
       },
+      clubId,
     });
     return;
   }
@@ -526,6 +583,7 @@ export async function processCoachCallbackQuery(
       replyMarkup: {
         inline_keyboard: [[{ text: "🏠 Головне меню", callback_data: "coach_main_menu" }]],
       },
+      clubId,
     });
     return;
   }
@@ -542,6 +600,7 @@ export async function processCoachCallbackQuery(
       replyMarkup: {
         inline_keyboard: [[{ text: "❌ Скасувати", callback_data: "coach_main_menu" }]],
       },
+      clubId,
     });
     return;
   }
@@ -560,6 +619,7 @@ export async function processCoachCallbackQuery(
         replyMarkup: {
           inline_keyboard: [[{ text: "🏠 Головне меню", callback_data: "coach_main_menu" }]],
         },
+        clubId,
       });
       return;
     }
@@ -584,6 +644,7 @@ export async function processCoachCallbackQuery(
         replyMarkup: {
           inline_keyboard: [[{ text: "🏠 Головне меню", callback_data: "coach_main_menu" }]],
         },
+        clubId,
       });
       return;
     }
@@ -600,6 +661,7 @@ export async function processCoachCallbackQuery(
           [{ text: "🏠 Головне меню", callback_data: "coach_main_menu" }],
         ],
       },
+      clubId,
     });
     return;
   }
@@ -607,7 +669,7 @@ export async function processCoachCallbackQuery(
   if (data === "coach_action_start_training" || data.startsWith("coach_start_training")) {
     const parts = data.split(":");
     const teamId = parts[1];
-    await renderStepSelectType(coachUserId, chatId, messageId, teamId);
+    await renderStepSelectType(coachUserId, chatId, messageId, teamId, clubId);
     return;
   }
 
@@ -615,7 +677,7 @@ export async function processCoachCallbackQuery(
   if (data.startsWith("cstep_type:")) {
     const sessionType = data.split(":")[1] as TrainingSessionType;
     await updateCoachSession(coachUserId, chatId, "select_duration", { session_type: sessionType });
-    await renderStepSelectDuration(coachUserId, chatId, messageId);
+    await renderStepSelectDuration(coachUserId, chatId, messageId, clubId);
     return;
   }
 
@@ -631,13 +693,14 @@ export async function processCoachCallbackQuery(
         replyMarkup: {
           inline_keyboard: [[{ text: "❌ Скасувати", callback_data: "coach_main_menu" }]],
         },
+        clubId,
       });
       return;
     }
 
     const minutes = parseInt(val, 10) || 90;
     await updateCoachSession(coachUserId, chatId, "select_rpe", { duration_minutes: minutes });
-    await renderStepSelectRpe(coachUserId, chatId, messageId);
+    await renderStepSelectRpe(coachUserId, chatId, messageId, clubId);
     return;
   }
 
@@ -645,7 +708,7 @@ export async function processCoachCallbackQuery(
   if (data.startsWith("cstep_rpe:")) {
     const rpe = parseInt(data.split(":")[1], 10) || 5;
     await updateCoachSession(coachUserId, chatId, "select_surface", { rpe_score: rpe });
-    await renderStepSelectSurface(coachUserId, chatId, messageId);
+    await renderStepSelectSurface(coachUserId, chatId, messageId, clubId);
     return;
   }
 
@@ -653,7 +716,7 @@ export async function processCoachCallbackQuery(
   if (data.startsWith("cstep_surface:")) {
     const surface = data.split(":")[1];
     await updateCoachSession(coachUserId, chatId, "check_injuries", { surface: surface as any });
-    await renderStepCheckInjuries(coachUserId, chatId, messageId);
+    await renderStepCheckInjuries(coachUserId, chatId, messageId, clubId);
     return;
   }
 
@@ -661,14 +724,14 @@ export async function processCoachCallbackQuery(
   if (data.startsWith("cstep_inj:")) {
     const inj = data.split(":")[1] as "none" | "injury";
     await updateCoachSession(coachUserId, chatId, "finalize_notes", { incident: inj });
-    await renderStepFinalize(coachUserId, chatId, messageId);
+    await renderStepFinalize(coachUserId, chatId, messageId, clubId);
     return;
   }
 
   // Збереження
   if (data === "cstep_save_now") {
     const session = await getCoachSession(coachUserId, chatId);
-    await finalizeCoachTrainingSession(coachUserId, chatId, session.session_draft);
+    await finalizeCoachTrainingSession(coachUserId, chatId, session.session_draft, clubId);
     return;
   }
 }
@@ -683,21 +746,22 @@ export async function processCoachTextMessage(
   const chatId = String(message.chat.id);
   const text = (message.text || message.caption || "").trim();
   const coachUserId = coachBinding.coach_user_id;
+  const clubId = coachBinding.club_id || undefined;
 
   // 1. Команди
   if (text === "/start" || text === "/menu") {
     await resetCoachSession(coachUserId, chatId);
-    await sendCoachMainMenu(chatId);
+    await sendCoachMainMenu(chatId, undefined, undefined, clubId);
     return;
   }
 
   if (text === "/status" || text.toLowerCase() === "статус" || text.toLowerCase().includes("світлофор")) {
-    await sendCoachMorningDigestAction({ coachUserId, chatId });
+    await sendCoachMorningDigestAction({ coachUserId, chatId, clubId });
     return;
   }
 
   if (text === "/training" || text.toLowerCase() === "тренування") {
-    await renderStepSelectType(coachUserId, chatId);
+    await renderStepSelectType(coachUserId, chatId, undefined, undefined, clubId);
     return;
   }
 
@@ -709,7 +773,7 @@ export async function processCoachTextMessage(
     const parsedMinutes = parseInt(text, 10);
     if (!isNaN(parsedMinutes) && parsedMinutes > 0 && parsedMinutes <= 300) {
       await updateCoachSession(coachUserId, chatId, "select_rpe", { duration_minutes: parsedMinutes });
-      await renderStepSelectRpe(coachUserId, chatId);
+      await renderStepSelectRpe(coachUserId, chatId, undefined, clubId);
       return;
     }
   }
@@ -731,7 +795,7 @@ export async function processCoachTextMessage(
           type: "COACH_FIELD_REPORT",
           coach_user_id: coachUserId,
           summary: reportText,
-          date: new Date().toISOString().split("T")[0],
+          date: getClubDate(),
         },
       });
     } catch {}
@@ -745,6 +809,7 @@ export async function processCoachTextMessage(
       replyMarkup: {
         inline_keyboard: [[{ text: "🏠 Головне меню", callback_data: "coach_main_menu" }]],
       },
+      clubId,
     });
     return;
   }
@@ -760,10 +825,10 @@ export async function processCoachTextMessage(
 
     await updateCoachSession(coachUserId, chatId, "idle", { notes: noteText });
     const finalSession = await getCoachSession(coachUserId, chatId);
-    await finalizeCoachTrainingSession(coachUserId, chatId, finalSession.session_draft);
+    await finalizeCoachTrainingSession(coachUserId, chatId, finalSession.session_draft, clubId);
     return;
   }
 
   // Якщо повідомлення поза кроками — показуємо головне меню
-  await sendCoachMainMenu(chatId);
+  await sendCoachMainMenu(chatId, undefined, undefined, clubId);
 }

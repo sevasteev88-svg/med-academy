@@ -1,17 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/utils/supabase/admin";
-import { sendMorningWellnessRemindersAction } from "@/actions/telegram-actions";
+import { sendMorningWellnessRemindersInternal } from "@/lib/telegram-reminders-server";
+import { verifyTimingSafeSecret } from "@/lib/server-secrets";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
-    // 1. Перевірка CRON_SECRET (Vercel Cron надсилає Authorization: Bearer <CRON_SECRET>)
+    // 1. Перевірка CRON_SECRET (fail-closed: Vercel Cron надсилає Authorization: Bearer <CRON_SECRET>)
+    const cronSecret = process.env.CRON_SECRET;
+    if (!cronSecret) {
+      return NextResponse.json(
+        { error: "CRON_SECRET is not configured" },
+        { status: 500 }
+      );
+    }
     const authHeader = req.headers.get("authorization");
-    if (process.env.CRON_SECRET) {
-      if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-      }
+    if (!verifyTimingSafeSecret(authHeader, `Bearer ${cronSecret}`)) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const supabase = createAdminClient();
@@ -29,8 +35,7 @@ export async function GET(req: NextRequest) {
     );
 
     // 3. Відправляємо нагадування (лише тим, хто ще не заповнив анкету)
-    const res = await sendMorningWellnessRemindersAction({
-      isCron: true,
+    const res = await sendMorningWellnessRemindersInternal({
       teamId: u19Team?.id,
     });
 

@@ -171,5 +171,49 @@ BEGIN
   RAISE NOTICE '✅ TEST 5 PASSED: Coach successfully logged workload session.';
 END $$;
 
+-- ------------------------------------------------------------------------------
+-- ТЕСТ 6: Тренер НЕ БАЧИТЬ сирі wellness_entries (stress, comment), wearable_entries
+--         та parent_messages напряму, і не може підвищити собі роль у club_members
+-- ------------------------------------------------------------------------------
+DO $$
+DECLARE
+  v_count integer;
+  v_err boolean := false;
+BEGIN
+  SELECT COUNT(*) INTO v_count FROM public.wellness_entries;
+  IF v_count <> 0 THEN
+    RAISE EXCEPTION 'TEST 6 FAILED: Coach can select raw wellness_entries! Rows=%', v_count;
+  END IF;
+
+  SELECT COUNT(*) INTO v_count FROM public.wearable_entries;
+  IF v_count <> 0 THEN
+    RAISE EXCEPTION 'TEST 6 FAILED: Coach can select raw wearable_entries! Rows=%', v_count;
+  END IF;
+
+  SELECT COUNT(*) INTO v_count FROM public.parent_messages;
+  IF v_count <> 0 THEN
+    RAISE EXCEPTION 'TEST 6 FAILED: Coach can select raw parent_messages! Rows=%', v_count;
+  END IF;
+
+  BEGIN
+    UPDATE public.club_members
+    SET role = 'admin'
+    WHERE user_id = '22222222-2222-2222-2222-222222222222';
+  EXCEPTION WHEN OTHERS THEN
+    v_err := true;
+  END;
+
+  SELECT COUNT(*) INTO v_count
+  FROM public.club_members
+  WHERE user_id = '22222222-2222-2222-2222-222222222222'
+    AND role = 'admin';
+
+  IF v_count <> 0 THEN
+    RAISE EXCEPTION 'TEST 6 FAILED: Coach escalated own role to admin in club_members!';
+  END IF;
+
+  RAISE NOTICE '✅ TEST 6 PASSED: Coach is blocked from raw wellness/wearables/parent_messages and cannot self-escalate role.';
+END $$;
+
 -- Відкочуємо транзакцію після завершення тестів (щоб база залишалась чистою)
 ROLLBACK;

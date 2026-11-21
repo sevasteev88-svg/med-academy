@@ -179,7 +179,10 @@ export default function CoachManagementSection() {
       ]);
 
       if (statusRes.success) {
-        setTelegramStatus(statusRes);
+        setTelegramStatus({
+          isLinked: Boolean(statusRes.isLinked),
+          binding: statusRes.binding ?? null,
+        });
       }
       if (linkRes.success && linkRes.deepLink && linkRes.qrDataUrl) {
         setTelegramLinkData({

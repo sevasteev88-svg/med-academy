@@ -47,6 +47,11 @@ interface Props {
   initialEntry?: WellnessEntry | null;
   onSuccess?: (entry: WellnessEntry) => void;
   source?: "player" | "kiosk" | "staff";
+  doctorContact?: {
+    name?: string | null;
+    telegramUrl?: string | null;
+    phone?: string | null;
+  };
 }
 
 const SLEEP_QUALITY_OPTIONS: { score: WellnessScore; label: string; icon: string; color: string }[] = [
@@ -95,6 +100,7 @@ export default function PlayerWellnessQuiz({
   initialEntry,
   onSuccess,
   source = "player",
+  doctorContact,
 }: Props) {
   // Access & Parental consent check
   const [accessChecked, setAccessChecked] = useState(false);
@@ -264,6 +270,30 @@ export default function PlayerWellnessQuiz({
         <div className="p-3 rounded-2xl bg-slate-950/80 border border-white/5 text-[11px] text-slate-400">
           Якщо протягом дня відчуєш біль або зміну стану, ти можеш оновити цю анкету до кінця доби.
         </div>
+        {(doctorContact?.telegramUrl || doctorContact?.phone) && (
+          <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+            {doctorContact?.telegramUrl && (
+              <a
+                href={doctorContact.telegramUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold transition"
+              >
+                <span>💬</span>
+                <span>Написати лікарю в Telegram</span>
+              </a>
+            )}
+            {doctorContact?.phone && (
+              <a
+                href={`tel:${doctorContact.phone.replace(/[\s()-]/g, "")}`}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold transition"
+              >
+                <span>📞</span>
+                <span>{doctorContact.phone}</span>
+              </a>
+            )}
+          </div>
+        )}
         <button
           type="button"
           onClick={() => {
@@ -746,6 +776,23 @@ export default function PlayerWellnessQuiz({
                 </div>
               )}
 
+              {doctorContact?.telegramUrl && (
+                <div className="p-2.5 rounded-xl bg-sky-950/35 border border-sky-500/30 flex items-center justify-between gap-2 text-xs">
+                  <span className="text-[11px] text-sky-200">
+                    Потрібно терміново обговорити біль з лікарем?
+                  </span>
+                  <a
+                    href={doctorContact.telegramUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-[11px] font-bold transition"
+                  >
+                    <span>💬</span>
+                    <span>Написати лікарю в Telegram</span>
+                  </a>
+                </div>
+              )}
+
               <button
                 type="button"
                 onClick={() => setCurrentStep(6)}
@@ -892,6 +939,23 @@ export default function PlayerWellnessQuiz({
                 />
               </div>
 
+              {doctorContact?.telegramUrl && (
+                <div className="p-2.5 rounded-xl bg-sky-950/35 border border-sky-500/30 flex items-center justify-between gap-2 text-xs">
+                  <span className="text-[11px] text-sky-200">
+                    Маєш температуру або питання щодо симптомів?
+                  </span>
+                  <a
+                    href={doctorContact.telegramUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-[11px] font-bold transition"
+                  >
+                    <span>💬</span>
+                    <span>Написати лікарю в Telegram</span>
+                  </a>
+                </div>
+              )}
+
               <button
                 type="button"
                 onClick={() => setCurrentStep(7)}
@@ -933,20 +997,29 @@ export default function PlayerWellnessQuiz({
               <p className="text-xs text-white leading-relaxed font-medium">
                 «{doctorRecommendation.text}»
               </p>
-              <div className="pt-2 border-t border-sky-500/20 flex flex-wrap items-center justify-between gap-2 text-xs">
-                <span className="text-[11px] text-sky-200">
-                  📞 Контакт лікаря: <span className="font-mono font-bold text-white">+380935623945</span>
-                </span>
-                <a
-                  href="https://t.me/+380935623945"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-2.5 py-1 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 font-semibold text-[11px] flex items-center gap-1 transition-colors"
-                >
-                  <span>💬</span>
-                  <span>Написати в Telegram</span>
-                </a>
-              </div>
+              {(doctorContact?.phone || doctorRecommendation.doctorPhone || doctorContact?.telegramUrl) && (
+                <div className="pt-2 border-t border-sky-500/20 flex flex-wrap items-center justify-between gap-2 text-xs">
+                  {(doctorContact?.phone || doctorRecommendation.doctorPhone) && (
+                    <span className="text-[11px] text-sky-200">
+                      📞 Контакт лікаря:{" "}
+                      <span className="font-mono font-bold text-white">
+                        {doctorContact?.phone || doctorRecommendation.doctorPhone}
+                      </span>
+                    </span>
+                  )}
+                  {doctorContact?.telegramUrl && (
+                    <a
+                      href={doctorContact.telegramUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-2.5 py-1 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 font-semibold text-[11px] flex items-center gap-1 transition-colors"
+                    >
+                      <span>💬</span>
+                      <span>Написати в Telegram</span>
+                    </a>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -1038,6 +1111,19 @@ export default function PlayerWellnessQuiz({
               rows={3}
               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-400 resize-none"
             />
+            {doctorContact?.telegramUrl && (
+              <div className="flex items-center justify-end pt-1">
+                <a
+                  href={doctorContact.telegramUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-300 text-[11px] font-bold transition"
+                >
+                  <span>💬</span>
+                  <span>Написати лікарю в Telegram</span>
+                </a>
+              </div>
+            )}
           </div>
 
           {errorMsg && (

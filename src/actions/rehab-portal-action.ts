@@ -19,8 +19,9 @@ import {
   recordFailedAttempt,
   resetAttempts,
 } from "@/lib/player-rate-limit";
-import { assertDoctor, DEFAULT_CLUB_ID } from "@/lib/auth";
+import { assertDoctor, assertTeamStaff, assertPlayerAccess, DEFAULT_CLUB_ID } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
+import { getClubDate, getClubTimezone } from "@/lib/club-timezone";
 import { getPlayerWeeklySummaryAction } from "@/actions/wellness-entry-actions";
 import {
   submitPlayerSelfRpeAction,
@@ -28,11 +29,22 @@ import {
   submitPlayerSessionFeedbackAction,
 } from "./training-session-actions";
 import { isSubscriptionAccessGranted } from "@/lib/billing";
+import { PAIN_LOCATIONS_LIST } from "@/types/wellness";
+import {
+  escapeTelegramHtml,
+  getClubMedicalTelegramConfig,
+  sendClubMedicalChatAlert,
+} from "@/lib/medical-telegram";
 
 /**
  * Отримує або ініціалізує portal_token для гравця (викликається сервером або лікарем).
  */
 export async function getOrGeneratePlayerPortalToken(playerId: string): Promise<string> {
+  const auth = await assertTeamStaff();
+  if ("error" in auth) return "";
+  const access = await assertPlayerAccess(auth.user, playerId, { allowCoach: true });
+  if ("error" in access) return "";
+
   const supabase = createAdminClient();
 
   // 1. Шукаємо збережений токен у логах або базі
@@ -77,7 +89,7 @@ export async function getOrGeneratePlayerPortalToken(playerId: string): Promise<
 }
 
 /**
- * Допоміжна функція збереження логу до injury_logs
+ * Допоміжна функція збереження логу до injury_logs (без створення фіктивної травми)
  */
 async function saveSystemLog(playerId: string, category: string, note: string) {
   const supabase = createAdminClient();
@@ -89,8 +101,8 @@ async function saveSystemLog(playerId: string, category: string, note: string) {
     .maybeSingle();
 
   const clubId = (pl as any)?.club_id || DEFAULT_CLUB_ID;
+  const timezone = await getClubTimezone(clubId);
 
-  let targetInjuryId: string | null = null;
   const { data: existingInj } = await supabase
     .from("injuries")
     .select("id")
@@ -98,33 +110,13 @@ async function saveSystemLog(playerId: string, category: string, note: string) {
     .order("date_of_injury", { ascending: false })
     .limit(1);
 
-  if (existingInj && existingInj.length > 0) {
-    targetInjuryId = existingInj[0].id;
-  } else {
-    const { data: newInj } = await supabase
-      .from("injuries")
-      .insert({
-        club_id: clubId,
-        player_id: playerId,
-        date_of_injury: new Date().toISOString().split("T")[0],
-        injury_type: "illness",
-        location: "other",
-        severity: "minor",
-        status: "closed",
-        description: "Системний профіль гравця",
-        vas_score: 0,
-      } as any)
-      .select("id")
-      .maybeSingle();
-
-    if (newInj) targetInjuryId = newInj.id;
-  }
+  const targetInjuryId: string | null = existingInj?.[0]?.id ?? null;
 
   return supabase.from("injury_logs").insert({
     club_id: clubId,
     injury_id: targetInjuryId,
     category,
-    date: new Date().toISOString().split("T")[0],
+    date: getClubDate(timezone),
     note,
   });
 }
@@ -135,6 +127,7 @@ async function saveSystemLog(playerId: string, category: string, note: string) {
 export async function getPlayerByPortalToken(token: string) {
   if (!token || token.trim().length < 8) return null;
   const cleanToken = token.trim();
+  if (!/^[a-zA-Z0-9_-]{8,128}$/.test(cleanToken)) return null;
   const supabase = createAdminClient();
 
   // Спершу пробуємо по колонці portal_token у таблиці players
@@ -156,33 +149,36 @@ export async function getPlayerByPortalToken(token: string) {
   } catch {}
 
   // Резервний пошук по injury_logs
+  const escapedTokenForLike = cleanToken.replace(/[\\%_]/g, "\\$&");
   const { data: logs } = await supabase
     .from("injury_logs")
     .select("note")
-    .like("note", `[PLAYER_PORTAL_TOKEN] %"token":"${cleanToken}"%`)
-    .limit(1);
+    .like("note", `[PLAYER_PORTAL_TOKEN] %"token":"${escapedTokenForLike}"%`)
+    .limit(10);
 
   if (logs && logs.length > 0) {
-    try {
-      const raw = logs[0].note.replace("[PLAYER_PORTAL_TOKEN] ", "");
-      const parsed = JSON.parse(raw);
-      if (parsed.player_id) {
-        const { data: player } = await supabase
-          .from("players")
-          .select("id, first_name, last_name, position, teams(name)")
-          .eq("id", parsed.player_id)
-          .single();
+    for (const log of logs) {
+      try {
+        const raw = log.note.replace("[PLAYER_PORTAL_TOKEN] ", "");
+        const parsed = JSON.parse(raw);
+        if (parsed.token === cleanToken && parsed.player_id) {
+          const { data: player } = await supabase
+            .from("players")
+            .select("id, first_name, last_name, position, teams(name)")
+            .eq("id", parsed.player_id)
+            .single();
 
-        if (player) {
-          return {
-            id: player.id,
-            name: `${player.last_name} ${player.first_name}`,
-            team: (player as any).teams?.name || "Академія",
-            position: player.position,
-          };
+          if (player) {
+            return {
+              id: player.id,
+              name: `${player.last_name} ${player.first_name}`,
+              team: (player as any).teams?.name || "Академія",
+              position: player.position,
+            };
+          }
         }
-      }
-    } catch {}
+      } catch {}
+    }
   }
 
   return null;
@@ -432,7 +428,7 @@ export async function getAuthorizedPlayerCabinetData() {
   // 1. Отримуємо дані гравця
   const { data: player, error: playerErr } = await supabase
     .from("players")
-    .select("id, first_name, last_name, position, teams(name)")
+    .select("id, club_id, first_name, last_name, position, teams(name)")
     .eq("id", playerId)
     .single();
 
@@ -657,6 +653,8 @@ export async function getAuthorizedPlayerCabinetData() {
     }
   } catch {}
 
+  const medTg = await getClubMedicalTelegramConfig((player as any).club_id);
+
   return {
     success: true,
     mustChangePin: session.mustChangePin,
@@ -676,6 +674,11 @@ export async function getAuthorizedPlayerCabinetData() {
       prescribedSupplements,
       weeklySummary,
       todaySession,
+      doctorContact: {
+        name: medTg.doctorName,
+        telegramUrl: medTg.doctorTelegramUrl,
+        phone: medTg.doctorPhone,
+      },
     },
   };
 }
@@ -698,6 +701,11 @@ export async function resetPlayerPinByDoctorAction(playerId: string) {
   const auth = await assertDoctor();
   if ("error" in auth) return { error: auth.error };
 
+  const access = await assertPlayerAccess(auth.user, playerId, {
+    allowCoach: false,
+  });
+  if ("error" in access) return { error: access.error };
+
   const randomPin = generateRandom6DigitPin();
   const pinHash = await hashPin(randomPin);
   const portalToken = await getOrGeneratePlayerPortalToken(playerId);
@@ -712,7 +720,7 @@ export async function resetPlayerPinByDoctorAction(playerId: string) {
       failed_attempts: 0,
       locked_until: null,
       portal_token: portalToken,
-    } as any).eq("id", playerId);
+    } as any).eq("id", playerId).eq("club_id", access.player.club_id || auth.user.clubId);
   } catch {}
 
   // Зберігаємо хэш у injury_logs
@@ -765,7 +773,7 @@ export async function submitRehabCheckinAction(data: RehabCheckinData) {
 
   const { data: pl } = await supabase
     .from("players")
-    .select("club_id")
+    .select("club_id, first_name, last_name, teams(name)")
     .eq("id", data.player_id)
     .maybeSingle();
 
@@ -773,6 +781,19 @@ export async function submitRehabCheckinAction(data: RehabCheckinData) {
 
   // Знаходимо цільову травму (якщо є; фіктивну травму більше не створюємо)
   let targetInjuryId: string | null = (data.injury_id && data.injury_id.trim() !== "") ? data.injury_id.trim() : null;
+
+  if (targetInjuryId) {
+    const { data: ownedInj } = await supabase
+      .from("injuries")
+      .select("id")
+      .eq("id", targetInjuryId)
+      .eq("player_id", data.player_id)
+      .maybeSingle();
+
+    if (!ownedInj) {
+      return { error: "Травму не знайдено або вона не належить гравцю" };
+    }
+  }
 
   if (!targetInjuryId) {
     const { data: existingInj } = await supabase
@@ -973,7 +994,61 @@ export async function submitRehabCheckinAction(data: RehabCheckinData) {
     await supabase
       .from("injuries")
       .update({ vas_score: data.vas_score })
-      .eq("id", targetInjuryId);
+      .eq("id", targetInjuryId)
+      .eq("player_id", session.playerId);
+  }
+
+  // Дублюємо будь-який біль (VAS > 0) або коментар гравця у закритий мед-чат клубу
+  const vasVal =
+    data.vas_score !== null && data.vas_score !== undefined ? Number(data.vas_score) : 0;
+  const hasPain = Number.isFinite(vasVal) && vasVal > 0;
+  const cleanPlayerComment = data.player_comment ? data.player_comment.trim() : "";
+  const hasComment = cleanPlayerComment.length > 0;
+
+  if (hasPain || hasComment) {
+    try {
+      const severityIcon = vasVal >= 7 ? "🚨" : vasVal >= 4 ? "⚠️" : "🩺";
+      const fullName = pl
+        ? `${(pl as any).last_name || ""} ${(pl as any).first_name || ""}`.trim() || "Гравець"
+        : "Гравець";
+      const teamName = (pl as any)?.teams?.name || "";
+
+      const swellingUa: Record<string, string> = {
+        mild: "Легкий",
+        moderate: "Помірний",
+        severe: "Виражений",
+      };
+      const locLabel = data.soreness_location
+        ? PAIN_LOCATIONS_LIST.find((l) => l.id === data.soreness_location)?.label ||
+          data.soreness_location
+        : "";
+
+      const lines = [
+        `${severityIcon} <b>Звіт гравця з кабінету</b>`,
+        `👤 <b>Гравець:</b> ${escapeTelegramHtml(fullName)}${teamName ? ` (${escapeTelegramHtml(teamName)})` : ""}`,
+      ];
+
+      if (hasPain) {
+        lines.push(`🩹 <b>Біль (ВАШ):</b> ${vasVal}/10`);
+      }
+      if (data.swelling && data.swelling !== "none") {
+        lines.push(
+          `💧 <b>Набряк:</b> ${escapeTelegramHtml(swellingUa[data.swelling] || data.swelling)}`
+        );
+      }
+      if (locLabel) {
+        lines.push(`📍 <b>Локалізація:</b> ${escapeTelegramHtml(locLabel)}`);
+      }
+      if (hasComment) {
+        lines.push(`💬 ${escapeTelegramHtml(cleanPlayerComment.slice(0, 600))}`);
+      }
+
+      await sendClubMedicalChatAlert({
+        clubId,
+        playerId: data.player_id,
+        htmlText: lines.join("\n"),
+      });
+    } catch {}
   }
 
   revalidatePath("/rtp");
@@ -1004,7 +1079,10 @@ export async function saveDoctorInstructionAction({
   const auth = await assertDoctor();
   if ("error" in auth) return { error: auth.error };
 
-  const supabase = await createClient();
+  const access = await assertPlayerAccess(auth.user, playerId, {
+    allowCoach: false,
+  });
+  if ("error" in access) return { error: access.error };
 
   const payload: DoctorDailyInstruction = {
     player_id: playerId,

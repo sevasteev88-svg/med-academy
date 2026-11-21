@@ -1,7 +1,7 @@
 "use server";
 
 import { createClient } from "@/utils/supabase/server";
-import { assertDoctor } from "@/lib/auth";
+import { assertDoctor, assertTeamStaff, assertPlayerAccess } from "@/lib/auth";
 import type { OsiicsCode } from "@/types/database";
 
 export type PastInjurySummary = {
@@ -22,12 +22,19 @@ export async function getPlayerPastInjuries(
   playerId: string,
   excludeInjuryId?: string
 ): Promise<PastInjurySummary[]> {
+  const auth = await assertTeamStaff();
+  if ("error" in auth) return [];
+
+  const playerAccess = await assertPlayerAccess(auth.user, playerId, { allowCoach: true });
+  if ("error" in playerAccess) return [];
+
   const supabase = await createClient();
 
   let query = supabase
     .from("injuries")
     .select("id, injury_type, location, side, date_of_injury, status, osiics_code, description")
     .eq("player_id", playerId)
+    .eq("club_id", auth.user.clubId)
     .order("date_of_injury", { ascending: false });
 
   if (excludeInjuryId) {

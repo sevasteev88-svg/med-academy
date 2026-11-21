@@ -479,6 +479,10 @@ export default function RehabPortalClient({
     });
   };
 
+  const doctorContact = authenticatedPlayer?.doctorContact as
+    | { name?: string | null; telegramUrl?: string | null; phone?: string | null }
+    | undefined;
+
   // 1. Success Screen
   if (isSubmitted) {
     return (
@@ -532,9 +536,35 @@ export default function RehabPortalClient({
         </div>
 
         {/* 7. Предупреждение о срочных случаях (после отправки) */}
-        <div className="p-3.5 rounded-2xl bg-amber-950/30 border border-amber-500/30 text-left text-[11px] text-amber-200 leading-snug flex items-start gap-2.5">
-          <span className="text-base shrink-0">⚠️</span>
-          <span>{URGENT_CASE_WARNING}</span>
+        <div className="p-3.5 rounded-2xl bg-amber-950/30 border border-amber-500/30 text-left text-[11px] text-amber-200 leading-snug space-y-2.5">
+          <div className="flex items-start gap-2.5">
+            <span className="text-base shrink-0">⚠️</span>
+            <span>{URGENT_CASE_WARNING}</span>
+          </div>
+          {(doctorContact?.telegramUrl || doctorContact?.phone) && (
+            <div className="flex flex-wrap gap-2 pt-1 border-t border-amber-500/20">
+              {doctorContact?.telegramUrl && (
+                <a
+                  href={doctorContact.telegramUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold transition"
+                >
+                  <span>💬</span>
+                  <span>Написати лікарю в Telegram</span>
+                </a>
+              )}
+              {doctorContact?.phone && (
+                <a
+                  href={`tel:${doctorContact.phone.replace(/[\s()-]/g, "")}`}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 text-xs font-bold transition"
+                >
+                  <span>📞</span>
+                  <span>{doctorContact.phone}</span>
+                </a>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="space-y-2.5 pt-1">
@@ -685,6 +715,43 @@ export default function RehabPortalClient({
                 {isChangingPin ? "Збереження..." : "Встановити мій постійний PIN"}
               </button>
             </form>
+          </div>
+        )}
+
+        {/* Прямий зв'язок з лікарем клубу */}
+        {(doctorContact?.telegramUrl || doctorContact?.phone) && (
+          <div className="p-3 rounded-2xl bg-slate-950/80 border border-sky-500/25 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div className="text-xs">
+              <div className="font-bold text-white flex items-center gap-1.5">
+                <span>👨‍⚕️</span>
+                <span>Зв&apos;язок з лікарем{doctorContact?.name ? ` · ${doctorContact.name}` : ""}</span>
+              </div>
+              <div className="text-[11px] text-slate-400">
+                Якщо є гострий біль, травма чи термінове питання
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              {doctorContact?.telegramUrl && (
+                <a
+                  href={doctorContact.telegramUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold transition shadow-sm"
+                >
+                  <span>💬</span>
+                  <span>Написати лікарю в Telegram</span>
+                </a>
+              )}
+              {doctorContact?.phone && (
+                <a
+                  href={`tel:${doctorContact.phone.replace(/[\s()-]/g, "")}`}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition"
+                >
+                  <span>📞</span>
+                  <span>{doctorContact.phone}</span>
+                </a>
+              )}
+            </div>
           </div>
         )}
 
@@ -1062,6 +1129,7 @@ export default function RehabPortalClient({
                 playerId={authenticatedPlayer.id}
                 playerName={`${authenticatedPlayer.last_name || ""} ${authenticatedPlayer.first_name || ""}`.trim()}
                 source="player"
+                doctorContact={doctorContact}
                 onSuccess={() => {
                   setIsSubmitted(true);
                 }}
@@ -1637,7 +1705,7 @@ export default function RehabPortalClient({
 
             {/* 7. Предупреждение о срочных случаях перед отправкой */}
             <div
-              className={`p-3.5 rounded-2xl border transition-all ${
+              className={`p-3.5 rounded-2xl border transition-all space-y-2.5 ${
                 vasScore !== null && vasScore >= VAS_ALERT_THRESHOLD
                   ? "bg-rose-950/60 border-rose-500 text-rose-200 shadow-lg shadow-rose-950/50"
                   : "bg-slate-950/80 border-slate-800 text-slate-400"
@@ -1658,6 +1726,30 @@ export default function RehabPortalClient({
                   </p>
                 </div>
               </div>
+              {(doctorContact?.telegramUrl || doctorContact?.phone) && (
+                <div className="flex flex-wrap gap-2 pt-2 border-t border-white/10">
+                  {doctorContact?.telegramUrl && (
+                    <a
+                      href={doctorContact.telegramUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold transition"
+                    >
+                      <span>💬</span>
+                      <span>Написати лікарю в Telegram</span>
+                    </a>
+                  )}
+                  {doctorContact?.phone && (
+                    <a
+                      href={`tel:${doctorContact.phone.replace(/[\s()-]/g, "")}`}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 text-xs font-bold transition"
+                    >
+                      <span>📞</span>
+                      <span>Зателефонувати</span>
+                    </a>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* 1. Блокування кнопки, доки всі обов'язкові поля не обрано, або до зміни PIN */}

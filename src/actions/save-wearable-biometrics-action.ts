@@ -2,7 +2,7 @@
 
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
-import { assertDoctor } from "@/lib/auth";
+import { assertDoctor, assertPlayerAccess } from "@/lib/auth";
 import { hasConsent } from "@/lib/consents";
 import type { WearableBiometricsEntry, WearableDeviceType } from "@/types/wearables";
 
@@ -23,6 +23,13 @@ export async function saveWearableBiometricsAction(input: {
 }) {
   const auth = await assertDoctor();
   if ("error" in auth) return { error: auth.error };
+
+  const access = await assertPlayerAccess(auth.user, input.playerId, {
+    allowCoach: false,
+  });
+  if ("error" in access) return { error: access.error };
+
+  const clubId = access.player.club_id || auth.user.clubId;
 
   const allowed = await hasConsent(input.playerId, "wearables");
   if (!allowed) {
@@ -51,40 +58,18 @@ export async function saveWearableBiometricsAction(input: {
 
   const payload = `[WEARABLE] ${JSON.stringify(record)}`;
 
-  // Отримуємо існуючу травму гравця (активну або будь-яку останню) для прив'язки запису журналу
-  let targetInjuryId: string | null = null;
   const { data: activeInjuries } = await supabase
     .from("injuries")
     .select("id")
     .eq("player_id", input.playerId)
+    .eq("club_id", clubId)
     .order("date_of_injury", { ascending: false })
     .limit(1);
 
-  if (activeInjuries && activeInjuries.length > 0) {
-    targetInjuryId = activeInjuries[0].id;
-  } else {
-    // Якщо у гравця ще немає жодного запису в injuries — створюємо системний базовий запис медичного моніторингу
-    const { data: newInjury, error: createInjErr } = await supabase
-      .from("injuries")
-      .insert({
-        player_id: input.playerId,
-        date_of_injury: record.date,
-        injury_type: "illness",
-        location: "other",
-        severity: "minor",
-        status: "closed",
-        description: "Базовий медичний моніторинг / Біометрія",
-        vas_score: 0,
-      } as any)
-      .select("id")
-      .single();
-
-    if (!createInjErr && newInjury) {
-      targetInjuryId = newInjury.id;
-    }
-  }
+  const targetInjuryId: string | null = activeInjuries?.[0]?.id ?? null;
 
   const { error } = await supabase.from("injury_logs").insert({
+    club_id: clubId,
     injury_id: targetInjuryId,
     date: record.date,
     category: "examination",

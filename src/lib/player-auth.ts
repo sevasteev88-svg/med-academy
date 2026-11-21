@@ -2,16 +2,11 @@ import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import { cookies, headers } from "next/headers";
 import type { PlayerSessionPayload } from "@/types/rehab-portal";
+import { getPlayerSessionSecret } from "./server-secrets.ts";
 
 const COOKIE_NAME = "rehab_player_session";
 // Session expires in 7 days
 export const SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
-
-// Secret key for HMAC signing
-function getSigningSecret(): string {
-  const secret = process.env.PLAYER_SESSION_SECRET || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "med-academy-portal-secure-salt";
-  return secret;
-}
 
 /**
  * Генерирует криптографически стойкий случайный 6-значный PIN (100000 - 999999).
@@ -58,7 +53,7 @@ export function createSessionToken(payload: Omit<PlayerSessionPayload, "issuedAt
   const jsonStr = JSON.stringify(fullPayload);
   const encodedPayload = Buffer.from(jsonStr).toString("base64url");
   const signature = crypto
-    .createHmac("sha256", getSigningSecret())
+    .createHmac("sha256", getPlayerSessionSecret())
     .update(encodedPayload)
     .digest("base64url");
 
@@ -74,7 +69,7 @@ export function verifySessionToken(token: string): PlayerSessionPayload | null {
   if (!encodedPayload || !signature) return null;
 
   const expectedSignature = crypto
-    .createHmac("sha256", getSigningSecret())
+    .createHmac("sha256", getPlayerSessionSecret())
     .update(encodedPayload)
     .digest("base64url");
 
@@ -128,7 +123,7 @@ export async function getPlayerSession(): Promise<PlayerSessionPayload | null> {
   if (deviceCookie) {
     try {
       const { verifyDeviceSessionCookieValue } = await import("@/lib/player-device-auth");
-      const { validateDeviceSessionRecord } = await import("@/actions/player-device-actions");
+      const { validateDeviceSessionRecord } = await import("@/lib/player-device-server");
       const parsed = verifyDeviceSessionCookieValue(deviceCookie);
       if (parsed) {
         const validation = await validateDeviceSessionRecord(parsed.deviceId, parsed.sessionSecret);

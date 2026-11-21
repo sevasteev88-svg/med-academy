@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/utils/supabase/server";
+import { assertDoctor, assertPlayerAccess } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { hasConsent } from "@/lib/consents";
 import { callAI, createAnonymizer, AI_DISCLAIMER } from "@/lib/ai";
@@ -11,21 +11,24 @@ import { callAI, createAnonymizer, AI_DISCLAIMER } from "@/lib/ai";
  * повертає прогноз відновлення та протокол з регідрацією імені для лікаря.
  */
 export async function POST(request: NextRequest) {
-  // Перевірка авторизації
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: "Не авторизовано" }, { status: 401 });
+  // Перевірка авторизації та ролі лікаря/адміна
+  const auth = await assertDoctor();
+  if ("error" in auth) {
+    return NextResponse.json({ error: auth.error }, { status: 403 });
   }
+  const { user } = auth;
 
   try {
     const data = await request.json();
     const targetPlayerId = data?.playerId || data?.player?.id;
 
-    // Перевірка згоди батьків для неповнолітніх (п. 1.5.3)
     if (targetPlayerId) {
+      const playerAccess = await assertPlayerAccess(user, targetPlayerId, { allowCoach: false });
+      if ("error" in playerAccess) {
+        return NextResponse.json({ error: playerAccess.error }, { status: 403 });
+      }
+
+      // Перевірка згоди батьків для неповнолітніх (п. 1.5.3)
       const allowed = await hasConsent(targetPlayerId, "ai_processing");
       if (!allowed) {
         return NextResponse.json(
@@ -70,6 +73,7 @@ export async function POST(request: NextRequest) {
         endpoint: "/api/ai/injury-assist",
       },
       userId: user.id,
+      clubId: user.clubId,
     });
 
     return NextResponse.json({

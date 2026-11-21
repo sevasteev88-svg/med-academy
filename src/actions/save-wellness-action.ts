@@ -2,7 +2,7 @@
 
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
-import { assertAuth } from "@/lib/auth";
+import { assertTeamStaff, assertPlayerAccess } from "@/lib/auth";
 import {
   calculateWellnessReadiness,
   type WellnessScore,
@@ -21,8 +21,11 @@ type SaveWellnessInput = {
 };
 
 export async function saveWellnessSurveyAction(input: SaveWellnessInput) {
-  const auth = await assertAuth();
+  const auth = await assertTeamStaff();
   if ("error" in auth) return { error: auth.error };
+
+  const playerAccess = await assertPlayerAccess(auth.user, input.playerId, { allowCoach: true });
+  if ("error" in playerAccess) return { error: playerAccess.error };
 
   const supabase = await createClient();
 

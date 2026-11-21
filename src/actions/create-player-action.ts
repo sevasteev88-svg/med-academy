@@ -2,7 +2,7 @@
 
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
-import { assertDoctor } from "@/lib/auth";
+import { assertDoctor, assertTeamAccess } from "@/lib/auth";
 import { generateRandom6DigitPin, generatePortalToken, hashPin } from "@/lib/player-auth";
 import { logAudit } from "@/lib/audit";
 import { normalizePosition, toDbPositionEn } from "@/lib/dictionaries";
@@ -112,6 +112,9 @@ export async function createPlayerAction(
   if (!teamId || !firstName || !lastName || !dateOfBirth || !position) {
     return { error: "Заповніть всі обов'язкові поля" };
   }
+
+  const teamAccess = await assertTeamAccess(auth.user, teamId, { allowCoach: false });
+  if ("error" in teamAccess) return { error: teamAccess.error };
 
   // Генеруємо одноразовий випадковий 6-значний PIN і portal_token
   const initialPin = generateRandom6DigitPin();

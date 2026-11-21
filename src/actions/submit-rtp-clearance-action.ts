@@ -23,6 +23,17 @@ export async function submitRtpClearanceAction(
 
   const supabase = await createClient();
 
+  const { data: injCheck } = await supabase
+    .from("injuries")
+    .select("id")
+    .eq("id", injuryId)
+    .eq("club_id", auth.user.clubId)
+    .maybeSingle();
+
+  if (!injCheck) {
+    return { error: "Травму не знайдено або доступ заборонено" };
+  }
+
   const candidateProfile = profileId || criteria.profileId || "base";
   const activeProfileId: RtpProfileId =
     candidateProfile in RTP_PROFILES ? (candidateProfile as RtpProfileId) : "base";
@@ -47,6 +58,7 @@ export async function submitRtpClearanceAction(
   };
 
   const clearanceLog = {
+    club_id: auth.user.clubId,
     injury_id: injuryId,
     date: new Date().toISOString().split("T")[0],
     category: "examination",
@@ -68,7 +80,8 @@ export async function submitRtpClearanceAction(
         actual_return_date: today,
         vas_score: 0,
       })
-      .eq("id", injuryId);
+      .eq("id", injuryId)
+      .eq("club_id", auth.user.clubId);
 
     if (updateErr) {
       return { error: updateErr.message };

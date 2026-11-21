@@ -4,6 +4,14 @@
     {
       "path": "/api/cron/wellness-reminder",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/coach-daily",
+      "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron/coach-daily?mode=evening",
+      "schedule": "0 17 * * *"
     }
   ]
 }

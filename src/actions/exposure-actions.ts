@@ -2,7 +2,7 @@
 
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
-import { assertAuth, DEFAULT_CLUB_ID } from "@/lib/auth";
+import { assertTeamStaff, assertTeamAccess, DEFAULT_CLUB_ID } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import type { ExposureSessionType } from "@/types/database";
 
@@ -29,7 +29,7 @@ export type CreateBatchExposuresInput = {
 };
 
 export async function createExposureAction(input: CreateExposureInput) {
-  const auth = await assertAuth();
+  const auth = await assertTeamStaff(input.teamId);
   if ("error" in auth) return { success: false, error: auth.error };
   const user = auth.user;
 
@@ -37,6 +37,9 @@ export async function createExposureAction(input: CreateExposureInput) {
   if (!input.date) return { success: false, error: "Вкажіть дату" };
   if (!input.minutes || input.minutes <= 0) return { success: false, error: "Тривалість має бути більше 0" };
   if (!input.playersCount || input.playersCount <= 0) return { success: false, error: "Кількість гравців має бути більше 0" };
+
+  const teamAccess = await assertTeamAccess(user, input.teamId, { allowCoach: true });
+  if ("error" in teamAccess) return { success: false, error: teamAccess.error };
 
   const supabase = await createClient();
   const clubId = user.clubId || DEFAULT_CLUB_ID;
@@ -81,7 +84,7 @@ export async function createExposureAction(input: CreateExposureInput) {
 }
 
 export async function createBatchExposuresAction(input: CreateBatchExposuresInput) {
-  const auth = await assertAuth();
+  const auth = await assertTeamStaff(input.teamId);
   if ("error" in auth) return { success: false, error: auth.error };
   const user = auth.user;
 
@@ -89,6 +92,9 @@ export async function createBatchExposuresAction(input: CreateBatchExposuresInpu
   if (!input.entries || input.entries.length === 0) {
     return { success: false, error: "Не вказано жодної сесії для збереження" };
   }
+
+  const teamAccess = await assertTeamAccess(user, input.teamId, { allowCoach: true });
+  if ("error" in teamAccess) return { success: false, error: teamAccess.error };
 
   const supabase = await createClient();
   const clubId = user.clubId || DEFAULT_CLUB_ID;
@@ -135,12 +141,26 @@ export async function createBatchExposuresAction(input: CreateBatchExposuresInpu
 }
 
 export async function deleteExposureAction(id: string) {
-  const auth = await assertAuth();
+  const auth = await assertTeamStaff();
   if ("error" in auth) return { success: false, error: auth.error };
   const user = auth.user;
 
   const supabase = await createClient();
   const clubId = user.clubId || DEFAULT_CLUB_ID;
+
+  const { data: existing } = await supabase
+    .from("exposures")
+    .select("team_id")
+    .eq("id", id)
+    .eq("club_id", clubId)
+    .maybeSingle();
+
+  if (!existing) {
+    return { success: false, error: "Сесію не знайдено або доступ заборонено" };
+  }
+
+  const teamAccess = await assertTeamAccess(user, existing.team_id, { allowCoach: true });
+  if ("error" in teamAccess) return { success: false, error: teamAccess.error };
 
   const { error } = await supabase
     .from("exposures")

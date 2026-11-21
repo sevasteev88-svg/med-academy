@@ -28,6 +28,17 @@ export async function saveImagingStudyAction(input: {
 
   const supabase = await createClient();
 
+  const { data: injCheck } = await supabase
+    .from("injuries")
+    .select("id")
+    .eq("id", input.injuryId)
+    .eq("club_id", auth.user.clubId)
+    .maybeSingle();
+
+  if (!injCheck) {
+    return { error: "Травму не знайдено або доступ заборонено" };
+  }
+
   const study: ImagingStudy = {
     id: `img_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
     injury_id: input.injuryId,
@@ -42,6 +53,7 @@ export async function saveImagingStudyAction(input: {
   const payload = `[IMAGING] ${JSON.stringify(study)}`;
 
   const { error } = await supabase.from("injury_logs").insert({
+    club_id: auth.user.clubId,
     injury_id: input.injuryId,
     date: input.date,
     category: "examination",

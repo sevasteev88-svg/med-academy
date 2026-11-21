@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/utils/supabase/admin";
-import { sendCoachMorningDigestAction, getCoachSession } from "@/actions/coach-telegram-actions";
+import { sendCoachMorningDigestInternal, getCoachSession } from "@/lib/coach-telegram-server";
+import { verifyTimingSafeSecret } from "@/lib/server-secrets";
 
 export const dynamic = "force-dynamic";
 
@@ -20,8 +21,15 @@ function getPublicAppUrl(): string {
 
 export async function GET(req: NextRequest) {
   try {
+    const cronSecret = process.env.CRON_SECRET;
+    if (!cronSecret) {
+      return NextResponse.json(
+        { error: "CRON_SECRET is not configured" },
+        { status: 500 }
+      );
+    }
     const authHeader = req.headers.get("authorization");
-    if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    if (!verifyTimingSafeSecret(authHeader, `Bearer ${cronSecret}`)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -61,7 +69,7 @@ export async function GET(req: NextRequest) {
           });
           sent++;
         } else {
-          await sendCoachMorningDigestAction({
+          await sendCoachMorningDigestInternal({
             coachUserId: b.coach_user_id,
             chatId: b.telegram_chat_id,
           });

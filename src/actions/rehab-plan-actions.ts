@@ -2,19 +2,32 @@
 
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
-import { assertDoctor } from "@/lib/auth";
+import { assertDoctor, assertPlayerAccess, assertPlayerOrStaffAccess } from "@/lib/auth";
 import type { PlayerCustomRehabPlan } from "@/types/exercise-library";
 
 /**
  * Отримати активний план реабілітації для конкретного футболіста
  */
 export async function getPlayerRehabPlanAction(playerId: string): Promise<PlayerCustomRehabPlan | null> {
+  const access = await assertPlayerOrStaffAccess(playerId);
+  if ("error" in access) {
+    return null;
+  }
+
   const supabase = await createClient();
 
-  const { data: rows, error } = await supabase
+  let query = supabase
     .from("rehab_plans")
     .select("id, player_id, target_injury_id, status, doctor_name, approved_by, approved_at, data, created_at")
-    .eq("player_id", playerId)
+    .eq("player_id", playerId);
+
+  if (access.actor === "staff") {
+    query = query.eq("club_id", access.user.clubId);
+  } else if (access.actor === "parent") {
+    query = query.eq("club_id", access.clubId);
+  }
+
+  const { data: rows, error } = await query
     .order("created_at", { ascending: false })
     .limit(1);
 
@@ -42,6 +55,9 @@ export async function getPlayerRehabPlanAction(playerId: string): Promise<Player
 export async function savePlayerRehabPlanAction(planData: Omit<PlayerCustomRehabPlan, "id" | "created_at">) {
   const auth = await assertDoctor();
   if ("error" in auth) return { error: auth.error };
+
+  const playerAccess = await assertPlayerAccess(auth.user, planData.player_id, { allowCoach: false });
+  if ("error" in playerAccess) return { error: playerAccess.error };
 
   const supabase = await createClient();
 

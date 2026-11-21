@@ -95,3 +95,39 @@ export function generateWayForPaySignature(fields: string[], secretKey: string):
   const signString = fields.join(";");
   return crypto.createHmac("md5", secretKey).update(signString, "utf8").digest("hex");
 }
+
+/**
+ * Перевіряє вхідний HMAC-MD5 підпис ServiceUrl вебхука WayForPay.
+ * Порядок полів згідно специфікації WayForPay:
+ * merchantAccount;orderReference;amount;currency;authCode;cardPan;transactionStatus;reasonCode
+ */
+export function verifyWayForPayWebhookSignature(
+  payload: Record<string, unknown>,
+  secretKey: string
+): boolean {
+  if (!secretKey || typeof payload?.merchantSignature !== "string" || !payload.merchantSignature) {
+    return false;
+  }
+
+  const fields = [
+    payload.merchantAccount,
+    payload.orderReference,
+    payload.amount,
+    payload.currency,
+    payload.authCode,
+    payload.cardPan,
+    payload.transactionStatus,
+    payload.reasonCode,
+  ].map((v) => (v === undefined || v === null ? "" : String(v)));
+
+  const expectedHex = generateWayForPaySignature(fields, secretKey).toLowerCase();
+  const providedHex = payload.merchantSignature.trim().toLowerCase();
+
+  const expectedBuf = Buffer.from(expectedHex, "utf8");
+  const providedBuf = Buffer.from(providedHex, "utf8");
+  if (expectedBuf.length !== providedBuf.length) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(expectedBuf, providedBuf);
+}

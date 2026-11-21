@@ -306,6 +306,12 @@ export function calculatePlayerAge(dateOfBirth: string): number {
   return Math.floor(diffMs / (365.25 * 86400000));
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isValidUuid(value: string | null | undefined): boolean {
+  return Boolean(value && UUID_RE.test(value));
+}
+
 /**
  * Отримує активні версії документів згоди для клубу (з БД або дефолтних шаблонів, якщо міграція ще не застосована)
  */
@@ -330,14 +336,61 @@ export async function getActiveConsentDocuments(
       .eq("club_id", clubId)
       .eq("is_active", true);
 
-    if (!error && data && data.length > 0) {
-      for (const doc of data) {
+    if (!error) {
+      for (const doc of data || []) {
         const s = doc.scope as ConsentScope;
         if (ALL_CONSENT_SCOPES.includes(s)) {
           result[s] = doc as ConsentDocument;
         }
       }
-    } else {
+
+      const missingScopes = ALL_CONSENT_SCOPES.filter(
+        (s) => !isValidUuid(result[s]?.id)
+      );
+
+      if (missingScopes.length > 0 && isValidUuid(clubId)) {
+        const rowsToSeed = missingScopes.map((scope) => {
+          const tpl = DEFAULT_CONSENT_TEMPLATES[scope];
+          return {
+            club_id: clubId,
+            scope: tpl.scope,
+            version: tpl.version,
+            title: tpl.title,
+            body_markdown: tpl.body_markdown,
+            effective_from: tpl.effective_from,
+            is_active: true,
+          };
+        });
+
+        const { error: seedErr } = await supabase
+          .from("consent_documents")
+          .upsert(rowsToSeed as any[], {
+            onConflict: "club_id,scope,version",
+            ignoreDuplicates: true,
+          });
+
+        if (!seedErr) {
+          const { data: reloaded } = await supabase
+            .from("consent_documents")
+            .select("*")
+            .eq("club_id", clubId)
+            .eq("is_active", true);
+
+          for (const doc of reloaded || []) {
+            const s = doc.scope as ConsentScope;
+            if (ALL_CONSENT_SCOPES.includes(s)) {
+              result[s] = doc as ConsentDocument;
+            }
+          }
+        }
+      }
+    }
+
+    const hasSeededDocs = ALL_CONSENT_SCOPES.some((s) =>
+      isValidUuid(result[s]?.id)
+    );
+
+    if (error || ((!data || data.length === 0) && !hasSeededDocs)) {
       // Fallback: перевіряємо чи є кастомні версії в injury_logs з маркером [CONSENT_DOC]
       const { data: logs } = await supabase
         .from("injury_logs")
@@ -351,7 +404,11 @@ export async function getActiveConsentDocuments(
         for (const l of logs) {
           try {
             const parsed = JSON.parse(l.note.replace("[CONSENT_DOC] ", "")) as ConsentDocument;
-            if (parsed.is_active && !seen.has(parsed.scope)) {
+            if (
+              parsed.is_active &&
+              (!parsed.club_id || parsed.club_id === clubId) &&
+              !seen.has(parsed.scope)
+            ) {
               result[parsed.scope] = parsed;
               seen.add(parsed.scope);
             }
@@ -398,7 +455,11 @@ export async function fetchPlayerConsentRecords(playerId: string): Promise<Conse
           }
         } catch {}
       }
-      return Array.from(map.values());
+      return Array.from(map.values()).sort((a, b) =>
+        (b.revoked_at || b.granted_at || "").localeCompare(
+          a.revoked_at || a.granted_at || ""
+        )
+      );
     }
   } catch {}
   return [];
@@ -454,7 +515,8 @@ export async function fetchPlayerGuardians(playerId: string): Promise<Guardian[]
 export async function getPlayerConsentSummary(
   playerId: string,
   playerDob?: string,
-  clubId: string = DEFAULT_CLUB_ID
+  clubId: string = DEFAULT_CLUB_ID,
+  preloadedActiveDocs?: Record<ConsentScope, ConsentDocument>
 ): Promise<PlayerConsentSummary> {
   const supabase = createAdminClient();
 
@@ -474,7 +536,7 @@ export async function getPlayerConsentSummary(
   }
 
   const [activeDocs, records, guardians] = await Promise.all([
-    getActiveConsentDocuments(clubId),
+    preloadedActiveDocs ? Promise.resolve(preloadedActiveDocs) : getActiveConsentDocuments(clubId),
     fetchPlayerConsentRecords(playerId),
     fetchPlayerGuardians(playerId),
   ]);
@@ -547,7 +609,10 @@ export async function getPlayerConsentSummary(
       grantedAt: latest?.granted_at || null,
       revokedAt: latest?.revoked_at || null,
       method: latest?.method || null,
-      signerName: latest?.evidence?.signer_full_name || null,
+      signerName:
+        latest?.evidence?.signer_full_name ||
+        (latest?.evidence as any)?.signer_name ||
+        null,
       scanPath: latest?.scan_path || null,
       consentId: latest?.id || null,
     };
@@ -589,4 +654,184 @@ export async function hasConsent(
   }
 
   return summary.scopes[scope]?.allowed ?? false;
+}
+
+export type BatchConsentStatus = {
+  isMinor: boolean;
+  status: ConsentCellStatus;
+  allowed: boolean;
+};
+
+/**
+ * Пакетне отримання статусу згоди для списку гравців за 1–2 запити до БД (усуває N+1).
+ */
+export async function getPlayersConsentStatusBatch(params: {
+  playerIds: string[];
+  clubId?: string;
+  scope: ConsentScope;
+  playerDobMap?: Map<string, string>;
+}): Promise<Map<string, BatchConsentStatus>> {
+  const result = new Map<string, BatchConsentStatus>();
+  const uniqueIds = Array.from(new Set((params.playerIds || []).filter(Boolean)));
+  if (uniqueIds.length === 0) return result;
+
+  const supabase = createAdminClient();
+  const dobMap = new Map<string, string>(params.playerDobMap || []);
+  let resolvedClubId = params.clubId || DEFAULT_CLUB_ID;
+
+  const missingIds = uniqueIds.filter((id) => !dobMap.get(id));
+  if (missingIds.length > 0) {
+    try {
+      const { data: playersRows } = await supabase
+        .from("players")
+        .select("id, date_of_birth, club_id")
+        .in("id", missingIds);
+
+      for (const row of playersRows || []) {
+        dobMap.set(row.id, row.date_of_birth || "");
+        if (!params.clubId && row.club_id) {
+          resolvedClubId = row.club_id;
+        }
+      }
+    } catch {}
+  }
+
+  const [activeDocs, consentsRes] = await Promise.all([
+    getActiveConsentDocuments(resolvedClubId),
+    (async () => {
+      try {
+        return await supabase
+          .from("consents")
+          .select("*")
+          .in("player_id", uniqueIds)
+          .eq("scope", params.scope)
+          .order("granted_at", { ascending: false });
+      } catch (err: any) {
+        return { data: null, error: err };
+      }
+    })(),
+  ]);
+
+  const recordsByPlayer = new Map<string, Consent[]>();
+  const uniqueIdSet = new Set(uniqueIds);
+
+  if (!consentsRes.error && consentsRes.data) {
+    for (const row of consentsRes.data as Consent[]) {
+      if (!uniqueIdSet.has(row.player_id)) continue;
+      const list = recordsByPlayer.get(row.player_id) || [];
+      list.push(row);
+      recordsByPlayer.set(row.player_id, list);
+    }
+  } else {
+    // Резервний режим через injury_logs (якщо таблиця consents ще не створена в БД)
+    try {
+      const { data: logs } = await supabase
+        .from("injury_logs")
+        .select("note")
+        .like("note", "[CONSENT_RECORD]%")
+        .order("created_at", { ascending: false })
+        .limit(1000);
+
+      if (logs && logs.length > 0) {
+        const dedupByPlayer = new Map<string, Map<string, Consent>>();
+        for (const l of logs) {
+          try {
+            const parsed = JSON.parse(l.note.replace("[CONSENT_RECORD] ", "")) as Consent;
+            if (
+              parsed &&
+              uniqueIdSet.has(parsed.player_id) &&
+              parsed.scope === params.scope
+            ) {
+              let pMap = dedupByPlayer.get(parsed.player_id);
+              if (!pMap) {
+                pMap = new Map<string, Consent>();
+                dedupByPlayer.set(parsed.player_id, pMap);
+              }
+              if (!pMap.has(parsed.id)) {
+                pMap.set(parsed.id, parsed);
+              }
+            }
+          } catch {}
+        }
+        for (const [pid, pMap] of dedupByPlayer.entries()) {
+          recordsByPlayer.set(
+            pid,
+            Array.from(pMap.values()).sort((a, b) =>
+              (b.revoked_at || b.granted_at || "").localeCompare(
+                a.revoked_at || a.granted_at || ""
+              )
+            )
+          );
+        }
+      }
+    } catch {}
+  }
+
+  const activeDoc = activeDocs[params.scope];
+
+  for (const playerId of uniqueIds) {
+    const dob = dobMap.get(playerId) || "";
+    const age = calculatePlayerAge(dob);
+    const isMinor = age < 18;
+    const latest = (recordsByPlayer.get(playerId) || [])[0] || null;
+
+    let status: ConsentCellStatus = "missing";
+    if (latest) {
+      const signedVersion = latest.evidence?.document_version || "1.0";
+      const isCurrentDoc =
+        latest.document_id === activeDoc.id || signedVersion === activeDoc.version;
+
+      if (latest.revoked_at) {
+        status = "revoked";
+      } else if (!isCurrentDoc) {
+        status = "outdated";
+      } else {
+        status = "granted";
+      }
+    }
+
+    const allowed =
+      params.scope === "data_processing" || !isMinor || status === "granted";
+
+    result.set(playerId, {
+      isMinor,
+      status,
+      allowed,
+    });
+  }
+
+  return result;
+}
+
+/**
+ * Пакетна перевірка дозволу для списку гравців (еквівалент hasConsent без N+1).
+ */
+export async function hasConsentBatch(
+  playerIds: string[],
+  scope: ConsentScope,
+  clubId: string = DEFAULT_CLUB_ID,
+  playerDobMap?: Map<string, string>
+): Promise<Map<string, boolean>> {
+  const result = new Map<string, boolean>();
+  const uniqueIds = Array.from(new Set((playerIds || []).filter(Boolean)));
+  if (uniqueIds.length === 0) return result;
+
+  if (scope === "data_processing") {
+    for (const id of uniqueIds) {
+      result.set(id, true);
+    }
+    return result;
+  }
+
+  const statusMap = await getPlayersConsentStatusBatch({
+    playerIds: uniqueIds,
+    clubId,
+    scope,
+    playerDobMap,
+  });
+
+  for (const id of uniqueIds) {
+    result.set(id, statusMap.get(id)?.allowed ?? false);
+  }
+  return result;
 }

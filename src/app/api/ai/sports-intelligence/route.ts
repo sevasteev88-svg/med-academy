@@ -1,19 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/utils/supabase/server";
+import { assertTeamStaff, assertPlayerAccess } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { hasConsent } from "@/lib/consents";
 import { callAI, createAnonymizer, AI_DISCLAIMER } from "@/lib/ai";
 
 export async function POST(request: NextRequest) {
-  // Авторизація
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return NextResponse.json({ error: "Не авторизовано" }, { status: 401 });
+  // Авторизація та перевірка ролі штабу
+  const auth = await assertTeamStaff();
+  if ("error" in auth) {
+    return NextResponse.json({ error: auth.error }, { status: 403 });
   }
+  const { user } = auth;
 
   try {
     const body = await request.json();
@@ -21,8 +18,13 @@ export async function POST(request: NextRequest) {
 
     const anonymizer = createAnonymizer();
 
-    // 1. Перевірка згоди для одиночного профілю гравця (п. 1.5.3)
+    // 1. Перевірка доступу до гравця та згоди для одиночного профілю гравця (п. 1.5.3)
     if (playerContext?.id) {
+      const playerAccess = await assertPlayerAccess(user, playerContext.id, { allowCoach: true });
+      if ("error" in playerAccess) {
+        return NextResponse.json({ error: playerAccess.error }, { status: 403 });
+      }
+
       const allowed = await hasConsent(playerContext.id, "ai_processing");
       if (!allowed) {
         return NextResponse.json(
@@ -157,6 +159,7 @@ ${safeHistory.map((m: any) => `${m.role === "user" ? "Питання штабу"
         endpoint: "/api/ai/sports-intelligence",
       },
       userId: user.id,
+      clubId: user.clubId,
     });
 
     return NextResponse.json({

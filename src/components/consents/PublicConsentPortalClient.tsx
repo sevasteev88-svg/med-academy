@@ -341,8 +341,13 @@ export default function PublicConsentPortalClient({
             <button
               type="button"
               onClick={() => {
-                if (mode === "form") setOtpCode(devOtpHint);
-                else setRevokeOtpCode(devOtpHint);
+                if (mode === "form") {
+                  setOtpSent(true);
+                  setOtpCode(devOtpHint);
+                } else {
+                  setRevokeOtpSent(true);
+                  setRevokeOtpCode(devOtpHint);
+                }
               }}
               className="px-3.5 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-white font-bold shrink-0"
             >

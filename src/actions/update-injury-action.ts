@@ -35,7 +35,12 @@ export async function updateInjuryAction(_prev: UpdateInjuryState, formData: For
     .from("injuries")
     .select("player_id")
     .eq("id", injuryId)
-    .single();
+    .eq("club_id", auth.user.clubId)
+    .maybeSingle();
+
+  if (!existingInjury) {
+    return { error: "Травму не знайдено або доступ заборонено" };
+  }
 
   let timeLossDays: number | null = null;
   if (actualReturnDate && dateOfInjury) {
@@ -64,7 +69,11 @@ export async function updateInjuryAction(_prev: UpdateInjuryState, formData: For
     updatePayload.time_loss_days = timeLossDays;
   }
 
-  const { error } = await supabase.from("injuries").update(updatePayload).eq("id", injuryId);
+  const { error } = await supabase
+    .from("injuries")
+    .update(updatePayload)
+    .eq("id", injuryId)
+    .eq("club_id", auth.user.clubId);
 
   if (error) return { error: error.message };
 

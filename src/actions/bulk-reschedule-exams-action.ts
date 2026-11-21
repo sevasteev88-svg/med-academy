@@ -32,7 +32,8 @@ export async function bulkRescheduleExamsAction(
   const { error } = await supabase
     .from("injuries")
     .update({ next_exam_date: nextExamDate })
-    .in("id", injuryIds);
+    .in("id", injuryIds)
+    .eq("club_id", auth.user.clubId);
 
   if (error) {
     return { error: error.message };

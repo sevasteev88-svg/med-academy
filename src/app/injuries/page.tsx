@@ -4,6 +4,8 @@
 
 import { createClient } from "@/utils/supabase/server";
 import Link from "next/link";
+import { getCurrentUser } from "@/lib/auth";
+import { canUserAccessTeam } from "@/lib/team-access";
 import {
   formatLocation,
   formatInjuryType,
@@ -237,18 +239,35 @@ function ZoneLabel({ color, children }: { color: string; children: React.ReactNo
 }
 
 // ── Сторінка ──────────────────────────────────────────────────────────────────
-export default async function InjuriesListPage() {
-  const supabase = await createClient();
+export default async function InjuriesListPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ status?: string; team?: string }>;
+}) {
+  const resolvedParams = searchParams ? await searchParams : {};
+  const statusFilter = resolvedParams?.status || "all";
+  const teamFilter = resolvedParams?.team || "all";
 
-  const { data: injuries, error } = await supabase
+  const [supabase, currentUser] = await Promise.all([
+    createClient(),
+    getCurrentUser(),
+  ]);
+
+  let query = supabase
     .from("injuries")
     .select(`
-      id, player_id, injury_type, location, status, vas_score,
+      id, club_id, player_id, injury_type, location, status, vas_score,
       date_of_injury, days_missed,
       munich_type, bamic_code, mlgr_code,
-      players ( id, first_name, last_name, position, teams ( name ) )
+      players ( id, first_name, last_name, position, team_id, teams ( name ) )
     `)
     .order("date_of_injury", { ascending: false });
+
+  if (currentUser?.clubId) {
+    query = query.eq("club_id", currentUser.clubId);
+  }
+
+  const { data: rawInjuries, error } = await query;
 
   if (error) {
     return (
@@ -261,14 +280,41 @@ export default async function InjuriesListPage() {
     );
   }
 
-  const activeRaw = (injuries ?? []).filter((i) => i.status === "active");
-  const rehabRaw  = (injuries ?? []).filter((i) => i.status === "rehabilitation");
-  const closedRaw = (injuries ?? []).filter((i) => i.status === "closed");
+  const injuries = (rawInjuries ?? []).filter((inj: any) => {
+    const playerTeamId = inj.players?.team_id || null;
+    if (currentUser && !canUserAccessTeam(currentUser, playerTeamId)) {
+      return false;
+    }
+    if (teamFilter !== "all" && playerTeamId !== teamFilter) {
+      return false;
+    }
+    return true;
+  });
+
+  const activeRaw = injuries.filter((i) => i.status === "active");
+  const rehabRaw  = injuries.filter((i) => i.status === "rehabilitation");
+  const closedRaw = injuries.filter((i) => i.status === "closed");
 
   // Групуємо за гравцями
   const activeGroups = groupInjuriesByPlayer(activeRaw);
   const rehabGroups  = groupInjuriesByPlayer(rehabRaw);
   const closedGroups = groupInjuriesByPlayer(closedRaw);
+
+  const showActive = statusFilter === "all" || statusFilter === "active";
+  const showRehab = statusFilter === "all" || statusFilter === "rehabilitation";
+  const showClosed = statusFilter === "all" || statusFilter === "closed";
+
+  const buildFilterHref = (nextStatus: string) => {
+    const params = new URLSearchParams();
+    if (nextStatus !== "all" && nextStatus !== statusFilter) {
+      params.set("status", nextStatus);
+    }
+    if (teamFilter !== "all") {
+      params.set("team", teamFilter);
+    }
+    const qs = params.toString();
+    return qs ? `/injuries?${qs}` : "/injuries";
+  };
 
   return (
     <div className="min-h-screen bg-transparent text-slate-100 p-4 sm:p-6 md:p-8">
@@ -288,6 +334,14 @@ export default async function InjuriesListPage() {
             </p>
           </div>
           <div className="flex items-center gap-2.5">
+            {statusFilter !== "all" && (
+              <Link
+                href={buildFilterHref("all")}
+                className="px-3 py-2 rounded-xl text-xs font-semibold text-slate-300 bg-slate-800/80 border border-slate-700 hover:bg-slate-700/80 transition-all"
+              >
+                Скинути фільтр ✕
+              </Link>
+            )}
             <Link
               href="/injuries/new"
               className="px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 shadow-[0_0_15px_rgba(14,165,233,0.3)] transition-all flex items-center gap-1.5"
@@ -298,9 +352,16 @@ export default async function InjuriesListPage() {
           </div>
         </header>
 
-        {/* Статистичні плашки (KPI) */}
+        {/* Статистичні плашки (KPI з інтерактивною фільтрацією) */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="p-4 rounded-2xl bg-slate-900/60 backdrop-blur-md border border-rose-500/20 shadow-[0_4px_20px_rgba(0,0,0,0.35)] flex items-center justify-between">
+          <Link
+            href={buildFilterHref("active")}
+            className={`p-4 rounded-2xl bg-slate-900/60 backdrop-blur-md border transition-all shadow-[0_4px_20px_rgba(0,0,0,0.35)] flex items-center justify-between ${
+              statusFilter === "active"
+                ? "border-rose-500 ring-1 ring-rose-500/40 bg-rose-950/20"
+                : "border-rose-500/20 hover:border-rose-500/40"
+            }`}
+          >
             <div>
               <div className="text-[11px] font-semibold text-rose-400 uppercase tracking-wider">
                 Активні травми
@@ -315,9 +376,16 @@ export default async function InjuriesListPage() {
             <div className="w-10 h-10 rounded-xl bg-rose-500/10 border border-rose-500/25 flex items-center justify-center text-rose-400 text-lg font-bold shadow-[0_0_12px_rgba(244,63,94,0.2)]">
               🔴
             </div>
-          </div>
+          </Link>
 
-          <div className="p-4 rounded-2xl bg-slate-900/60 backdrop-blur-md border border-amber-500/20 shadow-[0_4px_20px_rgba(0,0,0,0.35)] flex items-center justify-between">
+          <Link
+            href={buildFilterHref("rehabilitation")}
+            className={`p-4 rounded-2xl bg-slate-900/60 backdrop-blur-md border transition-all shadow-[0_4px_20px_rgba(0,0,0,0.35)] flex items-center justify-between ${
+              statusFilter === "rehabilitation"
+                ? "border-amber-500 ring-1 ring-amber-500/40 bg-amber-950/20"
+                : "border-amber-500/20 hover:border-amber-500/40"
+            }`}
+          >
             <div>
               <div className="text-[11px] font-semibold text-amber-400 uppercase tracking-wider">
                 Реабілітація (RTP)
@@ -332,9 +400,16 @@ export default async function InjuriesListPage() {
             <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-center text-amber-400 text-lg font-bold shadow-[0_0_12px_rgba(245,158,11,0.2)]">
               🟡
             </div>
-          </div>
+          </Link>
 
-          <div className="p-4 rounded-2xl bg-slate-900/60 backdrop-blur-md border border-emerald-500/20 shadow-[0_4px_20px_rgba(0,0,0,0.35)] flex items-center justify-between">
+          <Link
+            href={buildFilterHref("closed")}
+            className={`p-4 rounded-2xl bg-slate-900/60 backdrop-blur-md border transition-all shadow-[0_4px_20px_rgba(0,0,0,0.35)] flex items-center justify-between ${
+              statusFilter === "closed"
+                ? "border-emerald-500 ring-1 ring-emerald-500/40 bg-emerald-950/20"
+                : "border-emerald-500/20 hover:border-emerald-500/40"
+            }`}
+          >
             <div>
               <div className="text-[11px] font-semibold text-emerald-400 uppercase tracking-wider">
                 Архів / Закриті
@@ -347,11 +422,11 @@ export default async function InjuriesListPage() {
             <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center text-emerald-400 text-lg font-bold shadow-[0_0_12px_rgba(16,185,129,0.2)]">
               🟢
             </div>
-          </div>
+          </Link>
         </div>
 
         {/* Активні травми (згруповані за гравцями) */}
-        {activeGroups.length > 0 && (
+        {showActive && activeGroups.length > 0 && (
           <section className="space-y-3">
             <ZoneLabel color="bg-rose-500">
               <span className="text-rose-400 font-bold">
@@ -367,7 +442,7 @@ export default async function InjuriesListPage() {
         )}
 
         {/* Реабілітація (згруповані за гравцями) */}
-        {rehabGroups.length > 0 && (
+        {showRehab && rehabGroups.length > 0 && (
           <section className="space-y-3">
             <ZoneLabel color="bg-amber-500">
               <span className="text-amber-400 font-bold">
@@ -382,9 +457,9 @@ export default async function InjuriesListPage() {
           </section>
         )}
 
-        {/* Архів (згорнутий) */}
-        {closedGroups.length > 0 && (
-          <ArchiveSection count={closedRaw.length}>
+        {/* Архів (згорнутий за замовчуванням, розгорнутий при фільтрі closed) */}
+        {showClosed && closedGroups.length > 0 && (
+          <ArchiveSection count={closedRaw.length} defaultOpen={statusFilter === "closed"}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
               {closedGroups.map((group) => (
                 <PlayerInjuryCard key={group.playerId} group={group} zone="slate" />
@@ -394,7 +469,7 @@ export default async function InjuriesListPage() {
         )}
 
         {/* Порожньо */}
-        {(injuries ?? []).length === 0 && (
+        {injuries.length === 0 && (
           <div className="p-12 rounded-2xl bg-slate-900/60 backdrop-blur-md border border-sky-500/15 text-center text-slate-400 text-sm">
             <div className="text-3xl mb-2">🟢</div>
             Травмованих гравців немає — весь склад готовий до тренувань!

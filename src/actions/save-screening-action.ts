@@ -2,7 +2,7 @@
 
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
-import { assertDoctor } from "@/lib/auth";
+import { assertDoctor, assertPlayerAccess } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import {
   type PreSeasonScreening,
@@ -15,6 +15,9 @@ export async function saveScreeningAction(
 ) {
   const auth = await assertDoctor();
   if ("error" in auth) return { error: auth.error };
+
+  const playerAccess = await assertPlayerAccess(auth.user, screeningData.player_id, { allowCoach: false });
+  if ("error" in playerAccess) return { error: playerAccess.error };
 
   // 1. Обов'язкова валідація основних полів
   if (!screeningData.date || !screeningData.date.trim()) {

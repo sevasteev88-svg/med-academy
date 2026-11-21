@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { createClient } from "@/utils/supabase/server";
 import { getCurrentUser } from "@/lib/auth";
+import { getClubDate } from "@/lib/club-timezone";
 import type { RiskAlertItem } from "@/components/alerts/RiskAlertsCenter";
 import type { WearableBiometricsEntry } from "@/types/wearables";
 import { getPharmacyStockAction } from "@/actions/pharmacy-actions";
@@ -27,6 +28,7 @@ export const getRiskAlerts = cache(async (options?: { includePharmacy?: boolean 
     supabase
       .from("maturation_assessments")
       .select("player_id, risk_zone, growth_phase, created_at")
+      .eq("club_id", user.clubId)
       .order("created_at", { ascending: false })
       .limit(500),
     supabase
@@ -42,6 +44,7 @@ export const getRiskAlerts = cache(async (options?: { includePharmacy?: boolean 
   const players = playersRes.data || [];
   const playerMap = new Map<string, any>(players.map((p) => [p.id, p]));
   const activeInjuries = injuriesRes.data || [];
+  const activeInjuredPlayerIds = new Set(activeInjuries.map((i) => i.player_id));
 
   // Group latest maturation by player
   const matByPlayer = new Map<string, any>();
@@ -115,8 +118,7 @@ export const getRiskAlerts = cache(async (options?: { includePharmacy?: boolean 
   for (const [playerId, mat] of matByPlayer.entries()) {
     if (mat.risk_zone === "red") {
       const pl = playerMap.get(playerId);
-      const playerInjury = activeInjuries.find((i) => i.player_id === playerId);
-      if (pl && playerInjury) {
+      if (pl && activeInjuredPlayerIds.has(playerId)) {
         alerts.push({
           id: `phv-${playerId}`,
           type: "phv",
@@ -136,7 +138,7 @@ export const getRiskAlerts = cache(async (options?: { includePharmacy?: boolean 
   }
 
   // 4. Overdue RTP target date
-  const today = new Date().toISOString().split("T")[0];
+  const today = getClubDate("Europe/Kyiv");
   for (const inj of activeInjuries) {
     if (inj.expected_return_date && inj.expected_return_date < today) {
       const pl = playerMap.get(inj.player_id);

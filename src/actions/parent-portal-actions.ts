@@ -4,7 +4,12 @@ import crypto from "crypto";
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/utils/supabase/admin";
-import { assertTeamStaff, DEFAULT_CLUB_ID } from "@/lib/auth";
+import {
+  assertTeamStaff,
+  assertPlayerAccess,
+  isCoach,
+  DEFAULT_CLUB_ID,
+} from "@/lib/auth";
 import { canUserAccessTeam } from "@/lib/team-access";
 import { logAudit } from "@/lib/audit";
 import { getClubDate, getClubTimezone } from "@/lib/club-timezone";
@@ -15,6 +20,7 @@ import {
 import {
   getActiveConsentDocuments,
   getPlayerConsentSummary,
+  isValidUuid,
 } from "@/lib/consents";
 import {
   calculatePlayerAvailability,
@@ -29,6 +35,7 @@ import type { SubscriptionStatus } from "@/types/billing";
 import {
   isParentWellnessAllowedForAge,
   maskParentMessageForCoach,
+  PARENT_MESSAGE_CATEGORY_META,
   type CoachParentAlertItem,
   type ParentMessageCategory,
   type ParentMessageRecord,
@@ -36,6 +43,12 @@ import {
   type ParentPortalTokenInfo,
   type ParentRehabExerciseItem,
 } from "@/types/parent-portal";
+import { PAIN_LOCATIONS_LIST } from "@/types/wellness";
+import {
+  escapeTelegramHtml,
+  getClubMedicalTelegramConfig,
+  sendClubMedicalChatAlert,
+} from "@/lib/medical-telegram";
 
 function hashToken(raw: string): string {
   return crypto.createHash("sha256").update(raw.trim()).digest("hex");
@@ -88,19 +101,29 @@ export async function generateParentPortalLinkAction(input: {
   const auth = await assertTeamStaff();
   if ("error" in auth) return { error: auth.error };
 
+  const access = await assertPlayerAccess(auth.user, input.playerId, {
+    allowCoach: true,
+  });
+  if ("error" in access) return { error: access.error };
+
+  const player = access.player;
+  const clubId = player.club_id || auth.user.clubId;
   const admin = createAdminClient();
-  const { data: player, error: playerErr } = await admin
-    .from("players")
-    .select("id, club_id, team_id")
-    .eq("id", input.playerId)
-    .maybeSingle();
 
-  if (playerErr || !player) {
-    return { error: "Гравця не знайдено." };
-  }
+  if (input.guardianId) {
+    const { data: guardian } = await admin
+      .from("guardians")
+      .select("id, player_id, club_id")
+      .eq("id", input.guardianId)
+      .maybeSingle();
 
-  if (!canUserAccessTeam(auth.user, player.team_id)) {
-    return { error: "Недостатньо прав доступу до цієї команди." };
+    if (
+      !guardian ||
+      guardian.player_id !== player.id ||
+      (guardian.club_id && guardian.club_id !== clubId)
+    ) {
+      return { error: "Законний представник не належить цьому гравцю." };
+    }
   }
 
   const rawToken = crypto.randomBytes(24).toString("hex");
@@ -108,7 +131,7 @@ export async function generateParentPortalLinkAction(input: {
   const label = (input.label || "Сімейний доступ").trim().slice(0, 80);
 
   const { error: insertErr } = await admin.from("parent_portal_tokens").insert({
-    club_id: player.club_id || auth.user.clubId || DEFAULT_CLUB_ID,
+    club_id: clubId,
     player_id: player.id,
     guardian_id: input.guardianId || null,
     token_hash: tokenHash,
@@ -127,7 +150,7 @@ export async function generateParentPortalLinkAction(input: {
     playerId: player.id,
     meta: { label },
     userId: auth.user.id,
-    clubId: player.club_id || auth.user.clubId,
+    clubId,
   });
 
   revalidatePath(`/players/${player.id}`);
@@ -147,21 +170,35 @@ export async function getPlayerParentAccessStateAction(playerId: string): Promis
   const auth = await assertTeamStaff();
   if ("error" in auth) return { tokens: [], messages: [] };
 
+  const access = await assertPlayerAccess(auth.user, playerId, {
+    allowCoach: true,
+  });
+  if ("error" in access) return { tokens: [], messages: [] };
+
+  const clubId = access.player.club_id || auth.user.clubId;
   const admin = createAdminClient();
-  const [tokensRes, messagesRes] = await Promise.all([
-    admin
-      .from("parent_portal_tokens")
-      .select("id, label, is_active, first_opened_at, last_opened_at, created_at")
-      .eq("player_id", playerId)
-      .order("created_at", { ascending: false })
-      .limit(10),
-    admin
-      .from("parent_messages")
-      .select("id, player_id, category, message, is_read_by_staff, created_at")
-      .eq("player_id", playerId)
-      .order("created_at", { ascending: false })
-      .limit(20),
-  ]);
+  const tokensRes = await admin
+    .from("parent_portal_tokens")
+    .select("id, label, is_active, first_opened_at, last_opened_at, created_at")
+    .eq("player_id", playerId)
+    .eq("club_id", clubId)
+    .order("created_at", { ascending: false })
+    .limit(10);
+
+  if (isCoach(auth.user.role)) {
+    return {
+      tokens: (tokensRes.data || []) as ParentPortalTokenInfo[],
+      messages: [],
+    };
+  }
+
+  const messagesRes = await admin
+    .from("parent_messages")
+    .select("id, player_id, category, message, is_read_by_staff, created_at")
+    .eq("player_id", playerId)
+    .eq("club_id", clubId)
+    .order("created_at", { ascending: false })
+    .limit(20);
 
   return {
     tokens: (tokensRes.data || []) as ParentPortalTokenInfo[],
@@ -179,12 +216,19 @@ export async function revokeParentPortalTokenAction(
   const auth = await assertTeamStaff();
   if ("error" in auth) return { error: auth.error };
 
+  const access = await assertPlayerAccess(auth.user, playerId, {
+    allowCoach: true,
+  });
+  if ("error" in access) return { error: access.error };
+
+  const clubId = access.player.club_id || auth.user.clubId;
   const admin = createAdminClient();
   const { error } = await admin
     .from("parent_portal_tokens")
     .update({ is_active: false })
     .eq("id", tokenId)
-    .eq("player_id", playerId);
+    .eq("player_id", playerId)
+    .eq("club_id", clubId);
 
   if (error) return { error: error.message };
 
@@ -194,7 +238,7 @@ export async function revokeParentPortalTokenAction(
     entityId: tokenId,
     playerId,
     userId: auth.user.id,
-    clubId: auth.user.clubId,
+    clubId,
   });
 
   revalidatePath(`/players/${playerId}`);
@@ -210,11 +254,18 @@ export async function markParentMessagesReadAction(
   const auth = await assertTeamStaff();
   if ("error" in auth) return {};
 
+  const access = await assertPlayerAccess(auth.user, playerId, {
+    allowCoach: false,
+  });
+  if ("error" in access) return {};
+
+  const clubId = access.player.club_id || auth.user.clubId;
   const admin = createAdminClient();
   await admin
     .from("parent_messages")
     .update({ is_read_by_staff: true })
     .eq("player_id", playerId)
+    .eq("club_id", clubId)
     .eq("is_read_by_staff", false);
 
   revalidatePath(`/players/${playerId}`);
@@ -278,6 +329,7 @@ export async function getParentPortalDataAction(
     activeDocs,
     wellnessHistoryRes,
     nutritionRes,
+    medTg,
   ] = await Promise.all([
     admin
       .from("players")
@@ -345,6 +397,7 @@ export async function getParentPortalDataAction(
       .eq("player_id", tokenRow.player_id)
       .order("date", { ascending: false })
       .limit(1),
+    getClubMedicalTelegramConfig(tokenRow.club_id),
   ]);
 
   const player = playerRes.data as any;
@@ -700,6 +753,11 @@ export async function getParentPortalDataAction(
         recoveryTips,
       },
       emergencyContacts,
+      doctorContact: {
+        name: medTg.doctorName,
+        telegramUrl: medTg.doctorTelegramUrl,
+        phone: medTg.doctorPhone,
+      },
       subscription: {
         isActive: isSubActive,
         status: (subRow?.status as SubscriptionStatus) || "unpaid",
@@ -755,6 +813,17 @@ export async function submitParentConsentsAction(input: {
 
   const activeDocs = await getActiveConsentDocuments(tokenRow.club_id);
   const nowIso = new Date().toISOString();
+  const signerFullName = input.signerFullName.trim();
+
+  for (const scope of input.selectedScopes) {
+    const doc = activeDocs[scope];
+    if (!isValidUuid(doc?.id)) {
+      return {
+        error:
+          "Не вдалося ініціалізувати шаблони документів згоди для клубу. Спробуйте ще раз або зверніться до лікаря.",
+      };
+    }
+  }
 
   const rowsToInsert = input.selectedScopes.map((scope) => {
     const doc = activeDocs[scope];
@@ -768,10 +837,12 @@ export async function submitParentConsentsAction(input: {
       granted_at: nowIso,
       player_assent: Boolean(input.playerAssent),
       player_assent_at: input.playerAssent ? nowIso : null,
+      retention_status: "active",
       evidence: {
         ip,
         user_agent: userAgent,
-        signer_name: input.signerFullName.trim(),
+        signer_full_name: signerFullName,
+        signer_name: signerFullName,
         signer_relation: input.signerRelation || "mother",
         document_version: doc?.version || "1.0",
         source: "parent_portal",
@@ -802,6 +873,7 @@ export async function submitParentConsentsAction(input: {
   });
 
   revalidatePath(`/players/${tokenRow.player_id}`);
+  revalidatePath("/consents");
   revalidatePath("/team/readiness");
   revalidatePath("/availability");
   revalidatePath("/coach-briefing");
@@ -860,6 +932,35 @@ export async function submitParentMessageAction(input: {
     allowPublic: true,
     meta: { category: input.category },
   });
+
+  // Дублюємо ВСІ звернення батьків у закритий мед-чат клубу через бота клубу
+  try {
+    const { data: playerInfo } = await admin
+      .from("players")
+      .select("first_name, last_name, teams ( name )")
+      .eq("id", tokenRow.player_id)
+      .maybeSingle();
+
+    const fullName = playerInfo
+      ? `${(playerInfo as any).last_name || ""} ${(playerInfo as any).first_name || ""}`.trim() || "Гравець"
+      : "Гравець";
+    const teamName = (playerInfo as any)?.teams?.name || "";
+    const meta = PARENT_MESSAGE_CATEGORY_META[input.category];
+    const catLabel = meta ? `${meta.icon} ${meta.label}` : input.category;
+
+    const lines = [
+      "👨‍👩‍👦 <b>Повідомлення від батьків</b>",
+      `👤 <b>Гравець:</b> ${escapeTelegramHtml(fullName)}${teamName ? ` (${escapeTelegramHtml(teamName)})` : ""}`,
+      `🏷️ <b>Категорія:</b> ${escapeTelegramHtml(catLabel)}`,
+      `💬 ${escapeTelegramHtml(cleanMsg.slice(0, 600))}`,
+    ];
+
+    await sendClubMedicalChatAlert({
+      clubId: tokenRow.club_id,
+      playerId: tokenRow.player_id,
+      htmlText: lines.join("\n"),
+    });
+  } catch {}
 
   revalidatePath(`/players/${tokenRow.player_id}`);
   revalidatePath("/coach-briefing");
@@ -1021,7 +1122,7 @@ export async function submitParentWellnessAction(input: {
 
   const { data: player } = await admin
     .from("players")
-    .select("id, club_id, date_of_birth")
+    .select("id, club_id, date_of_birth, first_name, last_name, teams ( name )")
     .eq("id", tokenRow.player_id)
     .maybeSingle();
 
@@ -1060,14 +1161,22 @@ export async function submitParentWellnessAction(input: {
   const timezone = await getClubTimezone(clubId);
   const today = getClubDate(timezone);
 
-  const { data: existingSurvey } = await admin
-    .from("wellness_surveys")
-    .select("id")
-    .eq("player_id", tokenRow.player_id)
-    .eq("date", today)
-    .maybeSingle();
+  const [{ data: existingSurvey }, { data: existingEntry }] = await Promise.all([
+    admin
+      .from("wellness_surveys")
+      .select("id")
+      .eq("player_id", tokenRow.player_id)
+      .eq("date", today)
+      .maybeSingle(),
+    admin
+      .from("wellness_entries")
+      .select("id")
+      .eq("player_id", tokenRow.player_id)
+      .eq("date", today)
+      .maybeSingle(),
+  ]);
 
-  if (existingSurvey) {
+  if (existingSurvey || existingEntry) {
     return { error: "Сьогоднішній чекін вже заповнено." };
   }
 
@@ -1127,6 +1236,30 @@ export async function submitParentWellnessAction(input: {
     return { error: `Не вдалося зберегти ранковий чекін: ${insertErr.message}` };
   }
 
+  // Синхронно зберігаємо в основну таблицю wellness_entries для дашборду готовності /team/readiness
+  try {
+    await admin.from("wellness_entries").upsert(
+      {
+        club_id: clubId,
+        player_id: tokenRow.player_id,
+        date: today,
+        sleep_quality: input.sleepQuality,
+        fatigue: input.fatigue,
+        soreness: input.soreness,
+        stress: stressLevel,
+        sleep_hours: sleepHours,
+        pain: Boolean(input.pain),
+        pain_vas: input.pain ? 4 : null,
+        pain_locations: painLocations,
+        illness: Boolean(input.illness),
+        comment: extraDetails.comment,
+        submitted_at: new Date().toISOString(),
+        source: "player",
+      } as any,
+      { onConflict: "player_id,date" }
+    );
+  } catch {}
+
   // Без витоку медичних деталей у meta
   await logAudit({
     action: "parent_wellness_submit",
@@ -1141,6 +1274,44 @@ export async function submitParentWellnessAction(input: {
       date: today,
     },
   });
+
+  // Дублюємо сигнали болю, хвороби або нотатки батьків у закритий мед-чат клубу
+  if (input.pain || input.illness || (input.notes && input.notes.trim())) {
+    try {
+      const fullName =
+        `${(player as any).last_name || ""} ${(player as any).first_name || ""}`.trim() ||
+        "Гравець";
+      const teamName = (player as any)?.teams?.name || "";
+      const locLabels = painLocations.map(
+        (id) => PAIN_LOCATIONS_LIST.find((l) => l.id === id)?.label || id
+      );
+
+      const alertLines = [
+        input.illness || input.pain
+          ? "🚨 <b>Ранковий чекін від батьків (потребує уваги)</b>"
+          : "👨‍👩‍👦 <b>Коментар батьків у ранковому чекіні</b>",
+        `👤 <b>Гравець:</b> ${escapeTelegramHtml(fullName)}${teamName ? ` (${escapeTelegramHtml(teamName)})` : ""}`,
+      ];
+
+      if (input.pain) {
+        alertLines.push(
+          `🩹 <b>Скарги на біль:</b> Так${locLabels.length > 0 ? ` (${escapeTelegramHtml(locLabels.join(", "))})` : ""}`
+        );
+      }
+      if (input.illness) {
+        alertLines.push("🤒 <b>Ознаки нездужання:</b> Так");
+      }
+      if (input.notes && input.notes.trim()) {
+        alertLines.push(`💬 ${escapeTelegramHtml(input.notes.trim().slice(0, 500))}`);
+      }
+
+      await sendClubMedicalChatAlert({
+        clubId,
+        playerId: tokenRow.player_id,
+        htmlText: alertLines.join("\n"),
+      });
+    } catch {}
+  }
 
   revalidatePath("/team/readiness");
   revalidatePath("/availability");

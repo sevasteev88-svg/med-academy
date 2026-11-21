@@ -2,7 +2,7 @@
 
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
-import { assertAuth } from "@/lib/auth";
+import { assertTeamStaff, assertPlayerAccess } from "@/lib/auth";
 import { hasConsent } from "@/lib/consents";
 import type {
   RpeScore,
@@ -20,8 +20,11 @@ type SaveWorkloadInput = {
 };
 
 export async function saveWorkloadAction(input: SaveWorkloadInput) {
-  const auth = await assertAuth();
+  const auth = await assertTeamStaff();
   if ("error" in auth) return { error: auth.error };
+
+  const playerAccess = await assertPlayerAccess(auth.user, input.playerId, { allowCoach: true });
+  if ("error" in playerAccess) return { error: playerAccess.error };
 
   const allowed = await hasConsent(input.playerId, "gps");
   if (!allowed) {

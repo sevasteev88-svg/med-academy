@@ -6,13 +6,16 @@ import { revalidatePath } from "next/cache";
 import {
   assertAuth,
   assertTeamStaff,
+  assertPlayerAccess,
+  assertPlayerOrStaffAccess,
   isCoach,
   DEFAULT_CLUB_ID,
 } from "@/lib/auth";
-import { hasConsent } from "@/lib/consents";
+import { hasConsentBatch } from "@/lib/consents";
 import { logAudit } from "@/lib/audit";
 import { getPlayerSession } from "@/lib/player-auth";
-import { sendPostSessionRemindersAction } from "./telegram-actions";
+import { getClubDate, getClubTimezone } from "@/lib/club-timezone";
+import { sendPostSessionRemindersInternal } from "@/lib/telegram-reminders-server";
 import type {
   TrainingSessionType,
   RpeScore,
@@ -68,7 +71,7 @@ export async function getTeamTrainingDataAction(params?: {
       success: false,
       team: null,
       teams: [],
-      date: params?.date || new Date().toISOString().split("T")[0],
+      date: params?.date || getClubDate(),
       isCoach: false,
       userRole: "coach",
       players: [],
@@ -81,9 +84,9 @@ export async function getTeamTrainingDataAction(params?: {
   const isCoachUser = isCoach(user.role);
   const effectiveRole = user.role as "coach" | "doctor" | "admin";
   const supabase = createAdminClient();
-  const targetDate = params?.date || new Date().toISOString().split("T")[0];
-
   const clubId = user.clubId || DEFAULT_CLUB_ID;
+  const timezone = await getClubTimezone(clubId);
+  const targetDate = params?.date || getClubDate(timezone);
 
   // 1. Отримуємо команди клубу (суворо ізольовано за club_id)
   const { data: rawTeams } = await supabase
@@ -146,6 +149,7 @@ export async function getTeamTrainingDataAction(params?: {
   const { data: rawPlayers } = await supabase
     .from("players")
     .select("id, first_name, last_name, position, team_id")
+    .eq("club_id", clubId)
     .eq("team_id", selectedTeamId)
     .is("archived_at", null)
     .order("last_name", { ascending: true });
@@ -197,25 +201,29 @@ export async function getTeamTrainingDataAction(params?: {
   }
 
   // 4. Отримуємо відповіді гравців з велнес-анкет за сьогодні (щоб дізнатися їхній власний player_rpe)
-  let playerSelfRpeMap = new Map<string, number>();
-  try {
-    const { data: wellnessToday } = await supabase
-      .from("wellness_entries")
-      .select("player_id, comment")
-      .eq("date", targetDate);
+  const playerSelfRpeMap = new Map<string, number>();
+  if (playerIds.length > 0) {
+    try {
+      const { data: wellnessToday } = await supabase
+        .from("wellness_entries")
+        .select("player_id, comment")
+        .eq("club_id", clubId)
+        .in("player_id", playerIds)
+        .eq("date", targetDate);
 
-    if (wellnessToday) {
-      for (const w of wellnessToday) {
-        // Якщо у велнесі записано RPE в коментарі або структурі
-        if (w.comment && w.comment.includes("[RPE:")) {
-          const match = w.comment.match(/\[RPE:(\d+)\]/);
-          if (match && match[1]) {
-            playerSelfRpeMap.set(w.player_id, Number(match[1]));
+      if (wellnessToday) {
+        for (const w of wellnessToday) {
+          // Якщо у велнесі записано RPE в коментарі або структурі
+          if (w.comment && w.comment.includes("[RPE:")) {
+            const match = w.comment.match(/\[RPE:(\d+)\]/);
+            if (match && match[1]) {
+              playerSelfRpeMap.set(w.player_id, Number(match[1]));
+            }
           }
         }
       }
-    }
-  } catch {}
+    } catch {}
+  }
 
   // Також перевіряємо, чи в workload_sessions вже записаний player_rpe
   for (const w of existingWorkloads) {
@@ -329,8 +337,66 @@ export async function saveTeamTrainingAction(input: SaveTeamTrainingInput) {
   }
 
   const { user } = staffCheck;
-  const clubId = user.clubId || DEFAULT_CLUB_ID;
+  const clubId = user.clubId;
   const supabase = createAdminClient();
+
+  // 1. Перевіряємо, що всі передані playerId належать клубу користувача та забираємо DOB для пакетної перевірки згод
+  const requestedPlayerIds = Array.from(new Set(input.players.map((p) => p.playerId).filter(Boolean)));
+  const validClubPlayerIds = new Set<string>();
+  const dobMap = new Map<string, string>();
+
+  if (requestedPlayerIds.length > 0) {
+    const { data: clubPlayers } = await supabase
+      .from("players")
+      .select("id, date_of_birth")
+      .eq("club_id", clubId)
+      .in("id", requestedPlayerIds);
+    (clubPlayers || []).forEach((p: any) => {
+      validClubPlayerIds.add(p.id);
+      if (p.date_of_birth) dobMap.set(p.id, p.date_of_birth);
+    });
+  }
+
+  // Пакетна перевірка батьківських згод (gps / навантаження) одним батчем замість N+1 запитів у циклі
+  const gpsConsentMap = await hasConsentBatch(
+    Array.from(validClubPlayerIds),
+    "gps",
+    clubId,
+    dobMap
+  );
+
+  const eligibleItems = input.players.filter(
+    (item) =>
+      validClubPlayerIds.has(item.playerId) &&
+      gpsConsentMap.get(item.playerId) !== false
+  );
+  const eligiblePlayerIds = Array.from(new Set(eligibleItems.map((item) => item.playerId)));
+
+  // Отримуємо існуючі player_rpe одним запитом і видаляємо старі записи за цю дату одним запитом
+  const existingPlayerRpeMap = new Map<string, number>();
+  if (eligiblePlayerIds.length > 0) {
+    try {
+      const { data: existingEntries } = await supabase
+        .from("workload_sessions")
+        .select("player_id, player_rpe")
+        .in("player_id", eligiblePlayerIds)
+        .eq("date", input.date);
+
+      for (const entry of existingEntries || []) {
+        if (entry.player_id && entry.player_rpe !== undefined && entry.player_rpe !== null) {
+          existingPlayerRpeMap.set(entry.player_id, Number(entry.player_rpe));
+        }
+      }
+    } catch {}
+
+    try {
+      await supabase
+        .from("workload_sessions")
+        .delete()
+        .in("player_id", eligiblePlayerIds)
+        .eq("date", input.date);
+    } catch {}
+  }
 
   const teamSessionId = `team_sess_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const nowIso = new Date().toISOString();
@@ -340,14 +406,11 @@ export async function saveTeamTrainingAction(input: SaveTeamTrainingInput) {
   let presentCount = 0;
   let absentCount = 0;
 
-  for (const item of input.players) {
-    // Перевірка згоди на моніторинг навантажень (батьківська згода: gps / навантаження)
-    const allowed = await hasConsent(item.playerId, "gps");
-    if (!allowed) {
-      // Якщо згоди немає — пропускаємо запис навантаження для цього неповнолітнього гравця
-      continue;
-    }
+  const fullRows: any[] = [];
+  const baseRows: any[] = [];
+  const fallbackLogRows: any[] = [];
 
+  for (const item of eligibleItems) {
     const isPresent = Boolean(item.isPresent);
     if (isPresent) {
       presentCount++;
@@ -358,21 +421,7 @@ export async function saveTeamTrainingAction(input: SaveTeamTrainingInput) {
     const duration = isPresent ? Math.max(0, Number(item.minutes) || 0) : 0;
     const rpe = isPresent ? (Math.max(0, Math.min(10, Number(item.rpeScore) || 0)) as RpeScore) : 0;
     const workloadAu = duration * rpe;
-
-    // Перевіримо, чи гравець уже ставив собі оцінку в анкеті
-    let playerRpe: number | null = null;
-    try {
-      const { data: existingEntry } = await supabase
-        .from("workload_sessions")
-        .select("player_rpe")
-        .eq("player_id", item.playerId)
-        .eq("date", input.date)
-        .maybeSingle();
-
-      if (existingEntry?.player_rpe !== undefined && existingEntry?.player_rpe !== null) {
-        playerRpe = Number(existingEntry.player_rpe);
-      }
-    } catch {}
+    const playerRpe = existingPlayerRpeMap.get(item.playerId) ?? null;
 
     const sessionPayload: SessionRpeEntry = {
       id: `rpe_${Date.now()}_${item.playerId.slice(0, 4)}_${Math.random().toString(36).substring(2, 6)}`,
@@ -394,48 +443,55 @@ export async function saveTeamTrainingAction(input: SaveTeamTrainingInput) {
       created_at: nowIso,
     };
 
-    // 1. Запис у workload_sessions
-    // Спочатку видаляємо попередній запис за цю дату, щоб уникнути дублювання
-    try {
-      await supabase
-        .from("workload_sessions")
-        .delete()
-        .eq("player_id", item.playerId)
-        .eq("date", input.date);
-    } catch {}
+    const noteJson = `[COACH_SESSION] ${JSON.stringify(sessionPayload)}`;
 
+    fullRows.push({
+      id: sessionPayload.id,
+      club_id: clubId,
+      team_id: input.teamId,
+      team_session_id: teamSessionId,
+      player_id: item.playerId,
+      date: input.date,
+      session_type: input.sessionType,
+      duration_minutes: duration,
+      rpe_score: Math.max(1, rpe),
+      fifa11_status: fifa11Status,
+      workload_au: workloadAu,
+      notes: noteJson,
+    });
+
+    baseRows.push({
+      id: sessionPayload.id,
+      club_id: clubId,
+      player_id: item.playerId,
+      date: input.date,
+      session_type: input.sessionType,
+      duration_minutes: duration,
+      rpe_score: Math.max(1, rpe),
+      workload_au: workloadAu,
+      notes: noteJson,
+    });
+
+    fallbackLogRows.push({
+      club_id: clubId,
+      injury_id: null as any,
+      date: input.date,
+      category: "note",
+      note: `[WORKLOAD] ${JSON.stringify(sessionPayload)}`,
+    });
+
+    savedCount++;
+  }
+
+  if (fullRows.length > 0) {
     let insertSuccess = false;
     try {
-      const { error: wErr } = await supabase.from("workload_sessions").insert({
-        id: sessionPayload.id,
-        club_id: clubId,
-        team_id: input.teamId,
-        team_session_id: teamSessionId,
-        player_id: item.playerId,
-        date: input.date,
-        session_type: input.sessionType,
-        duration_minutes: duration,
-        rpe_score: Math.max(1, rpe),
-        fifa11_status: fifa11Status,
-        workload_au: workloadAu,
-        notes: `[COACH_SESSION] ${JSON.stringify(sessionPayload)}`,
-      } as any);
-
+      const { error: wErr } = await supabase.from("workload_sessions").insert(fullRows as any);
       if (!wErr) {
         insertSuccess = true;
       } else {
         // Fallback на випадок, якщо в БД ще не застосовані колонки team_id/fifa11_status
-        const { error: baseErr } = await supabase.from("workload_sessions").insert({
-          id: sessionPayload.id,
-          club_id: clubId,
-          player_id: item.playerId,
-          date: input.date,
-          session_type: input.sessionType,
-          duration_minutes: duration,
-          rpe_score: Math.max(1, rpe),
-          workload_au: workloadAu,
-          notes: `[COACH_SESSION] ${JSON.stringify(sessionPayload)}`,
-        } as any);
+        const { error: baseErr } = await supabase.from("workload_sessions").insert(baseRows as any);
         if (!baseErr) {
           insertSuccess = true;
         }
@@ -445,17 +501,9 @@ export async function saveTeamTrainingAction(input: SaveTeamTrainingInput) {
     // Fallback: якщо таблиця недоступна — injury_logs
     if (!insertSuccess) {
       try {
-        await supabase.from("injury_logs").insert({
-          club_id: clubId,
-          injury_id: null as any,
-          date: input.date,
-          category: "note",
-          note: `[WORKLOAD] ${JSON.stringify(sessionPayload)}`,
-        } as any);
+        await supabase.from("injury_logs").insert(fallbackLogRows as any);
       } catch {}
     }
-
-    savedCount++;
   }
 
   // 2. Автоматична синхронізація у таблицю exposures (Реєстр людино-годин UEFA/IOC)
@@ -515,7 +563,8 @@ export async function saveTeamTrainingAction(input: SaveTeamTrainingInput) {
         .map((p) => p.playerId);
 
       const sessionTypeName = SESSION_TYPE_UA[input.sessionType]?.label || "Командне тренування";
-      const tgRes = await sendPostSessionRemindersAction({
+      const tgRes = await sendPostSessionRemindersInternal({
+        clubId,
         teamId: input.teamId,
         date: input.date,
         sessionType: sessionTypeName,
@@ -559,18 +608,19 @@ export async function submitPlayerSelfRpeAction(input: {
   playerRpe: RpeScore;
   sessionMinutes?: number;
 }) {
-  const playerSession = await getPlayerSession();
-  let callerUserId = "player";
-  let callerClubId = DEFAULT_CLUB_ID;
-
-  if (playerSession && playerSession.playerId === input.playerId) {
-    callerUserId = `player:${input.playerId}`;
-  } else {
-    const authRes = await assertAuth();
-    if ("error" in authRes) return { error: authRes.error };
-    callerUserId = authRes.user.id;
-    callerClubId = authRes.user.clubId || DEFAULT_CLUB_ID;
+  const accessCheck = await assertPlayerOrStaffAccess(input.playerId, { allowCoach: true });
+  if ("error" in accessCheck) {
+    return { error: accessCheck.error };
   }
+
+  const callerUserId =
+    accessCheck.actor === "staff"
+      ? accessCheck.user.id
+      : `player:${input.playerId}`;
+  const callerClubId =
+    accessCheck.actor === "staff"
+      ? accessCheck.user.clubId
+      : DEFAULT_CLUB_ID;
 
   const supabase = createAdminClient();
   const { data: player } = await supabase
@@ -681,7 +731,11 @@ export async function getPlayerTodaySessionAction(playerId: string, targetDate?:
   error?: string;
 }> {
   try {
-    const date = targetDate || new Date().toISOString().split("T")[0];
+    const authCheck = await assertPlayerOrStaffAccess(playerId, { allowCoach: true });
+    if ("error" in authCheck) {
+      return { success: false, todaySession: null, error: authCheck.error };
+    }
+
     const supabase = createAdminClient();
 
     // 1. Отримуємо дані гравця та його команду
@@ -695,6 +749,9 @@ export async function getPlayerTodaySessionAction(playerId: string, targetDate?:
       return { success: false, todaySession: null, error: "Гравця не знайдено" };
     }
 
+    const timezone = await getClubTimezone(player.club_id || DEFAULT_CLUB_ID);
+    const date = targetDate || getClubDate(timezone);
+
     const teamId = player.team_id;
     const teamName = (player as any).teams?.name || "";
 
@@ -706,12 +763,13 @@ export async function getPlayerTodaySessionAction(playerId: string, targetDate?:
       .eq("date", date)
       .maybeSingle();
 
-    // 3. Перевіряємо чи є матч у заявках на сьогодні
+    // 3. Перевіряємо чи є матч у заявках на сьогодні (ізольовано по club_id)
     let matchOpponent: string | null = null;
     try {
       let matchQuery = supabase
         .from("match_rosters")
         .select("opponent, starters, substitutes, team_name")
+        .eq("club_id", player.club_id)
         .eq("match_date", date);
 
       if (teamId) {
@@ -788,7 +846,7 @@ export async function getPlayerTodaySessionAction(playerId: string, targetDate?:
 export async function submitPlayerSessionFeedbackAction(input: PlayerSessionFeedbackInput) {
   try {
     const supabase = createAdminClient();
-    const targetDate = input.date || new Date().toISOString().split("T")[0];
+    const targetDate = input.date || getClubDate();
 
     // 1. Авторизація: багаторівнева стійка перевірка (підтримка мобільних браузерів, Telegram WebApp та cookie-drop)
     let isAuthorized = false;
@@ -805,12 +863,13 @@ export async function submitPlayerSessionFeedbackAction(input: PlayerSessionFeed
     } catch {}
 
     // 1.2 Перевірка за персональним portalToken гравця (резерв при втраті cookies)
-    if (!isAuthorized && input.portalToken) {
+    const cleanPortalToken = input.portalToken?.trim() || "";
+    if (!isAuthorized && cleanPortalToken.length >= 8 && cleanPortalToken !== "device_session") {
       try {
         const { data: pByToken } = await supabase
           .from("players")
           .select("id, club_id")
-          .eq("portal_token", input.portalToken.trim())
+          .eq("portal_token", cleanPortalToken)
           .maybeSingle();
 
         if (pByToken && String(pByToken.id).trim() === String(input.playerId).trim()) {
@@ -821,32 +880,19 @@ export async function submitPlayerSessionFeedbackAction(input: PlayerSessionFeed
       } catch {}
     }
 
-    // 1.3 Перевірка прав медичного/тренерського штабу (coach, doctor, admin)
+    // 1.3 Перевірка прав медичного/тренерського штабу (coach команди, doctor, admin в межах клубу)
     if (!isAuthorized) {
       try {
         const authRes = await assertAuth();
         if (!("error" in authRes)) {
-          isAuthorized = true;
-          callerClubId = authRes.user.clubId || DEFAULT_CLUB_ID;
-          callerUserId = authRes.user.id;
-        }
-      } catch {}
-    }
-
-    // 1.4 Резервна перевірка: наявність активного незаархівованого гравця в базі
-    if (!isAuthorized) {
-      try {
-        const { data: checkPl } = await supabase
-          .from("players")
-          .select("id, club_id")
-          .eq("id", input.playerId)
-          .is("archived_at", null)
-          .maybeSingle();
-
-        if (checkPl) {
-          isAuthorized = true;
-          callerUserId = `player:${input.playerId}`;
-          callerClubId = checkPl.club_id;
+          const playerAccess = await assertPlayerAccess(authRes.user, input.playerId, {
+            allowCoach: true,
+          });
+          if (!("error" in playerAccess)) {
+            isAuthorized = true;
+            callerClubId = authRes.user.clubId;
+            callerUserId = authRes.user.id;
+          }
         }
       } catch {}
     }
@@ -1131,11 +1177,16 @@ export async function getWeeklyMicrocyclePlanAction(params: {
   weekStart: string;
 }) {
   try {
+    const staffCheck = await assertTeamStaff(params.teamId);
+    if ("error" in staffCheck) {
+      return { success: false, error: staffCheck.error };
+    }
+
     const supabase = createAdminClient();
     const { data: club } = await supabase
       .from("clubs")
       .select("settings")
-      .eq("id", DEFAULT_CLUB_ID)
+      .eq("id", staffCheck.user.clubId)
       .maybeSingle();
 
     const microcycles = (club?.settings as any)?.microcycle_plans || {};
@@ -1174,10 +1225,11 @@ export async function saveWeeklyMicrocyclePlanAction(params: {
   const supabase = createAdminClient();
 
   try {
-    // 1. Отримуємо активних гравців команди
+    // 1. Отримуємо активних гравців команди в межах клубу
     const { data: players } = await supabase
       .from("players")
       .select("id, first_name, last_name")
+      .eq("club_id", clubId)
       .eq("team_id", params.teamId)
       .is("archived_at", null);
 

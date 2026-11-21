@@ -2,7 +2,7 @@
 
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
-import { assertDoctor } from "@/lib/auth";
+import { assertDoctor, assertPlayerAccess } from "@/lib/auth";
 import { type LsiAssessmentRecord, validateLsiRecord } from "@/types/lsi";
 
 export async function saveLsiAssessmentAction(
@@ -10,6 +10,9 @@ export async function saveLsiAssessmentAction(
 ) {
   const auth = await assertDoctor();
   if ("error" in auth) return { error: auth.error };
+
+  const playerAccess = await assertPlayerAccess(auth.user, assessmentData.player_id, { allowCoach: false });
+  if ("error" in playerAccess) return { error: playerAccess.error };
 
   // Валідація обов'язкових полів: кінцівка та тип травми
   const validation = validateLsiRecord(assessmentData);

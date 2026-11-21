@@ -42,6 +42,12 @@ export default function ClubSettingsClient({
   const [telegramChatId, setTelegramChatId] = useState("");
   const [telegramBotUsername, setTelegramBotUsername] = useState(initialSettings.telegram.botUsername);
   const [showTokenInput, setShowTokenInput] = useState(!initialSettings.telegram.isConfigured);
+  const [medicalChatId, setMedicalChatId] = useState("");
+  const [showMedicalChatInput, setShowMedicalChatInput] = useState(
+    !initialSettings.telegram.isMedicalChatConfigured
+  );
+  const [doctorTelegram, setDoctorTelegram] = useState(initialSettings.telegram.doctorTelegram);
+  const [doctorPhone, setDoctorPhone] = useState(initialSettings.telegram.doctorPhone);
 
   // Teams state
   const [teams, setTeams] = useState(initialSettings.teams);
@@ -79,13 +85,18 @@ export default function ClubSettingsClient({
         newTelegramToken: telegramToken || undefined,
         newTelegramChatId: telegramChatId || undefined,
         telegramBotUsername: telegramBotUsername || undefined,
+        newMedicalChatId: medicalChatId || undefined,
+        doctorTelegram,
+        doctorPhone,
       });
 
       if (res.success) {
         showNotification("ok", "Налаштування клубу успішно збережено!");
         setTelegramToken("");
         setTelegramChatId("");
+        setMedicalChatId("");
         setShowTokenInput(false);
+        setShowMedicalChatInput(false);
       } else {
         showNotification("err", res.error || "Помилка збереження налаштувань.");
       }
@@ -517,6 +528,82 @@ export default function ClubSettingsClient({
                 </div>
               </div>
             )}
+
+            {/* Мед-чат клубу та прямий контакт лікаря */}
+            <div className="pt-4 border-t border-slate-800 space-y-4">
+              <div>
+                <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                  <span>🩺</span> Мед-чат клубу та прямий контакт лікаря
+                </h4>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Сюди через бота клубу автоматично дублюються звернення батьків і сигнали про біль, хворобу чи коментарі гравців, а прямий контакт відображається на кнопці «Написати лікарю».
+                </p>
+              </div>
+
+              {initialSettings.telegram.isMedicalChatConfigured && !showMedicalChatInput ? (
+                <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-medium text-slate-400">
+                      Telegram Chat ID мед-чату (тільки лікарі):
+                    </div>
+                    <div className="font-mono text-sm text-emerald-400">
+                      {initialSettings.telegram.maskedMedicalChatId}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowMedicalChatInput(true)}
+                    className="px-3.5 py-1.5 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 text-xs font-semibold border border-sky-500/30 min-h-[44px]"
+                  >
+                    Змінити ID мед-чату
+                  </button>
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                    Telegram Chat ID мед-чату (тільки лікарі)
+                  </label>
+                  <input
+                    type="text"
+                    value={medicalChatId}
+                    onChange={(e) => setMedicalChatId(e.target.value)}
+                    placeholder="-1001234567890"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-sky-500 min-h-[44px]"
+                  />
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Закрита група медштабу або особистий Chat ID лікаря. Туди дублюватимуться всі повідомлення батьків і скарги гравців (біль, хвороба, коментар).
+                  </p>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                    Telegram лікаря (для кнопки «Написати лікарю»)
+                  </label>
+                  <input
+                    type="text"
+                    value={doctorTelegram}
+                    onChange={(e) => setDoctorTelegram(e.target.value)}
+                    placeholder="@doctor_username або +380..."
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-sky-500 min-h-[44px]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                    Телефон лікаря (для дзвінка)
+                  </label>
+                  <input
+                    type="tel"
+                    value={doctorPhone}
+                    onChange={(e) => setDoctorPhone(e.target.value)}
+                    placeholder="+380 93 000 00 00"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-sky-500 min-h-[44px]"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
         </Card>
       )}

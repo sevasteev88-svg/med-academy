@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
-import { verifyAndActivateDeviceAction } from "@/actions/player-device-actions";
+import { verifyAndActivateDeviceInternal } from "@/lib/player-device-server";
 import {
   createDeviceSessionCookieValue,
   DEVICE_COOKIE_NAME,
@@ -11,6 +11,7 @@ import {
 } from "@/lib/player-device-auth";
 import { createAdminClient } from "@/utils/supabase/admin";
 import { getPlayerConsentSummary } from "@/lib/consents";
+import { getPlayerSessionSecret } from "@/lib/server-secrets";
 
 const BOT_USER_AGENTS = [
   "telegrambot",
@@ -37,14 +38,6 @@ function isBotUserAgent(ua: string): boolean {
   if (!ua) return false;
   const lower = ua.toLowerCase();
   return BOT_USER_AGENTS.some((b) => lower.includes(b));
-}
-
-function getSigningSecret(): string {
-  return (
-    process.env.PLAYER_SESSION_SECRET ||
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-    "med-academy-portal-secure-salt"
-  );
 }
 
 export async function GET(
@@ -94,7 +87,7 @@ export async function GET(
 
   // Викликаємо серверну активацію пристрою з bypassCookie: true,
   // тому що ми явно виставляємо куки в заголовки HTTP-відповіді через response.cookies.set()
-  const result = await verifyAndActivateDeviceAction(token, {
+  const result = await verifyAndActivateDeviceInternal(token, {
     ip,
     userAgent,
     bypassCookie: true,
@@ -136,7 +129,7 @@ export async function GET(
     const jsonStr = JSON.stringify(standardPayload);
     const encodedPayload = Buffer.from(jsonStr).toString("base64url");
     const signature = crypto
-      .createHmac("sha256", getSigningSecret())
+      .createHmac("sha256", getPlayerSessionSecret())
       .update(encodedPayload)
       .digest("base64url");
 
@@ -210,7 +203,7 @@ export async function GET(
           const jsonStr = JSON.stringify(standardPayload);
           const encodedPayload = Buffer.from(jsonStr).toString("base64url");
           const signature = crypto
-            .createHmac("sha256", getSigningSecret())
+            .createHmac("sha256", getPlayerSessionSecret())
             .update(encodedPayload)
             .digest("base64url");
 

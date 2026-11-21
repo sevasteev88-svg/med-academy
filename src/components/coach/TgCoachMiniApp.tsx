@@ -65,10 +65,16 @@ export default function TgCoachMiniApp() {
   const [savingReport, setSavingReport] = useState(false);
   const [reportSuccess, setReportSuccess] = useState<string | null>(null);
 
+  function getApiUrl() {
+    if (typeof window === "undefined") return "/api/tg-coach";
+    const clubId = new URLSearchParams(window.location.search).get("clubId") || "";
+    return clubId ? `/api/tg-coach?clubId=${encodeURIComponent(clubId)}` : "/api/tg-coach";
+  }
+
   function loadData(tgInitData: string) {
     setLoading(true);
     setError(null);
-    fetch("/api/tg-coach", {
+    fetch(getApiUrl(), {
       headers: { "x-telegram-init-data": tgInitData },
     })
       .then(async (res) => {
@@ -145,7 +151,7 @@ export default function TgCoachMiniApp() {
     try {
       const targetTeamId =
         selectedTeamId !== "all" ? selectedTeamId : teams[0]?.id;
-      const res = await fetch("/api/tg-coach", {
+      const res = await fetch(getApiUrl(), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -186,7 +192,7 @@ export default function TgCoachMiniApp() {
     setReportSuccess(null);
     setError(null);
     try {
-      const res = await fetch("/api/tg-coach", {
+      const res = await fetch(getApiUrl(), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

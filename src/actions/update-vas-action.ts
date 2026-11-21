@@ -13,7 +13,8 @@ export async function updateVasAction(injuryId: string, newVas: number) {
   const { error } = await supabase
     .from("injuries")
     .update({ vas_score: newVas })
-    .eq("id", injuryId);
+    .eq("id", injuryId)
+    .eq("club_id", auth.user.clubId);
 
   if (error) return { error: error.message };
 

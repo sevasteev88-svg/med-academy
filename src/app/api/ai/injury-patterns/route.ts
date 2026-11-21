@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/utils/supabase/server";
+import { assertDoctor } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { callAI, AI_DISCLAIMER } from "@/lib/ai";
 import {
@@ -18,14 +18,12 @@ import { GROWTH_PHASE_LABELS } from "@/lib/phv-calculator";
  * Запитує аналіз: суворо без причинних тверджень, з обов'язковим переліком обмежень даних.
  */
 export async function POST(request: NextRequest) {
-  // Перевірка авторизації
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: "Не авторизовано" }, { status: 401 });
+  // Перевірка авторизації та ролі лікаря/адміна
+  const auth = await assertDoctor();
+  if ("error" in auth) {
+    return NextResponse.json({ error: auth.error }, { status: 403 });
   }
+  const { user } = auth;
 
   try {
     const data = await request.json();
@@ -56,6 +54,7 @@ export async function POST(request: NextRequest) {
         sampleSize: aggregates.sampleSize ?? 0,
       },
       userId: user.id,
+      clubId: user.clubId,
     });
 
     return NextResponse.json({

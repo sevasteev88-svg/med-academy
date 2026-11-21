@@ -2,7 +2,7 @@
 
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
-import { assertDoctor } from "@/lib/auth";
+import { assertDoctor, assertPlayerAccess } from "@/lib/auth";
 import {
   type ConcussionCase,
   type ConcussionBaseline,
@@ -29,12 +29,18 @@ export async function createConcussionBaselineAction(input: {
   const auth = await assertDoctor();
   if ("error" in auth) return { error: auth.error };
 
+  const access = await assertPlayerAccess(auth.user, input.player_id, {
+    allowCoach: false,
+  });
+  if ("error" in access) return { error: access.error };
+
+  const clubId = access.player.club_id || auth.user.clubId;
   const supabase = await createClient();
 
   const { data, error } = await supabase
     .from("concussion_baselines")
     .insert({
-      club_id: (auth.user as any).clubId || null,
+      club_id: clubId,
       player_id: input.player_id,
       season: input.season,
       date: input.date,
@@ -65,12 +71,18 @@ export async function getPlayerConcussionBaselineAction(
   const auth = await assertDoctor();
   if ("error" in auth) return { error: auth.error };
 
+  const access = await assertPlayerAccess(auth.user, playerId, {
+    allowCoach: false,
+  });
+  if ("error" in access) return { error: access.error };
+
   const supabase = await createClient();
 
   const { data, error } = await supabase
     .from("concussion_baselines")
     .select("*")
     .eq("player_id", playerId)
+    .eq("club_id", access.player.club_id || auth.user.clubId)
     .order("date", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -101,6 +113,12 @@ export async function createConcussionCaseAction(input: {
   const auth = await assertDoctor();
   if ("error" in auth) return { error: auth.error };
 
+  const access = await assertPlayerAccess(auth.user, input.player_id, {
+    allowCoach: false,
+  });
+  if ("error" in access) return { error: access.error };
+
+  const clubId = access.player.club_id || auth.user.clubId;
   const supabase = await createClient();
 
   // Початковий запис у stage_history: Ступінь 1 (24-48 год спокою)
@@ -110,7 +128,7 @@ export async function createConcussionCaseAction(input: {
       date: input.incident_date,
       doctor_signature_name: input.initial_doctor_signature,
       is_symptom_free_24h: false,
-      symptoms_noted: [`Гострий дебют: ${input.symptom_count} симптомів`],
+      symptoms_noted: [`Гострий дебют: ${input.symptom_count} симптомів (тяжкість: ${input.symptom_severity})`],
       notes: "Початок обов'язкового періоду симптом-обмеженого фізичного та когнітивного спокою.",
     },
   ];
@@ -118,7 +136,7 @@ export async function createConcussionCaseAction(input: {
   const { data, error } = await supabase
     .from("concussion_cases")
     .insert({
-      club_id: (auth.user as any).clubId || null,
+      club_id: clubId,
       player_id: input.player_id,
       injury_id: input.injury_id || null,
       baseline_id: input.baseline_id || null,
@@ -181,11 +199,12 @@ export async function updateConcussionStageAction(input: {
 
   const supabase = await createClient();
 
-  // Завантажуємо поточний стан кейсу
+  // Завантажуємо поточний стан кейсу в межах клубу лікаря
   const { data: existingCase, error: fetchErr } = await supabase
     .from("concussion_cases")
     .select("*")
     .eq("id", input.case_id)
+    .eq("club_id", auth.user.clubId)
     .single();
 
   if (fetchErr || !existingCase) {
@@ -237,6 +256,7 @@ export async function updateConcussionStageAction(input: {
     .from("concussion_cases")
     .update(updatePayload)
     .eq("id", input.case_id)
+    .eq("club_id", auth.user.clubId)
     .select()
     .single();
 
@@ -275,12 +295,18 @@ export async function getActiveConcussionCaseAction(
   const auth = await assertDoctor();
   if ("error" in auth) return { error: auth.error };
 
+  const access = await assertPlayerAccess(auth.user, playerId, {
+    allowCoach: false,
+  });
+  if ("error" in access) return { error: access.error };
+
   const supabase = await createClient();
 
   const { data, error } = await supabase
     .from("concussion_cases")
     .select("*")
     .eq("player_id", playerId)
+    .eq("club_id", access.player.club_id || auth.user.clubId)
     .in("status", ["active", "recovering"])
     .order("incident_date", { ascending: false })
     .limit(1)

@@ -3,7 +3,13 @@
 import { createClient } from "@/utils/supabase/server";
 import { createAdminClient } from "@/utils/supabase/admin";
 import { revalidatePath } from "next/cache";
-import { assertDoctor, assertAuth, assertTeamStaff } from "@/lib/auth";
+import {
+  assertDoctor,
+  assertAuth,
+  assertTeamStaff,
+  assertPlayerAccess,
+  assertPlayerOrStaffAccess,
+} from "@/lib/auth";
 import { getPlayerSession } from "@/lib/player-auth";
 import {
   PRICING_PLANS,
@@ -48,6 +54,18 @@ export async function getPlayerSubscriptionStatusAction(
       isAccessGranted: false,
       subscription: null,
       error: "Не знайдено ID гравця",
+    };
+  }
+
+  const access = await assertPlayerOrStaffAccess(targetPlayerId, {
+    allowCoach: true,
+  });
+  if ("error" in access) {
+    return {
+      success: false,
+      isAccessGranted: false,
+      subscription: null,
+      error: access.error,
     };
   }
 
@@ -98,6 +116,7 @@ export async function getPlayerSubscriptionStatusAction(
 export async function createCheckoutSessionAction(params: {
   planCode: BillingPlanCode;
   playerId?: string;
+  parentToken?: string;
   payerPhone?: string;
   payerEmail?: string;
   payerName?: string;
@@ -107,6 +126,18 @@ export async function createCheckoutSessionAction(params: {
   if (!targetPlayerId) {
     const session = await getPlayerSession();
     if (session) targetPlayerId = session.playerId;
+  }
+
+  if (!targetPlayerId) {
+    return { success: false, error: "Гравця не знайдено" };
+  }
+
+  const access = await assertPlayerOrStaffAccess(targetPlayerId, {
+    allowCoach: false,
+    parentToken: params.parentToken,
+  });
+  if ("error" in access) {
+    return { success: false, error: access.error };
   }
 
   if (!targetPlayerId) {
@@ -124,6 +155,22 @@ export async function createCheckoutSessionAction(params: {
 
   if (pErr || !player) {
     return { success: false, error: "Гравця не знайдено в базі клубу" };
+  }
+
+  const merchantSecret = process.env.WAYFORPAY_SECRET_KEY;
+  if (!merchantSecret) {
+    return {
+      success: false,
+      error: "Платіжний шлюз WayForPay не налаштовано (відсутній WAYFORPAY_SECRET_KEY)",
+    };
+  }
+
+  const isCustomMerchant = Boolean(process.env.WAYFORPAY_MERCHANT_ACCOUNT);
+  if (process.env.NODE_ENV === "production" && !isCustomMerchant) {
+    return {
+      success: false,
+      error: "Платіжний шлюз WayForPay не налаштовано (відсутній WAYFORPAY_MERCHANT_ACCOUNT)",
+    };
   }
 
   const plan = getPlanConfig(params.planCode);
@@ -152,12 +199,10 @@ export async function createCheckoutSessionAction(params: {
   }
 
   // WayForPay Sandbox / Live параметри
-  const isCustomMerchant = Boolean(process.env.WAYFORPAY_MERCHANT_ACCOUNT);
   const merchantAccount = process.env.WAYFORPAY_MERCHANT_ACCOUNT || "test_merch_n1";
   const merchantDomain = isCustomMerchant
     ? (process.env.NEXT_PUBLIC_APP_URL || "https://medacademy.app")
     : "www.market.ua"; // Стандартний домен для тестового мерчанта test_merch_n1 у WayForPay
-  const merchantSecret = process.env.WAYFORPAY_SECRET_KEY || "flk3409refn54t54t*fnstp6";
   const orderDate = Math.floor(Date.now() / 1000).toString();
   const productName = `Паспорт здоров'я MedAcademy (${plan.name})`;
   const amountStr = plan.amountUah.toString();
@@ -213,36 +258,30 @@ export async function createCheckoutSessionAction(params: {
  */
 export async function grantCompedSubscriptionAction(params: {
   playerId: string;
-  reason: string;
+  reason?: string;
   daysDuration?: number;
 }) {
-  const auth = await assertTeamStaff();
+  const auth = await assertDoctor();
   if ("error" in auth) {
     return { success: false, error: auth.error };
   }
 
-  if (auth.user.role === "coach") {
-    return { success: false, error: "У тренера немає прав керувати квотами та фінансами" };
+  const access = await assertPlayerAccess(auth.user, params.playerId, {
+    allowCoach: false,
+  });
+  if ("error" in access) {
+    return { success: false, error: access.error };
   }
 
   const supabase = createAdminClient();
   const days = params.daysDuration || 90;
   const periodEnd = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
 
-  // Отримуємо клуб гравця
-  const { data: player } = await supabase
-    .from("players")
-    .select("club_id")
-    .eq("id", params.playerId)
-    .single();
-
-  if (!player) {
-    return { success: false, error: "Гравця не знайдено" };
-  }
+  const clubId = access.player.club_id || auth.user.clubId;
 
   const { error } = await supabase.from("player_subscriptions").upsert(
     {
-      club_id: player.club_id,
+      club_id: clubId,
       player_id: params.playerId,
       status: "comped",
       plan_code: "monthly_200_uah",
@@ -274,15 +313,19 @@ export async function grantCompedSubscriptionAction(params: {
 export async function revokeCompedSubscriptionAction(params: {
   playerId: string;
 }) {
-  const auth = await assertTeamStaff();
+  const auth = await assertDoctor();
   if ("error" in auth) {
     return { success: false, error: auth.error };
   }
 
-  if (auth.user.role === "coach") {
-    return { success: false, error: "У тренера немає прав змінювати статус підписки" };
+  const access = await assertPlayerAccess(auth.user, params.playerId, {
+    allowCoach: false,
+  });
+  if ("error" in access) {
+    return { success: false, error: access.error };
   }
 
+  const clubId = access.player.club_id || auth.user.clubId;
   const supabase = createAdminClient();
   const pastDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
@@ -295,7 +338,8 @@ export async function revokeCompedSubscriptionAction(params: {
       comped_by: null,
       updated_at: new Date().toISOString(),
     })
-    .eq("player_id", params.playerId);
+    .eq("player_id", params.playerId)
+    .eq("club_id", clubId);
 
   if (error) {
     return { success: false, error: error.message };
@@ -315,15 +359,19 @@ export async function recordManualParentPaymentAction(params: {
   planCode: BillingPlanCode;
   paymentNote?: string;
 }) {
-  const auth = await assertTeamStaff();
+  const auth = await assertDoctor();
   if ("error" in auth) {
     return { success: false, error: auth.error };
   }
 
-  if (auth.user.role === "coach") {
-    return { success: false, error: "У тренера немає прав фіксувати фінансові оплати" };
+  const access = await assertPlayerAccess(auth.user, params.playerId, {
+    allowCoach: false,
+  });
+  if ("error" in access) {
+    return { success: false, error: access.error };
   }
 
+  const clubId = access.player.club_id || auth.user.clubId;
   const supabase = createAdminClient();
   const plan = getPlanConfig(params.planCode);
   const now = new Date();
@@ -333,11 +381,12 @@ export async function recordManualParentPaymentAction(params: {
     now
   ).toISOString();
 
-  // 1. Отримуємо клуб гравця
+  // 1. Отримуємо гравця з перевіркою клубу
   const { data: player, error: pErr } = await supabase
     .from("players")
     .select("id, club_id, first_name, last_name")
     .eq("id", params.playerId)
+    .eq("club_id", clubId)
     .single();
 
   if (pErr || !player) {
@@ -397,7 +446,9 @@ export async function recordManualParentPaymentAction(params: {
 export async function getTeamSubscriptionsAction(params?: {
   teamId?: string;
 }) {
-  const auth = await assertTeamStaff(params?.teamId);
+  const scopedTeamId =
+    params?.teamId && params.teamId !== "all" ? params.teamId : undefined;
+  const auth = await assertTeamStaff(scopedTeamId);
   if ("error" in auth) {
     return {
       success: false,
@@ -419,24 +470,12 @@ export async function getTeamSubscriptionsAction(params?: {
   const supabase = createAdminClient();
   const clubId = auth.user.clubId || "00000000-0000-0000-0000-000000000001";
 
-  // 1. Отримуємо команди клубу
-  const { data: teamsData } = await supabase
-    .from("teams")
-    .select("id, name")
-    .eq("club_id", clubId)
-    .order("name");
-
-  let teams = teamsData || [];
+  // 1–2. Отримуємо команди та активних гравців клубу паралельно
   const isCoachUser = auth.user.role === "coach";
   const coachTeams = isCoachUser
     ? (auth.user.teamIds && auth.user.teamIds.length > 0 ? auth.user.teamIds : (auth.user.teamId ? [auth.user.teamId] : []))
     : [];
 
-  if (isCoachUser) {
-    teams = teams.filter((t) => coachTeams.includes(t.id));
-  }
-
-  // 2. Отримуємо активних гравців
   let playerQuery = supabase
     .from("players")
     .select("id, first_name, last_name, position, team_id, teams ( id, name )")
@@ -452,7 +491,19 @@ export async function getTeamSubscriptionsAction(params?: {
     playerQuery = playerQuery.eq("team_id", params.teamId);
   }
 
-  const { data: playersData, error: pErr } = await playerQuery;
+  const [{ data: teamsData }, { data: playersData, error: pErr }] = await Promise.all([
+    supabase
+      .from("teams")
+      .select("id, name")
+      .eq("club_id", clubId)
+      .order("name"),
+    playerQuery,
+  ]);
+
+  let teams = teamsData || [];
+  if (isCoachUser) {
+    teams = teams.filter((t) => coachTeams.includes(t.id));
+  }
 
   if (pErr || !playersData) {
     return {
@@ -472,12 +523,18 @@ export async function getTeamSubscriptionsAction(params?: {
     };
   }
 
-  // 3. Отримуємо всі підписки гравців клубу
+  // 3. Отримуємо підписки гравців клубу (зі скоупом club_id, пропускаємо якщо список гравців порожній)
   const playerIds = playersData.map((p) => p.id);
-  const { data: subsData } = await supabase
-    .from("player_subscriptions")
-    .select("*")
-    .in("player_id", playerIds.length > 0 ? playerIds : ["00000000-0000-0000-0000-000000000000"]);
+  const subsData =
+    playerIds.length > 0
+      ? (
+          await supabase
+            .from("player_subscriptions")
+            .select("*")
+            .eq("club_id", clubId)
+            .in("player_id", playerIds)
+        ).data || []
+      : [];
 
   const subMap = new Map((subsData || []).map((s) => [s.player_id, s]));
 

@@ -1,10 +1,16 @@
 import { cache } from "react";
+import crypto from "crypto";
 import { createClient } from "@/utils/supabase/server";
+import { createAdminClient } from "@/utils/supabase/admin";
+import { getPlayerSession } from "@/lib/player-auth";
+import { canUserAccessTeam } from "./team-access";
 import type { UserRole } from "@/types/database";
 
 export type { UserRole };
 
 export const DEFAULT_CLUB_ID = "00000000-0000-0000-0000-000000000001";
+
+const VALID_ROLES = new Set<UserRole>(["admin", "doctor", "coach"]);
 
 export type AppUser = {
   id: string;
@@ -87,30 +93,21 @@ async function fetchCurrentUser(): Promise<AppUser | null> {
     fetchCoachAssignments(supabase, user.id),
   ]);
 
-  let clubId = DEFAULT_CLUB_ID;
-  let role: UserRole | null = null;
-  let teamId: string | null = null;
-
-  if (member && member.club_id) {
-    clubId = member.club_id;
-    role = (member.role as UserRole) || null;
-    teamId = (member as any).team_id || null;
+  // Fail-closed: без дійсного запису в club_members з валідною роллю доступ не надається.
+  if (!member || !member.club_id || !VALID_ROLES.has(member.role as UserRole)) {
+    return null;
   }
+
+  const clubId = member.club_id;
+  const role = member.role as UserRole;
+  let teamId: string | null = (member as any).team_id || null;
 
   const fullNameFromProfile = profile?.full_name ?? "";
   if (!teamId && (profile as any)?.team_id) {
     teamId = (profile as any).team_id;
   }
-  if (!role && profile?.role) {
-    role = (profile.role as UserRole) || null;
-  }
 
   let fullName = fullNameFromProfile;
-
-  // Резервна перевірка user_metadata з auth.users
-  if (!role && user.user_metadata?.role) {
-    role = (user.user_metadata.role as UserRole) || null;
-  }
   if (!fullName && user.user_metadata?.full_name) {
     fullName = user.user_metadata.full_name;
   }
@@ -129,7 +126,7 @@ async function fetchCurrentUser(): Promise<AppUser | null> {
     email: user.email ?? "",
     fullName,
     clubId,
-    role: role || "doctor",
+    role,
     teamId,
     teamIds,
     mustChangePassword: Boolean(user.user_metadata?.must_change_password),
@@ -192,7 +189,8 @@ export async function assertAuth(): Promise<{ user: AppUser } | { error: string 
 
 /**
  * Перевіряє, чи користувач має право керувати командою (doctor, admin, або coach для своїх команд).
- * Тренер бачить тільки призначені йому команди, doctor і admin весь клуб.
+ * Тренер бачить тільки призначені йому команди, doctor і admin — весь свій клуб.
+ * При переданому teamId завжди звіряється приналежність команди до user.clubId.
  */
 export async function assertTeamStaff(teamId?: string): Promise<{ user: AppUser } | { error: string }> {
   const user = await getCurrentUser();
@@ -200,31 +198,238 @@ export async function assertTeamStaff(teamId?: string): Promise<{ user: AppUser 
     return { error: "Не авторизовано. Будь ласка, увійдіть у систему." };
   }
 
-  // Адміністратор або лікар мають повний доступ до всіх команд клубу
+  if (!isDoctor(user.role) && !isCoach(user.role)) {
+    return { error: "Недостатньо прав. Доступ лише для лікаря, адміністратора або тренера команди." };
+  }
+
+  if (teamId) {
+    const admin = createAdminClient();
+    const { data: team, error: teamErr } = await admin
+      .from("teams")
+      .select("id, club_id")
+      .eq("id", teamId)
+      .maybeSingle();
+
+    if (teamErr || !team || team.club_id !== user.clubId) {
+      return { error: "Недостатньо прав. Команда не належить вашому клубу." };
+    }
+  }
+
+  // Адміністратор або лікар мають повний доступ до всіх команд свого клубу
   if (isDoctor(user.role)) {
     return { user };
   }
 
   // Тренер має доступ тільки до своїх призначених команд
-  if (isCoach(user.role)) {
-    const coachTeams = user.teamIds && user.teamIds.length > 0
-      ? user.teamIds
-      : (user.teamId ? [user.teamId] : []);
+  const coachTeams = user.teamIds && user.teamIds.length > 0
+    ? user.teamIds
+    : (user.teamId ? [user.teamId] : []);
 
-    if (coachTeams.length === 0) {
-      return { error: "Ваш обліковий запис очікує призначення вікової групи (команди) адміністратором або лікарем клубу." };
-    }
-
-    if (teamId && !coachTeams.includes(teamId)) {
-      return { error: "Недостатньо прав. Тренер має доступ лише до своїх призначених команд." };
-    }
-    return { user };
+  if (coachTeams.length === 0) {
+    return { error: "Ваш обліковий запис очікує призначення вікової групи (команди) адміністратором або лікарем клубу." };
   }
 
-  return { error: "Недостатньо прав. Доступ лише для лікаря, адміністратора або тренера команди." };
+  if (teamId && !coachTeams.includes(teamId)) {
+    return { error: "Недостатньо прав. Тренер має доступ лише до своїх призначених команд." };
+  }
+
+  return { user };
 }
 
-import { canUserAccessTeam } from "./team-access";
+/**
+ * Перевіряє приналежність команди до клубу користувача та права доступу тренера.
+ */
+export async function assertTeamAccess(
+  user: AppUser,
+  teamId: string,
+  options?: { allowCoach?: boolean }
+): Promise<{ team: { id: string; club_id: string; name: string } } | { error: string }> {
+  if (!teamId) {
+    return { error: "Не вказано ID команди." };
+  }
+
+  const admin = createAdminClient();
+  const { data: team, error } = await admin
+    .from("teams")
+    .select("id, club_id, name")
+    .eq("id", teamId)
+    .maybeSingle();
+
+  if (error || !team || team.club_id !== user.clubId) {
+    return { error: "Команду не знайдено або немає доступу в межах вашого клубу." };
+  }
+
+  if (isCoach(user.role)) {
+    if (options?.allowCoach === false) {
+      return { error: "Недостатньо прав. Доступ лише для лікаря або адміністратора." };
+    }
+    if (!canUserAccessTeam(user, team.id)) {
+      return { error: "Недостатньо прав. Тренер має доступ лише до своїх призначених команд." };
+    }
+  } else if (!isDoctor(user.role)) {
+    return { error: "Недостатньо прав." };
+  }
+
+  return { team };
+}
+
+/**
+ * Перевіряє приналежність гравця до клубу користувача та права доступу тренера до його команди.
+ */
+export async function assertPlayerAccess(
+  user: AppUser,
+  playerId: string,
+  options?: { allowCoach?: boolean }
+): Promise<{ player: { id: string; club_id: string; team_id: string | null } } | { error: string }> {
+  if (!playerId) {
+    return { error: "Не вказано ID гравця." };
+  }
+
+  const admin = createAdminClient();
+  const { data: player, error } = await admin
+    .from("players")
+    .select("id, club_id, team_id")
+    .eq("id", playerId)
+    .maybeSingle();
+
+  if (error || !player || player.club_id !== user.clubId) {
+    return { error: "Гравця не знайдено або немає доступу в межах вашого клубу." };
+  }
+
+  if (isCoach(user.role)) {
+    if (options?.allowCoach === false) {
+      return { error: "Недостатньо прав. Доступ лише для лікаря або адміністратора." };
+    }
+    if (!canUserAccessTeam(user, player.team_id)) {
+      return { error: "Недостатньо прав доступу до команди цього гравця." };
+    }
+  } else if (!isDoctor(user.role)) {
+    return { error: "Недостатньо прав." };
+  }
+
+  return { player };
+}
+
+/**
+ * Перевіряє, що всі передані teamIds належать вказаному clubId.
+ */
+export async function assertClubTeamsValid(
+  clubId: string,
+  teamIds: string[]
+): Promise<{ validTeamIds: string[] } | { error: string }> {
+  const unique = Array.from(new Set((teamIds || []).filter(Boolean)));
+  if (unique.length === 0) {
+    return { validTeamIds: [] };
+  }
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("teams")
+    .select("id")
+    .eq("club_id", clubId)
+    .in("id", unique);
+
+  if (error || !data || data.length !== unique.length) {
+    return { error: "Одна або кілька команд не належать вашому клубу." };
+  }
+
+  return { validTeamIds: data.map((t) => t.id) };
+}
+
+/**
+ * Перевіряє, що цільовий користувач (наприклад, тренер) є учасником того ж клубу.
+ */
+export async function assertMemberInUserClub(
+  user: AppUser,
+  targetUserId: string,
+  options?: { allowedRoles?: UserRole[] }
+): Promise<{ member: { user_id: string; club_id: string; role: UserRole } } | { error: string }> {
+  if (!targetUserId) {
+    return { error: "Не вказано ID користувача." };
+  }
+
+  const admin = createAdminClient();
+  const { data: member, error } = await admin
+    .from("club_members")
+    .select("user_id, club_id, role")
+    .eq("club_id", user.clubId)
+    .eq("user_id", targetUserId)
+    .maybeSingle();
+
+  if (error || !member) {
+    return { error: "Користувача не знайдено у вашому клубі." };
+  }
+
+  if (options?.allowedRoles && !options.allowedRoles.includes(member.role as UserRole)) {
+    return { error: "Роль користувача не відповідає вимогам операції." };
+  }
+
+  return {
+    member: {
+      user_id: member.user_id,
+      club_id: member.club_id,
+      role: member.role as UserRole,
+    },
+  };
+}
+
+/**
+ * Універсальна авторизація для операцій, доступних і самому гравцю (або батькам за токеном),
+ * і персоналу клубу (лікарю/адміну та, за дозволом, тренеру команди гравця).
+ */
+export async function assertPlayerOrStaffAccess(
+  playerId: string,
+  options?: { allowCoach?: boolean; parentToken?: string }
+): Promise<
+  | { actor: "player"; playerId: string }
+  | { actor: "parent"; playerId: string; clubId: string }
+  | { actor: "staff"; user: AppUser; player: { id: string; club_id: string; team_id: string | null } }
+  | { error: string }
+> {
+  if (!playerId) {
+    return { error: "Не вказано ID гравця." };
+  }
+
+  // 1. Сесія гравця (cookie)
+  const playerSession = await getPlayerSession();
+  if (playerSession && playerSession.playerId === playerId) {
+    return { actor: "player", playerId };
+  }
+
+  // 2. Опціональний токен сімейного кабінету батьків
+  if (options?.parentToken && options.parentToken.trim().length >= 16) {
+    const tokenHash = crypto
+      .createHash("sha256")
+      .update(options.parentToken.trim())
+      .digest("hex");
+    const admin = createAdminClient();
+    const { data: tokenRow } = await admin
+      .from("parent_portal_tokens")
+      .select("player_id, club_id, is_active")
+      .eq("token_hash", tokenHash)
+      .eq("player_id", playerId)
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (tokenRow) {
+      return { actor: "parent", playerId, clubId: tokenRow.club_id };
+    }
+  }
+
+  // 3. Сесія персоналу клубу
+  const user = await getCurrentUser();
+  if (user) {
+    const access = await assertPlayerAccess(user, playerId, {
+      allowCoach: options?.allowCoach ?? true,
+    });
+    if ("error" in access) {
+      return { error: access.error };
+    }
+    return { actor: "staff", user, player: access.player };
+  }
+
+  return { error: "Не авторизовано. Увійдіть у систему або кабінет гравця." };
+}
 
 /**
  * Перевіряє, чи має користувач доступ до конкретної команди

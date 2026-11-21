@@ -213,6 +213,11 @@ export interface ParentPortalData {
     pickupAuthorized: string;
     familyDoctorPhone: string;
   };
+  doctorContact?: {
+    name: string | null;
+    telegramUrl: string | null;
+    phone: string | null;
+  };
   subscription: {
     isActive: boolean;
     status: SubscriptionStatus;

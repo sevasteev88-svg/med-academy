@@ -1,45 +1,40 @@
 "use server";
 
+import crypto from "crypto";
 import QRCode from "qrcode";
 import { createAdminClient } from "@/utils/supabase/admin";
-import { assertTeamStaff, assertAuth, DEFAULT_CLUB_ID } from "@/lib/auth";
+import {
+  assertTeamStaff,
+  assertDoctor,
+  assertPlayerAccess,
+  isCoach,
+  isDoctor,
+} from "@/lib/auth";
 import { getClubDate, getClubTimezone } from "@/lib/club-timezone";
 import { getPlayerConsentSummary } from "@/lib/consents";
 import { logAudit } from "@/lib/audit";
 import { sendClubMessage } from "@/lib/messaging-adapter";
 import { getClubTelegramConfig } from "@/lib/club-telegram";
+import { getClubMedicalTelegramConfig } from "@/lib/medical-telegram";
+import {
+  sendMorningWellnessRemindersInternal,
+  sendPostSessionRemindersInternal,
+} from "@/lib/telegram-reminders-server";
 import {
   generateTelegramBindingToken,
   hashTokenSha256,
   buildTelegramDeepLink,
   checkTelegramEligibility,
-  processTokenBindingInMemory,
   unlinkPlayerTelegramInMemory,
-  unlinkTelegramByChatIdInMemory,
-  formatMorningWellnessReminder,
-  formatPostSessionReminder,
   formatCoachWeeklyReport,
   memoryTelegramTokens,
   memoryTelegramBindings,
   TELEGRAM_TOKEN_EXPIRATION_SECONDS,
 } from "@/lib/telegram-auth";
 import {
-  type TelegramWebhookUpdate,
   type CoachWeeklyTelegramSummary,
   type PlayerTelegramBinding,
-  type CoachTelegramBinding,
-  DEFAULT_DOCTOR_PHONE,
-  DEFAULT_DOCTOR_TG_URL,
 } from "@/types/telegram";
-import {
-  processCoachCallbackQuery,
-  processCoachTextMessage,
-  sendCoachMainMenu,
-} from "@/lib/coach-telegram-bot";
-import {
-  memoryCoachTokens,
-  memoryCoachBindings,
-} from "@/lib/coach-telegram-state";
 
 /**
  * 1. Генерація deep-link та QR-коду для прив'язки гравця до Telegram-бота (п. 8.7.1 & 8.7.5).
@@ -58,14 +53,20 @@ export async function createTelegramBindingLinkAction(playerId: string) {
       return { success: false, error: "Не вказано ID гравця" };
     }
 
+    const access = await assertPlayerAccess(user, playerId, { allowCoach: true });
+    if ("error" in access) {
+      return { success: false, error: access.error };
+    }
+
     const supabase = createAdminClient();
     const nowIso = new Date().toISOString();
 
-    // 1. Отримуємо дані гравця
+    // 1. Отримуємо дані гравця у межах клубу користувача
     const { data: player, error: pErr } = await supabase
       .from("players")
-      .select("id, first_name, last_name, date_of_birth, team_id, teams ( name )")
+      .select("id, first_name, last_name, date_of_birth, team_id, club_id, teams ( name )")
       .eq("id", playerId)
+      .eq("club_id", user.clubId)
       .maybeSingle();
 
     if (pErr || !player) {
@@ -90,11 +91,12 @@ export async function createTelegramBindingLinkAction(playerId: string) {
       };
     }
 
-    // 3. Відкликаємо старі невикористані токени гравця
+    // 3. Відкликаємо старі невикористані токени гравця в цьому клубі
     await supabase
       .from("player_telegram_tokens")
       .update({ used_at: nowIso })
       .eq("player_id", playerId)
+      .eq("club_id", user.clubId)
       .is("used_at", null);
 
     for (const tok of memoryTelegramTokens.values()) {
@@ -110,21 +112,19 @@ export async function createTelegramBindingLinkAction(playerId: string) {
       Date.now() + TELEGRAM_TOKEN_EXPIRATION_SECONDS * 1000
     ).toISOString();
 
-    // Запис у БД
     const { error: insErr } = await supabase.from("player_telegram_tokens").insert({
       player_id: playerId,
-      club_id: user.clubId || DEFAULT_CLUB_ID,
+      club_id: user.clubId,
       token_hash: tokenHash,
       expires_at: expiresAt,
       created_by: user.id,
     });
 
     if (insErr) {
-      // In-memory fallback
       memoryTelegramTokens.set(tokenHash, {
         id: crypto.randomUUID(),
         player_id: playerId,
-        club_id: user.clubId || DEFAULT_CLUB_ID,
+        club_id: user.clubId,
         token_hash: tokenHash,
         expires_at: expiresAt,
         used_at: null,
@@ -133,12 +133,12 @@ export async function createTelegramBindingLinkAction(playerId: string) {
       });
     }
 
-    // Лог аудиту (без відкритого токена)
     await logAudit({
       action: "issue_telegram_binding_token",
       entity: "player_telegram_tokens",
       playerId: playerId,
       userId: user.id,
+      clubId: user.clubId,
       meta: {
         expires_in_hours: 48,
       },
@@ -179,6 +179,11 @@ export async function unlinkPlayerTelegramAction(playerId: string) {
     }
     const user = auth.user;
 
+    const access = await assertPlayerAccess(user, playerId, { allowCoach: true });
+    if ("error" in access) {
+      return { success: false, error: access.error };
+    }
+
     const supabase = createAdminClient();
     const nowIso = new Date().toISOString();
 
@@ -186,6 +191,7 @@ export async function unlinkPlayerTelegramAction(playerId: string) {
       .from("player_telegram_bindings")
       .update({ status: "unlinked", unlinked_at: nowIso })
       .eq("player_id", playerId)
+      .eq("club_id", user.clubId)
       .eq("status", "active");
 
     unlinkPlayerTelegramInMemory(playerId);
@@ -195,6 +201,7 @@ export async function unlinkPlayerTelegramAction(playerId: string) {
       entity: "player_telegram_bindings",
       playerId: playerId,
       userId: user.id,
+      clubId: user.clubId,
     });
 
     return { success: true };
@@ -217,13 +224,24 @@ export async function getPlayerTelegramStatusAction(playerId: string): Promise<{
   error?: string;
 }> {
   try {
+    const auth = await assertTeamStaff();
+    if ("error" in auth) {
+      return { success: false, isBound: false, error: auth.error };
+    }
+    const user = auth.user;
+
+    const access = await assertPlayerAccess(user, playerId, { allowCoach: true });
+    if ("error" in access) {
+      return { success: false, isBound: false, error: access.error };
+    }
+
     const supabase = createAdminClient();
 
-    // Перевірка згоди
     const { data: player } = await supabase
       .from("players")
       .select("id, date_of_birth")
       .eq("id", playerId)
+      .eq("club_id", user.clubId)
       .maybeSingle();
 
     const consentSummary = await getPlayerConsentSummary(playerId);
@@ -235,11 +253,11 @@ export async function getPlayerTelegramStatusAction(playerId: string): Promise<{
         Boolean(consentSummary.scopes["data_processing"]?.status === "granted"),
     });
 
-    // Перевірка в БД
     const { data: binding } = await supabase
       .from("player_telegram_bindings")
       .select("*")
       .eq("player_id", playerId)
+      .eq("club_id", user.clubId)
       .eq("status", "active")
       .maybeSingle();
 
@@ -252,9 +270,8 @@ export async function getPlayerTelegramStatusAction(playerId: string): Promise<{
       };
     }
 
-    // Перевірка в in-memory fallback
     for (const mem of memoryTelegramBindings.values()) {
-      if (mem.player_id === playerId && mem.status === "active") {
+      if (mem.player_id === playerId && mem.club_id === user.clubId && mem.status === "active") {
         return {
           success: true,
           isBound: true,
@@ -280,801 +297,70 @@ export async function getPlayerTelegramStatusAction(playerId: string): Promise<{
 }
 
 /**
- * Обробка вхідного Telegram Webhook від бота:
- * Підтримує команди:
- * - /start <token> — одноразова прив'язка
- * - /stop або /unbind — відписка в один клік
- * - /status — перевірка статусу
- */
-export async function processTelegramWebhookUpdateAction(
-  update: TelegramWebhookUpdate,
-  overrideClubId?: string
-): Promise<{ success: boolean; replyText?: string; error?: string }> {
-  try {
-    const supabase = createAdminClient();
-
-    // 0. ОБРОБКА НАЙНЛАЙН КНОПОК ТРЕНЕРА (callback_query)
-    if (update.callback_query) {
-      const cb = update.callback_query;
-      const cbChatId = String(cb.message?.chat.id || cb.from.id);
-      let coachBinding: CoachTelegramBinding | null = null;
-      try {
-        const { data } = await supabase
-          .from("coach_telegram_bindings")
-          .select("*")
-          .eq("telegram_chat_id", cbChatId)
-          .eq("status", "active")
-          .maybeSingle();
-        if (data) coachBinding = data as CoachTelegramBinding;
-      } catch {}
-
-      if (!coachBinding) {
-        for (const b of memoryCoachBindings.values()) {
-          if (b.telegram_chat_id === cbChatId && b.status === "active") {
-            coachBinding = b;
-            break;
-          }
-        }
-      }
-
-      if (coachBinding || (cb.data && (cb.data.startsWith("coach_") || cb.data.startsWith("cstep_")))) {
-        await processCoachCallbackQuery(
-          cb,
-          coachBinding || ({ coach_user_id: "", telegram_chat_id: cbChatId, status: "active" } as any)
-        );
-        return { success: true };
-      }
-
-      return { success: true };
-    }
-
-    const message = update.message;
-    if (!message) {
-      return { success: true };
-    }
-
-    const text = (
-      message.text ||
-      message.caption ||
-      (message.voice ? "🎙️ [Голосове повідомлення]" : "") ||
-      (message.photo ? "📷 [Фотографія]" : "")
-    ).trim();
-
-    if (!text) {
-      return { success: true };
-    }
-    const chatId = String(message.chat.id);
-    const username = message.from?.username || message.chat.username || null;
-    const { botToken } = await getClubTelegramConfig(overrideClubId);
-
-    // Функція відправки відповіді у Telegram
-    async function reply(replyMsg: string) {
-      if (botToken) {
-        try {
-          await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              chat_id: chatId,
-              text: replyMsg,
-              parse_mode: "Markdown",
-            }),
-          });
-        } catch {}
-      }
-    }
-
-    // 1. Команда прив'язки: /start <token>
-    if (text.startsWith("/start")) {
-      const parts = text.split(/\s+/);
-      const rawToken = parts[1];
-
-      if (!rawToken) {
-        const helpMsg =
-          "👋 Вітаємо в системі спортивного та медичного моніторингу!\n\n" +
-          "Для прив'язки вашого акаунту відскануйте персональний QR-код або перейдіть за персональним посиланням.";
-        await reply(helpMsg);
-        return { success: true, replyText: helpMsg };
-      }
-
-      // ПРИВ'ЯЗКА ТРЕНЕРА (/start coach_<token>)
-      if (rawToken.startsWith("coach_")) {
-        const actualCoachToken = rawToken.replace(/^coach_/, "");
-        const tokenHash = hashTokenSha256(actualCoachToken);
-        const nowIso = new Date().toISOString();
-
-        let coachUserId: string | null = null;
-        let clubId: string = DEFAULT_CLUB_ID;
-
-        // Шукаємо в coach_telegram_tokens
-        try {
-          const { data: tokRec } = await supabase
-            .from("coach_telegram_tokens")
-            .select("*")
-            .eq("token_hash", tokenHash)
-            .maybeSingle();
-
-          if (tokRec) {
-            if (tokRec.used_at) {
-              await reply("⚠️ Цей одноразовий токен прив'язки тренера вже був використаний.");
-              return { success: false, replyText: "Token already used" };
-            }
-            if (new Date() > new Date(tokRec.expires_at)) {
-              await reply("⏳ Термін дії токена минув. Зверніться до адміністратора клубу.");
-              return { success: false, replyText: "Token expired" };
-            }
-            coachUserId = tokRec.coach_user_id;
-            clubId = tokRec.club_id || DEFAULT_CLUB_ID;
-
-            await supabase
-              .from("coach_telegram_tokens")
-              .update({ used_at: nowIso })
-              .eq("id", tokRec.id);
-          }
-        } catch {}
-
-        if (!coachUserId) {
-          const mem = memoryCoachTokens.get(tokenHash);
-          if (mem) {
-            if (mem.used_at) {
-              await reply("⚠️ Цей одноразовий токен прив'язки тренера вже був використаний.");
-              return { success: false, replyText: "Token already used" };
-            }
-            coachUserId = mem.coach_user_id;
-            clubId = mem.club_id;
-            mem.used_at = nowIso;
-          }
-        }
-
-        if (!coachUserId) {
-          await reply("❌ Недійсний або прострочений токен тренера. Отримайте нове посилання в кабінеті клубу.");
-          return { success: false, replyText: "Invalid coach token" };
-        }
-
-        // Отримуємо профіль тренера
-        const { data: coachProf } = await supabase
-          .from("profiles")
-          .select("full_name")
-          .eq("id", coachUserId)
-          .maybeSingle();
-
-        const coachName = coachProf?.full_name || "Тренер";
-
-        // Записуємо активну прив'язку
-        const bindingRecord: CoachTelegramBinding = {
-          id: crypto.randomUUID(),
-          coach_user_id: coachUserId,
-          club_id: clubId,
-          telegram_chat_id: chatId,
-          telegram_username: username,
-          status: "active",
-          morning_report_time: "09:00",
-          receive_morning_report: true,
-          created_at: nowIso,
-          unlinked_at: null,
-        };
-
-        try {
-          await supabase.from("coach_telegram_bindings").upsert(
-            {
-              coach_user_id: coachUserId,
-              club_id: clubId,
-              telegram_chat_id: chatId,
-              telegram_username: username,
-              status: "active",
-              created_at: nowIso,
-              unlinked_at: null,
-            },
-            { onConflict: "coach_user_id,telegram_chat_id" }
-          );
-        } catch {}
-
-        memoryCoachBindings.set(chatId, bindingRecord);
-
-        // Вітаємо тренера та надсилаємо головне меню
-        await sendCoachMainMenu(chatId, undefined, coachName);
-        return { success: true };
-      }
-
-      // ПРИВ'ЯЗКА ФУТБОЛІСТА
-      const tokenHash = hashTokenSha256(rawToken);
-      const nowIso = new Date().toISOString();
-
-      // Шукаємо токен у БД
-      const { data: tokenRecord, error: tErr } = await supabase
-        .from("player_telegram_tokens")
-        .select("*, players ( id, first_name, last_name, date_of_birth )")
-        .eq("token_hash", tokenHash)
-        .maybeSingle();
-
-      let playerId = tokenRecord?.player_id;
-      let playerDob = (tokenRecord as any)?.players?.date_of_birth;
-      let playerName = tokenRecord ? `${(tokenRecord as any)?.players?.last_name || ""} ${(tokenRecord as any)?.players?.first_name || ""}`.trim() : "";
-
-      // Перевірка в clubs.settings.telegram_tokens
-      let matchedClubToken: any = null;
-      let clubDataObj: any = null;
-      try {
-        const { data: c } = await supabase
-          .from("clubs")
-          .select("id, settings")
-          .eq("id", DEFAULT_CLUB_ID)
-          .maybeSingle();
-        clubDataObj = c;
-        const clubTokens = (c?.settings as any)?.telegram_tokens || {};
-        if (clubTokens[rawToken.trim()]) {
-          matchedClubToken = clubTokens[rawToken.trim()];
-          if (!playerId) {
-            playerId = matchedClubToken.playerId;
-            playerName = matchedClubToken.playerName || "";
-          }
-        }
-      } catch {}
-
-      if (!playerId) {
-        // Fallback до in-memory
-        const memToken = memoryTelegramTokens.get(tokenHash);
-        if (!memToken) {
-          const failMsg =
-            "❌ Недійсний або прострочений токен прив'язки. Будь ласка, зверніться до медичного штабу клубу.";
-          await reply(failMsg);
-          return { success: false, replyText: failMsg };
-        }
-        if (memToken.used_at) {
-          const usedMsg = "⚠️ Цей одноразовий токен вже був використаний.";
-          await reply(usedMsg);
-          return { success: false, replyText: usedMsg };
-        }
-        if (new Date() > new Date(memToken.expires_at)) {
-          const expMsg = "⏳ Термін дії токена минув.";
-          await reply(expMsg);
-          return { success: false, replyText: expMsg };
-        }
-        playerId = memToken.player_id;
-      } else if (tokenRecord) {
-        if (tokenRecord.used_at) {
-          const usedMsg = "⚠️ Цей одноразовий токен вже був використаний.";
-          await reply(usedMsg);
-          return { success: false, replyText: usedMsg };
-        }
-        if (new Date() > new Date(tokenRecord.expires_at)) {
-          const expMsg = "⏳ Термін дії токена минув.";
-          await reply(expMsg);
-          return { success: false, replyText: expMsg };
-        }
-      }
-
-      // Перевірка згоди батьків для неповнолітніх (Вимога 5)
-      const consentSummary = await getPlayerConsentSummary(playerId!);
-      const eligibility = checkTelegramEligibility({
-        id: playerId!,
-        date_of_birth: playerDob,
-        hasParentConsent:
-          !consentSummary.isMinor ||
-          Boolean(consentSummary.scopes["data_processing"]?.status === "granted"),
-      });
-
-      if (!eligibility.eligible) {
-        const consentErr = `⛔ ${eligibility.reason}`;
-        await reply(consentErr);
-        return { success: false, replyText: consentErr };
-      }
-
-      // Одноразове маркування токена
-      await supabase
-        .from("player_telegram_tokens")
-        .update({ used_at: nowIso })
-        .eq("token_hash", tokenHash);
-
-      const mem = memoryTelegramTokens.get(tokenHash);
-      if (mem) mem.used_at = nowIso;
-
-      // Збереження прив'язки в clubs.settings для 100% надійності на Vercel
-      try {
-        const { data: latestClub } = await supabase
-          .from("clubs")
-          .select("id, settings")
-          .eq("id", DEFAULT_CLUB_ID)
-          .maybeSingle();
-
-        if (latestClub) {
-          const s = (latestClub.settings as any) || {};
-          const tBindings = s.telegram_bindings || {};
-          tBindings[playerId!] = {
-            chatId,
-            username,
-            boundAt: nowIso,
-            status: "active",
-          };
-          const tTokens = s.telegram_tokens || {};
-          if (tTokens[rawToken.trim()]) {
-            tTokens[rawToken.trim()].used = true;
-            tTokens[rawToken.trim()].usedAt = nowIso;
-          }
-          await supabase
-            .from("clubs")
-            .update({
-              settings: {
-                ...s,
-                telegram_bindings: tBindings,
-                telegram_tokens: tTokens,
-              },
-            })
-            .eq("id", latestClub.id);
-        }
-      } catch {}
-
-      // Збереження прив'язки в таблицю
-      try {
-        await supabase.from("player_telegram_bindings").upsert(
-          {
-            player_id: playerId,
-            club_id: tokenRecord?.club_id || DEFAULT_CLUB_ID,
-            telegram_chat_id: chatId,
-            telegram_username: username,
-            status: "active",
-            created_at: nowIso,
-            unlinked_at: null,
-          },
-          { onConflict: "player_id,telegram_chat_id" }
-        );
-      } catch {}
-
-      memoryTelegramBindings.set(`${playerId}:${chatId}`, {
-        id: crypto.randomUUID(),
-        player_id: playerId!,
-        club_id: tokenRecord?.club_id || DEFAULT_CLUB_ID,
-        telegram_chat_id: chatId,
-        telegram_username: username,
-        status: "active",
-        created_at: nowIso,
-      });
-
-      const successMsg =
-        `✅ *Привіт, ${playerName || "гравець"}!*\n\n` +
-        `Твій акаунт успішно підключено до медичного штабу ФК «Чорноморець» (U-19).\n\n` +
-        `Тут ти отримуватимеш персональні вказівки лікаря, рекомендації за результатами ранкової анкети та оперативний зв'язок.\n` +
-        `Щоб відписатися будь-коли, надішліть команду /stop.`;
-
-      await reply(successMsg);
-      return { success: true, replyText: successMsg };
-    }
-
-    // 2. Команда відписки: /stop або /unbind (Вимога 4)
-    if (text === "/stop" || text === "/unbind") {
-      const nowIso = new Date().toISOString();
-
-      await supabase
-        .from("player_telegram_bindings")
-        .update({ status: "unlinked", unlinked_at: nowIso })
-        .eq("telegram_chat_id", chatId)
-        .eq("status", "active");
-
-      unlinkTelegramByChatIdInMemory(chatId);
-
-      const unlinkedMsg =
-        "🔕 *Прив'язку успішно скасовано.*\n\n" +
-        "Ви більше не отримуватимете ранкові сповіщення. Щоб відновити прив'язку, відскануйте новий QR-код у вашому кабінеті.";
-
-      await reply(unlinkedMsg);
-      return { success: true, replyText: unlinkedMsg };
-    }
-
-    // 2.5. Перевірка чи повідомлення від підключеного ТРЕНЕРА
-    let coachBinding: CoachTelegramBinding | null = null;
-    try {
-      const { data } = await supabase
-        .from("coach_telegram_bindings")
-        .select("*")
-        .eq("telegram_chat_id", chatId)
-        .eq("status", "active")
-        .maybeSingle();
-      if (data) coachBinding = data as CoachTelegramBinding;
-    } catch {}
-
-    if (!coachBinding) {
-      for (const b of memoryCoachBindings.values()) {
-        if (b.telegram_chat_id === chatId && b.status === "active") {
-          coachBinding = b;
-          break;
-        }
-      }
-    }
-
-    if (coachBinding) {
-      await processCoachTextMessage(message, coachBinding);
-      return { success: true };
-    }
-
-    // 3. Команда статусу: /status
-    if (text === "/status") {
-      let active = false;
-      for (const b of memoryTelegramBindings.values()) {
-        if (b.telegram_chat_id === chatId && b.status === "active") {
-          active = true;
-          break;
-        }
-      }
-      const statusMsg = active
-        ? "🟢 Ваш Telegram успішно підключено до системи клубу."
-        : "⚪ У вас немає активної прив'язки до гравця.";
-      await reply(statusMsg);
-      return { success: true, replyText: statusMsg };
-    }
-
-    // 4. Вільне повідомлення / відповідь гравця лікарю (симптоми, самопочуття, коментар)
-    const nowIso = new Date().toISOString();
-    const today = nowIso.split("T")[0];
-
-    let boundPlayerId: string | null = null;
-    let boundPlayerName = "";
-
-    // 4a. Пошук у clubs.settings.telegram_bindings (порівняння рядків з приведенням до string)
-    const { data: club } = await supabase
-      .from("clubs")
-      .select("id, settings")
-      .eq("id", DEFAULT_CLUB_ID)
-      .maybeSingle();
-
-    const clubSettings = (club?.settings as any) || {};
-    const tBindings = clubSettings.telegram_bindings || {};
-    for (const [pId, b] of Object.entries(tBindings)) {
-      if (
-        String((b as any)?.chatId || "").trim() === String(chatId).trim() &&
-        (b as any)?.status === "active"
-      ) {
-        boundPlayerId = pId;
-        boundPlayerName = (b as any)?.playerName || "";
-        break;
-      }
-    }
-
-    // 4b. Пошук у таблиці player_telegram_bindings
-    if (!boundPlayerId) {
-      try {
-        const { data: bRow } = await supabase
-          .from("player_telegram_bindings")
-          .select("player_id, players ( first_name, last_name )")
-          .eq("telegram_chat_id", String(chatId).trim())
-          .eq("status", "active")
-          .maybeSingle();
-        if (bRow?.player_id) {
-          boundPlayerId = bRow.player_id;
-          boundPlayerName = `${(bRow as any)?.players?.first_name || ""} ${(bRow as any)?.players?.last_name || ""}`.trim();
-        }
-      } catch {}
-    }
-
-    // 4c. Пошук в in-memory
-    if (!boundPlayerId) {
-      for (const b of memoryTelegramBindings.values()) {
-        if (String(b.telegram_chat_id).trim() === String(chatId).trim() && b.status === "active") {
-          boundPlayerId = b.player_id;
-          break;
-        }
-      }
-    }
-
-    if (!boundPlayerId) {
-      const notBoundMsg =
-        "ℹ️ Ваш акаунт Telegram ще не прив'язано до медичної картки гравця.\n\n" +
-        "Будь ласка, зверніться до лікаря клубу або відскануйте персональний QR-код для прив'язки.";
-      await reply(notBoundMsg);
-      return { success: true, replyText: notBoundMsg };
-    }
-
-    // Зберігаємо відповідь гравця в медичну картку (wellness_entries_store)
-    const kyivDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Kyiv" }).format(new Date());
-    const store = clubSettings.wellness_entries_store || {};
-    const todayKey = `${boundPlayerId}_${kyivDate}`;
-    const todayEntry = store[todayKey] || {};
-    const todayRec = todayEntry.doctor_recommendation || {};
-
-    const replyItem = {
-      text,
-      receivedAt: nowIso,
-      source: "telegram" as const,
-      username: username ? `@${username}` : null,
-    };
-
-    const existingReplies = Array.isArray(todayRec.replies) ? [...todayRec.replies] : [];
-    existingReplies.push(replyItem);
-
-    todayEntry.doctor_recommendation = {
-      ...todayRec,
-      playerReply: replyItem,
-      replies: existingReplies,
-    };
-    store[todayKey] = todayEntry;
-
-    // Якщо лікар надсилав рекомендацію в інший день (наприклад, активне листування за попередній день),
-    // дублюємо відповідь також у найсвіжішу рекомендацію лікаря цього гравця
-    const otherKeys = Object.keys(store)
-      .filter((k) => k.startsWith(`${boundPlayerId}_`) && k !== todayKey)
-      .sort()
-      .reverse();
-
-    for (const ok of otherKeys) {
-      const otherEntry = store[ok];
-      if (
-        otherEntry?.doctor_recommendation?.text ||
-        (Array.isArray(otherEntry?.doctor_recommendation?.sentHistory) &&
-          otherEntry.doctor_recommendation.sentHistory.length > 0)
-      ) {
-        const oRec = otherEntry.doctor_recommendation;
-        const oReplies = Array.isArray(oRec.replies) ? [...oRec.replies] : [];
-        oReplies.push(replyItem);
-        store[ok] = {
-          ...otherEntry,
-          doctor_recommendation: {
-            ...oRec,
-            playerReply: replyItem,
-            replies: oReplies,
-          },
-        };
-        break;
-      }
-    }
-
-    await supabase
-      .from("clubs")
-      .update({
-        settings: {
-          ...clubSettings,
-          wellness_entries_store: store,
-        },
-      })
-      .eq("id", club?.id || DEFAULT_CLUB_ID);
-
-    try {
-      await logAudit({
-        action: "receive_telegram_player_reply",
-        entity: "wellness_entries",
-        playerId: boundPlayerId,
-        meta: {
-          textLength: text.length,
-          source: "telegram",
-          chatId,
-        },
-      });
-    } catch {}
-
-    // Підтвердження гравцю з прямим переходом на контакт лікаря
-    const ackMsg =
-      `✅ *Вашу відповідь отримано та збережено в медичній картці!*\n\n` +
-      `💬 _«${text}»_\n\n` +
-      `👨‍⚕️ Лікар бачить ваше повідомлення в системі.\n` +
-      `📞 *Телефон лікаря:* \`0935623945\`\n` +
-      `💬 *Telegram лікаря:* [Натисніть для зв'язку](https://t.me/+380935623945)\n\n` +
-      `Якщо потрібна термінова консультація або посилився біль, зателефонуйте або напишіть лікарю в особисті повідомлення за кнопкою нижче:`;
-
-    if (botToken) {
-      try {
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: ackMsg,
-            parse_mode: "Markdown",
-            reply_markup: {
-              inline_keyboard: [
-                [
-                  {
-                    text: "💬 Написати лікарю в Telegram",
-                    url: DEFAULT_DOCTOR_TG_URL,
-                  },
-                ],
-              ],
-            },
-          }),
-        });
-      } catch {}
-    }
-
-    return { success: true, replyText: ackMsg };
-  } catch (err: any) {
-    return { success: false, error: err?.message };
-  }
-}
-
-/**
- * 2. Утреннее напоминание «Заповни анкету самопочуття» со ссылкой на PWA (п. 8.7.2).
- * У повідомленні суворо НЕМАЄ медичних даних і прізвищ інших гравців.
+ * 2. Ранкове нагадування «Заповни анкету самопочуття» зі штабного інтерфейсу.
+ * Повністю закрито через assertTeamStaff (isCron не приймається від клієнта).
  */
 export async function sendMorningWellnessRemindersAction(options?: {
   teamId?: string;
   baseUrl?: string;
-  isCron?: boolean;
-}) {
-  try {
-    if (!options?.isCron) {
-      const auth = await assertTeamStaff();
-      if ("error" in auth) {
-        return { success: false, error: auth.error };
-      }
+}): Promise<{
+  success: boolean;
+  sentCount?: number;
+  skippedCount?: number;
+  unboundCount?: number;
+  totalPlayers?: number;
+  message?: string;
+  error?: string;
+}> {
+  const auth = await assertTeamStaff(options?.teamId);
+  if ("error" in auth) {
+    return { success: false, error: auth.error };
+  }
+  const user = auth.user;
+
+  if (isCoach(user.role) && !options?.teamId) {
+    const coachTeams = user.teamIds && user.teamIds.length > 0
+      ? user.teamIds
+      : (user.teamId ? [user.teamId] : []);
+    if (coachTeams.length === 0) {
+      return { success: false, error: "Тренеру не призначено жодної команди." };
     }
-
-    const supabase = createAdminClient();
-    const today = new Date().toISOString().split("T")[0];
-    const baseUrl =
-      options?.baseUrl ||
-      process.env.NEXT_PUBLIC_APP_URL ||
-      "https://med.fc-chornomorets.com";
-
-    // 1. Отримуємо клубні налаштування (там зберігаються telegram_bindings та wellness_entries_store)
-    const { data: club } = await supabase
-      .from("clubs")
-      .select("id, settings")
-      .eq("id", DEFAULT_CLUB_ID)
-      .maybeSingle();
-
-    const clubSettings = (club?.settings as any) || {};
-    const clubBindings = clubSettings.telegram_bindings || {};
-    const store = clubSettings.wellness_entries_store || {};
-
-    // 2. Отримуємо активних гравців команди (або всіх)
-    let playersQuery = supabase
-      .from("players")
-      .select("id, first_name, last_name, team_id")
-      .is("archived_at", null);
-
-    if (options?.teamId) {
-      playersQuery = playersQuery.eq("team_id", options.teamId);
-    }
-
-    const { data: teamPlayers } = await playersQuery;
-    const playersList = teamPlayers || [];
-    const totalPlayers = playersList.length;
-
-    // 3. Отримуємо записи з таблиці player_telegram_bindings
-    let tableBindingsQuery = supabase
-      .from("player_telegram_bindings")
-      .select("player_id, telegram_chat_id, status")
-      .eq("status", "active");
-
-    const { data: tableBindingsData } = await tableBindingsQuery;
-    const tableBindingsMap = new Map<string, string>();
-    for (const b of tableBindingsData || []) {
-      if (b.player_id && b.telegram_chat_id) {
-        tableBindingsMap.set(b.player_id, b.telegram_chat_id);
-      }
-    }
-
-    // 4. Отримуємо список тих, хто вже заповнив сьогодні анкету (і з таблиць, і з JSON-store)
-    const filledPlayerIds = new Set<string>();
-
-    try {
-      const { data: todayEntries } = await supabase
-        .from("wellness_entries")
-        .select("player_id")
-        .eq("date", today);
-
-      for (const e of todayEntries || []) {
-        if (e.player_id) filledPlayerIds.add(e.player_id);
-      }
-    } catch {}
-
-    try {
-      const { data: todaySurveys } = await supabase
-        .from("wellness_surveys")
-        .select("player_id")
-        .eq("date", today);
-
-      for (const s of todaySurveys || []) {
-        if (s.player_id) filledPlayerIds.add(s.player_id);
-      }
-    } catch {}
-
-    for (const [k, v] of Object.entries(store)) {
-      if (k.endsWith(`_${today}`)) {
-        const pId = k.slice(0, k.indexOf(`_${today}`));
-        if (pId) filledPlayerIds.add(pId);
-      }
-    }
-
-    // 5. Визначаємо активні прив'язки для кожного гравця команди
-    const activeBindings: Array<{
-      player_id: string;
-      telegram_chat_id: string;
-      first_name?: string;
-    }> = [];
-
-    let unboundCount = 0;
-
-    for (const p of playersList) {
-      // Спочатку шукаємо в клубних налаштуваннях
-      const fromClub = clubBindings[p.id];
-      let chatId = fromClub?.status === "active" ? fromClub.chatId : null;
-
-      // Якщо немає в клубі — шукаємо в таблиці player_telegram_bindings
-      if (!chatId) {
-        chatId = tableBindingsMap.get(p.id) || null;
-      }
-
-      // Якщо немає в таблиці — шукаємо в пам'яті
-      if (!chatId) {
-        const mem = memoryTelegramBindings.get(p.id);
-        if (mem && mem.status === "active") {
-          chatId = mem.telegram_chat_id;
-        }
-      }
-
-      if (chatId) {
-        activeBindings.push({
-          player_id: p.id,
-          telegram_chat_id: String(chatId),
-          first_name: p.first_name,
-        });
-      } else {
-        unboundCount++;
-      }
-    }
-
-    // Якщо жоден гравець не підключив Telegram
-    if (activeBindings.length === 0) {
-      return {
-        success: true,
-        sentCount: 0,
-        skippedCount: 0,
-        unboundCount: totalPlayers,
-        totalPlayers,
-        message: `⚠️ Усі ${totalPlayers} гравців команди ще не підключили Telegram-бота (не перейшли за QR/лінком бота і не натиснули /start). Спочатку гравці мають підключити бот.`,
-      };
-    }
-
-    // 6. Відправляємо нагадування тим підключеним, хто ще не заповнив
     let sentCount = 0;
     let skippedCount = 0;
-
-    for (const b of activeBindings) {
-      if (filledPlayerIds.has(b.player_id)) {
-        skippedCount++;
-        continue;
+    let unboundCount = 0;
+    let totalPlayers = 0;
+    for (const tid of coachTeams) {
+      const res = await sendMorningWellnessRemindersInternal({
+        clubId: user.clubId,
+        teamId: tid,
+        baseUrl: options?.baseUrl,
+      });
+      if (res.success) {
+        sentCount += res.sentCount || 0;
+        skippedCount += res.skippedCount || 0;
+        unboundCount += res.unboundCount || 0;
+        totalPlayers += res.totalPlayers || 0;
       }
-
-      const reminderText = formatMorningWellnessReminder({
-        playerName: b.first_name,
-        wellnessUrl: `${baseUrl}/wellness`,
-      });
-
-      await sendClubMessage({
-        channel: "telegram",
-        recipient: b.telegram_chat_id,
-        text: reminderText,
-      });
-
-      sentCount++;
     }
-
-    let resultMsg = "";
-    if (sentCount > 0) {
-      resultMsg = `📢 Надіслано нагадування ${sentCount} гравцям! (${skippedCount} вже заповнили анкету${unboundCount > 0 ? `, у ${unboundCount} Telegram ще не прив'язано` : ""}).`;
-    } else if (skippedCount > 0) {
-      resultMsg = `✓ Усі ${skippedCount} підключені гравці вже заповнили анкету сьогодні!${unboundCount > 0 ? ` (у решти ${unboundCount} Telegram ще не прив'язано)` : ""}`;
-    } else {
-      resultMsg = `Немає гравців для відправки (усі ${unboundCount} ще не підключили бот).`;
-    }
-
     return {
       success: true,
       sentCount,
       skippedCount,
       unboundCount,
       totalPlayers,
-      message: resultMsg,
-    };
-  } catch (err: any) {
-    return {
-      success: false,
-      error: err?.message || "Помилка відправки нагадувань",
+      message: `📢 Надіслано нагадування ${sentCount} гравцям! (${skippedCount} вже заповнили анкету${unboundCount > 0 ? `, у ${unboundCount} Telegram ще не прив'язано` : ""}).`,
     };
   }
+
+  return sendMorningWellnessRemindersInternal({
+    clubId: user.clubId,
+    teamId: options?.teamId,
+    baseUrl: options?.baseUrl,
+  });
 }
 
 /**
- * 2б. Відправка сповіщень футболістам у Telegram після збереження тренування або матчу:
- * «Тренер заповнив тренування, оціни своє самопочуття»
+ * 2б. Відправка сповіщень футболістам у Telegram після збереження тренування або матчу.
  */
 export async function sendPostSessionRemindersAction(options: {
   teamId: string;
@@ -1084,152 +370,26 @@ export async function sendPostSessionRemindersAction(options: {
   playerIds?: string[];
   baseUrl?: string;
 }) {
-  try {
-    const supabase = createAdminClient();
-    const today = options.date || new Date().toISOString().split("T")[0];
-    const baseUrl =
-      options.baseUrl ||
-      process.env.NEXT_PUBLIC_APP_URL ||
-      "https://med-academy-alpha.vercel.app";
-
-    // 1. Отримуємо клубні налаштування та прив'язки
-    const { data: club } = await supabase
-      .from("clubs")
-      .select("id, name, settings")
-      .eq("id", DEFAULT_CLUB_ID)
-      .maybeSingle();
-
-    const clubSettings = (club?.settings as any) || {};
-    const clubBindings = clubSettings.telegram_bindings || {};
-    const clubName = club?.name || "Академія";
-
-    // 2. Отримуємо активних гравців команди
-    let playersQuery = supabase
-      .from("players")
-      .select("id, first_name, last_name, team_id, portal_token")
-      .eq("team_id", options.teamId)
-      .is("archived_at", null);
-
-    if (options.playerIds && options.playerIds.length > 0) {
-      playersQuery = playersQuery.in("id", options.playerIds);
-    }
-
-    const { data: teamPlayers } = await playersQuery;
-    const playersList = teamPlayers || [];
-
-    // 3. Отримуємо активні записи з таблиці player_telegram_bindings
-    const { data: tableBindingsData } = await supabase
-      .from("player_telegram_bindings")
-      .select("player_id, telegram_chat_id, status")
-      .eq("status", "active");
-
-    const tableBindingsMap = new Map<string, string>();
-    for (const b of tableBindingsData || []) {
-      if (b.player_id && b.telegram_chat_id) {
-        tableBindingsMap.set(b.player_id, b.telegram_chat_id);
-      }
-    }
-
-    // 4. Отримуємо список тих, хто вже оцінив це тренування
-    const alreadyEvaluated = new Set<string>();
-    try {
-      const { data: wSessions } = await supabase
-        .from("workload_sessions")
-        .select("player_id, player_rpe")
-        .eq("date", today)
-        .in(
-          "player_id",
-          playersList.map((p) => p.id)
-        );
-
-      for (const w of wSessions || []) {
-        if (w.player_rpe !== null && w.player_rpe !== undefined) {
-          alreadyEvaluated.add(w.player_id);
-        }
-      }
-    } catch {}
-
-    let sentCount = 0;
-    let skippedCount = 0;
-    let unboundCount = 0;
-
-    const sessionTypeTitle = options.sessionType || "Командне тренування";
-    const duration = options.defaultMinutes || 75;
-
-    for (const p of playersList) {
-      // Якщо вже оцінив
-      if (alreadyEvaluated.has(p.id)) {
-        skippedCount++;
-        continue;
-      }
-
-      // Шукаємо telegram_chat_id
-      let chatId =
-        clubBindings[p.id]?.status === "active"
-          ? clubBindings[p.id].chatId
-          : null;
-      if (!chatId) {
-        chatId = tableBindingsMap.get(p.id) || null;
-      }
-      if (!chatId) {
-        const mem = memoryTelegramBindings.get(p.id);
-        if (mem && mem.status === "active") {
-          chatId = mem.telegram_chat_id;
-        }
-      }
-
-      if (!chatId) {
-        unboundCount++;
-        continue;
-      }
-
-      // Персональне посилання в кабінет гравця
-      const portalUrl = p.portal_token
-        ? `${baseUrl}/rehab-portal?token=${p.portal_token}`
-        : `${baseUrl}/rehab-portal`;
-
-      const msgText = formatPostSessionReminder({
-        playerName: p.first_name,
-        clubName,
-        sessionType: sessionTypeTitle,
-        durationMinutes: duration,
-        date: today,
-        portalUrl,
-      });
-
-      await sendClubMessage({
-        clubId: club?.id || DEFAULT_CLUB_ID,
-        channel: "telegram",
-        recipient: String(chatId),
-        text: msgText,
-      });
-
-      sentCount++;
-    }
-
-    return {
-      success: true,
-      sentCount,
-      skippedCount,
-      unboundCount,
-      totalPlayers: playersList.length,
-    };
-  } catch (err: any) {
+  const auth = await assertTeamStaff(options.teamId);
+  if ("error" in auth) {
     return {
       success: false,
       sentCount: 0,
       skippedCount: 0,
       unboundCount: 0,
       totalPlayers: 0,
-      error: err?.message || "Помилка відправки Telegram-сповіщень",
+      error: auth.error,
     };
   }
+
+  return sendPostSessionRemindersInternal({
+    ...options,
+    clubId: auth.user.clubId,
+  });
 }
 
 /**
- * 3. Недельный отчёт тренеру (Telegram и PDF) (п. 8.7.3).
- * Процент заповнення, кількість жовтих і червоних флажків (тільки лічильники, без імен),
- * загальне навантаження. Список «потребують уваги» тільки в додатку.
+ * 3. Тижневий звіт тренеру (Telegram і PDF) (п. 8.7.3).
  */
 export async function generateCoachWeeklyTelegramReportAction(
   teamId: string,
@@ -1240,13 +400,14 @@ export async function generateCoachWeeklyTelegramReportAction(
   }
 ) {
   try {
-    const auth = await assertTeamStaff();
+    const auth = await assertTeamStaff(teamId);
     if ("error" in auth) {
       return { success: false, error: auth.error };
     }
+    const user = auth.user;
 
     const supabase = createAdminClient();
-    const clubId = (auth as any).user?.clubId || DEFAULT_CLUB_ID;
+    const clubId = user.clubId;
     const timezone = await getClubTimezone(clubId);
     const anchorDate = options?.date || getClubDate(timezone);
     const anchorDateObj = new Date(anchorDate);
@@ -1256,18 +417,21 @@ export async function generateCoachWeeklyTelegramReportAction(
     const weekStartStr = weekAgo.toISOString().split("T")[0];
     const weekEndStr = anchorDate;
 
-    // Отримуємо команду та гравців
     const { data: team } = await supabase
       .from("teams")
       .select("id, name, players(id)")
       .eq("id", teamId)
+      .eq("club_id", clubId)
       .maybeSingle();
 
-    const teamName = team?.name || "Команда";
-    const teamPlayerIds = (team?.players || []).map((p: any) => p.id);
+    if (!team) {
+      return { success: false, error: "Команду не знайдено у вашому клубі" };
+    }
+
+    const teamName = team.name || "Команда";
+    const teamPlayerIds = (team.players || []).map((p: any) => p.id);
     const totalPlayers = teamPlayerIds.length || 18;
 
-    // Збираємо анкети за 7 днів з усіх підтримуваних сховищ
     const entriesMap = new Map<
       string,
       {
@@ -1281,92 +445,85 @@ export async function generateCoachWeeklyTelegramReportAction(
       }
     >();
 
-    // 1. Спершу пробуємо таблицю wellness_entries (якщо наявна у базі)
-    try {
-      let weQuery = supabase
-        .from("wellness_entries")
-        .select("player_id, date, fatigue, soreness, pain, pain_vas, illness, readiness_status")
-        .gte("date", weekStartStr)
-        .lte("date", weekEndStr);
+    if (teamPlayerIds.length > 0) {
+      try {
+        const { data: weData, error: weErr } = await supabase
+          .from("wellness_entries")
+          .select("player_id, date, fatigue, soreness, pain, pain_vas, illness, readiness_status")
+          .eq("club_id", clubId)
+          .in("player_id", teamPlayerIds)
+          .gte("date", weekStartStr)
+          .lte("date", weekEndStr);
 
-      if (teamPlayerIds.length > 0) {
-        weQuery = weQuery.in("player_id", teamPlayerIds);
-      }
-
-      const { data: weData, error: weErr } = await weQuery;
-      if (!weErr && weData) {
-        for (const e of weData) {
-          if (e.player_id && e.date) {
-            entriesMap.set(`${e.player_id}_${e.date}`, {
-              player_id: e.player_id,
-              date: e.date,
-              fatigue: e.fatigue || 3,
-              soreness: e.soreness || 3,
-              pain_vas: e.pain_vas || (e.pain ? 4 : 0),
-              illness: Boolean(e.illness),
-              readiness_status: e.readiness_status,
-            });
-          }
-        }
-      }
-    } catch {}
-
-    // 2. Основна діюча таблиця велнес-анкет wellness_surveys у Supabase
-    try {
-      let wsQuery = supabase
-        .from("wellness_surveys")
-        .select("player_id, date, fatigue_level, muscle_soreness, readiness_status, notes")
-        .gte("date", weekStartStr)
-        .lte("date", weekEndStr);
-
-      if (teamPlayerIds.length > 0) {
-        wsQuery = wsQuery.in("player_id", teamPlayerIds);
-      }
-
-      const { data: wsData, error: wsErr } = await wsQuery;
-      if (!wsErr && wsData) {
-        for (const s of wsData) {
-          if (!s.player_id || !s.date) continue;
-          const key = `${s.player_id}_${s.date}`;
-          if (!entriesMap.has(key)) {
-            let extra: any = {};
-            if (s.notes && typeof s.notes === "string" && s.notes.startsWith("{")) {
-              try {
-                extra = JSON.parse(s.notes);
-              } catch {}
+        if (!weErr && weData) {
+          for (const e of weData) {
+            if (e.player_id && e.date) {
+              entriesMap.set(`${e.player_id}_${e.date}`, {
+                player_id: e.player_id,
+                date: e.date,
+                fatigue: e.fatigue || 3,
+                soreness: e.soreness || 3,
+                pain_vas: e.pain_vas || (e.pain ? 4 : 0),
+                illness: Boolean(e.illness),
+                readiness_status: e.readiness_status,
+              });
             }
-            entriesMap.set(key, {
-              player_id: s.player_id,
-              date: s.date,
-              fatigue: s.fatigue_level || 3,
-              soreness: s.muscle_soreness || 3,
-              pain_vas: extra.pain_vas ?? (extra.pain ? 4 : 0),
-              illness: Boolean(extra.illness),
-              readiness_status: s.readiness_status,
-            });
           }
         }
-      }
-    } catch {}
+      } catch {}
 
-    // 3. Fallback: налаштування клубу clubs.settings.wellness_entries_store
-    try {
-      const { data: clubData } = await supabase
-        .from("clubs")
-        .select("settings")
-        .eq("id", clubId)
-        .maybeSingle();
+      try {
+        const { data: wsData, error: wsErr } = await supabase
+          .from("wellness_surveys")
+          .select("player_id, date, fatigue_level, muscle_soreness, readiness_status, notes")
+          .eq("club_id", clubId)
+          .in("player_id", teamPlayerIds)
+          .gte("date", weekStartStr)
+          .lte("date", weekEndStr);
 
-      const store = (clubData as any)?.settings?.wellness_entries_store || {};
-      for (const [k, v] of Object.entries(store)) {
-        const val = v as any;
-        if (
-          val &&
-          val.player_id &&
-          val.date &&
-          (teamPlayerIds.length === 0 || teamPlayerIds.includes(val.player_id))
-        ) {
-          if (val.date >= weekStartStr && val.date <= weekEndStr) {
+        if (!wsErr && wsData) {
+          for (const s of wsData) {
+            if (!s.player_id || !s.date) continue;
+            const key = `${s.player_id}_${s.date}`;
+            if (!entriesMap.has(key)) {
+              let extra: any = {};
+              if (s.notes && typeof s.notes === "string" && s.notes.startsWith("{")) {
+                try {
+                  extra = JSON.parse(s.notes);
+                } catch {}
+              }
+              entriesMap.set(key, {
+                player_id: s.player_id,
+                date: s.date,
+                fatigue: s.fatigue_level || 3,
+                soreness: s.muscle_soreness || 3,
+                pain_vas: extra.pain_vas ?? (extra.pain ? 4 : 0),
+                illness: Boolean(extra.illness),
+                readiness_status: s.readiness_status,
+              });
+            }
+          }
+        }
+      } catch {}
+
+      try {
+        const { data: clubData } = await supabase
+          .from("clubs")
+          .select("settings")
+          .eq("id", clubId)
+          .maybeSingle();
+
+        const store = (clubData as any)?.settings?.wellness_entries_store || {};
+        for (const v of Object.values(store)) {
+          const val = v as any;
+          if (
+            val &&
+            val.player_id &&
+            val.date &&
+            teamPlayerIds.includes(val.player_id) &&
+            val.date >= weekStartStr &&
+            val.date <= weekEndStr
+          ) {
             const key = `${val.player_id}_${val.date}`;
             if (!entriesMap.has(key)) {
               entriesMap.set(key, {
@@ -1381,8 +538,8 @@ export async function generateCoachWeeklyTelegramReportAction(
             }
           }
         }
-      }
-    } catch {}
+      } catch {}
+    }
 
     const relevantEntries = Array.from(entriesMap.values());
     const totalSurveysExpected = totalPlayers * 7;
@@ -1392,7 +549,6 @@ export async function generateCoachWeeklyTelegramReportAction(
         ? Math.min(100, Math.round((completedSurveysCount / totalSurveysExpected) * 100))
         : 0;
 
-    // Розрахунок лічильників прапорців (БЕЗ імен!)
     let yellowFlagsCount = 0;
     let redFlagsCount = 0;
     let sumFatigue = 0;
@@ -1427,7 +583,6 @@ export async function generateCoachWeeklyTelegramReportAction(
       overallWorkloadDescription = "Відновлювальний стан / свіжість";
     }
 
-    // Розрахунок гравців, що потребують уваги на дату звіту (сьогодні)
     const todayEntries = relevantEntries.filter((e) => e.date === weekEndStr);
     const todayAttentionPlayers = new Set(
       todayEntries
@@ -1472,12 +627,13 @@ export async function generateCoachWeeklyTelegramReportAction(
     let sentToTelegram = false;
     if (options?.sendToTelegram) {
       const coachChat =
-        options.customCoachChatId ||
+        (isDoctor(user.role) ? options.customCoachChatId : undefined) ||
         process.env.TELEGRAM_COACH_CHAT_ID ||
         process.env.TELEGRAM_CHAT_ID;
 
       if (coachChat) {
         const sendRes = await sendClubMessage({
+          clubId,
           channel: "telegram",
           recipient: coachChat,
           text: messageText,
@@ -1510,12 +666,19 @@ export async function getPlayerTelegramBindingAction(playerId: string): Promise<
 }> {
   if (!playerId) return { isBound: false };
   try {
+    const auth = await assertTeamStaff();
+    if ("error" in auth) return { isBound: false };
+
+    const access = await assertPlayerAccess(auth.user, playerId, { allowCoach: true });
+    if ("error" in access) return { isBound: false };
+
+    const clubId = auth.user.clubId;
     const supabase = createAdminClient();
-    // 1. clubs.settings
+
     const { data: club } = await supabase
       .from("clubs")
       .select("settings")
-      .eq("id", DEFAULT_CLUB_ID)
+      .eq("id", clubId)
       .maybeSingle();
 
     const bindings = (club?.settings as any)?.telegram_bindings || {};
@@ -1527,11 +690,11 @@ export async function getPlayerTelegramBindingAction(playerId: string): Promise<
       };
     }
 
-    // 2. player_telegram_bindings table
     const { data: b } = await supabase
       .from("player_telegram_bindings")
       .select("telegram_username, created_at, status")
       .eq("player_id", playerId)
+      .eq("club_id", clubId)
       .eq("status", "active")
       .maybeSingle();
 
@@ -1550,8 +713,7 @@ export async function getPlayerTelegramBindingAction(playerId: string): Promise<
 }
 
 /**
- * Відправка персональної рекомендації / вказівки лікаря гравцю
- * Зберігається в анкету + надсилається в Telegram ботом, якщо прив'язано
+ * Відправка персональної рекомендації / вказівки лікаря гравцю (тільки лікар або адмін).
  */
 export async function sendDoctorRecommendationAction(params: {
   playerId: string;
@@ -1566,7 +728,7 @@ export async function sendDoctorRecommendationAction(params: {
   error?: string;
 }> {
   try {
-    const auth = await assertTeamStaff();
+    const auth = await assertDoctor();
     if ("error" in auth) {
       return { success: false, sentToTelegram: false, isBound: false, error: auth.error };
     }
@@ -1577,19 +739,24 @@ export async function sendDoctorRecommendationAction(params: {
       return { success: false, sentToTelegram: false, isBound: false, error: "Заповніть текст рекомендації" };
     }
 
+    const access = await assertPlayerAccess(user, playerId, { allowCoach: false });
+    if ("error" in access) {
+      return { success: false, sentToTelegram: false, isBound: false, error: access.error };
+    }
+
+    const clubId = user.clubId;
     const supabase = createAdminClient();
     const nowIso = new Date().toISOString();
-    const rawDoctor = doctorName || (user as any)?.name || (user as any)?.fullName;
+    const rawDoctor = doctorName || (user as any)?.name || user.fullName;
     const docDisplayName = rawDoctor && !rawDoctor.includes("@") ? rawDoctor.trim() : "Медичний штаб";
 
-    // 1. Шукаємо Telegram Chat ID
     let chatId: string | null = null;
     let isBound = false;
 
     const { data: club } = await supabase
       .from("clubs")
       .select("id, settings")
-      .eq("id", DEFAULT_CLUB_ID)
+      .eq("id", clubId)
       .maybeSingle();
 
     const clubSettings = (club?.settings as any) || {};
@@ -1605,6 +772,7 @@ export async function sendDoctorRecommendationAction(params: {
           .from("player_telegram_bindings")
           .select("telegram_chat_id")
           .eq("player_id", playerId)
+          .eq("club_id", clubId)
           .eq("status", "active")
           .maybeSingle();
         if (b?.telegram_chat_id) {
@@ -1614,45 +782,53 @@ export async function sendDoctorRecommendationAction(params: {
       } catch {}
     }
 
-    // 2. Якщо є Telegram - відправляємо повідомлення (без email, з прямим телефоном та посиланням на Telegram)
     let sentToTelegram = false;
-    const { botToken } = await getClubTelegramConfig(user?.clubId);
+    const medTg = await getClubMedicalTelegramConfig(clubId);
+    const botToken = medTg.botToken;
     if (chatId && botToken) {
       try {
+        const contactBlock =
+          (medTg.doctorPhone ? `📞 *Телефон лікаря:* \`${medTg.doctorPhone}\`\n` : "") +
+          (medTg.doctorTelegramUrl
+            ? `💬 *Telegram лікаря:* [Натисніть для зв'язку](${medTg.doctorTelegramUrl})\n`
+            : "");
+
         const messageText =
           `👨‍⚕️ *Рекомендація медичного штабу на ${date}:*\n\n` +
           `${recommendation.trim()}\n\n` +
           `👨‍⚕️ *Лікар:* ${docDisplayName}\n` +
-          `📞 *Телефон лікаря:* \`0935623945\`\n` +
-          `💬 *Telegram лікаря:* [Натисніть для зв'язку](https://t.me/+380935623945)\n\n` +
+          `${contactBlock}\n` +
           `Будь на зв’язку та дотримуйся рекомендацій!\n` +
           `_(Ви також можете відповісти текстом прямо сюди в чат-бот — лікар побачить вашу відповідь у медичній картці)_`;
+
+        const payload: Record<string, any> = {
+          chat_id: chatId,
+          text: messageText,
+          parse_mode: "Markdown",
+        };
+        if (medTg.doctorTelegramUrl) {
+          payload.reply_markup = {
+            inline_keyboard: [
+              [
+                {
+                  text: "💬 Написати лікарю в Telegram",
+                  url: medTg.doctorTelegramUrl,
+                },
+              ],
+            ],
+          };
+        }
 
         const tgRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: messageText,
-            parse_mode: "Markdown",
-            reply_markup: {
-              inline_keyboard: [
-                [
-                  {
-                    text: "💬 Написати лікарю в Telegram",
-                    url: DEFAULT_DOCTOR_TG_URL,
-                  },
-                ],
-              ],
-            },
-          }),
+          body: JSON.stringify(payload),
         });
         const tgData = await tgRes.json();
         sentToTelegram = Boolean(tgData.ok);
       } catch {}
     }
 
-    // 3. Зберігаємо в clubs.settings.wellness_entries_store
     const store = clubSettings.wellness_entries_store || {};
     const key = `${playerId}_${date}`;
     const currEntry = store[key] || {};
@@ -1682,7 +858,7 @@ export async function sendDoctorRecommendationAction(params: {
       text: recommendation.trim(),
       template: templateTitle || null,
       doctor: docDisplayName,
-      doctorPhone: DEFAULT_DOCTOR_PHONE,
+      doctorPhone: medTg.doctorPhone || null,
       sentAt: nowIso,
       sentToTelegram,
       playerReply: existingRec.playerReply || null,
@@ -1691,7 +867,6 @@ export async function sendDoctorRecommendationAction(params: {
     };
     store[key] = currEntry;
 
-    // 4. Оновлюємо статус перегляду «Взято до уваги»
     const acks = clubSettings.wellness_acknowledgements || {};
     acks[key] = {
       acknowledged: true,
@@ -1709,7 +884,7 @@ export async function sendDoctorRecommendationAction(params: {
           wellness_acknowledgements: acks,
         },
       })
-      .eq("id", club?.id || DEFAULT_CLUB_ID);
+      .eq("id", clubId);
 
     return {
       success: true,
@@ -1726,9 +901,8 @@ export async function sendDoctorRecommendationAction(params: {
   }
 }
 
-
 /**
- * Отримання рекомендації лікаря та відповідей гравця для вказаної дати
+ * Отримання рекомендації лікаря та відповідей гравця для вказаної дати (тільки лікар або адмін).
  */
 export async function getPlayerDoctorRecommendationAction(params: {
   playerId: string;
@@ -1739,19 +913,28 @@ export async function getPlayerDoctorRecommendationAction(params: {
   error?: string;
 }> {
   try {
+    const auth = await assertDoctor();
+    if ("error" in auth) {
+      return { success: false, error: auth.error };
+    }
+
+    const access = await assertPlayerAccess(auth.user, params.playerId, { allowCoach: false });
+    if ("error" in access) {
+      return { success: false, error: access.error };
+    }
+
+    const clubId = auth.user.clubId;
     const supabase = createAdminClient();
     const { data: club } = await supabase
       .from("clubs")
       .select("settings")
-      .eq("id", DEFAULT_CLUB_ID)
+      .eq("id", clubId)
       .maybeSingle();
 
     const store = (club?.settings as any)?.wellness_entries_store || {};
     const key = `${params.playerId}_${params.date}`;
     let rec = store[key]?.doctor_recommendation ? { ...store[key].doctor_recommendation } : null;
 
-    // Синхронізація відповідей гравця: якщо за вибрану дату окремого запису немає,
-    // або якщо гравець надіслав повідомлення сьогодні
     const kyivDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Kyiv" }).format(new Date());
     const todayKey = `${params.playerId}_${kyivDate}`;
     const todayRec = store[todayKey]?.doctor_recommendation;

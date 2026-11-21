@@ -96,8 +96,11 @@ export default function Scat6ConcussionAssessment({
     });
   };
 
-  // Перехід між ступенями GRTP
-  const handleStageTransition = (target: ConcussionStageNumber) => {
+  // Перехід між ступенями GRTP (включно зі збереженням клінічного відкату при симптомах)
+  const handleStageTransition = (
+    target: ConcussionStageNumber,
+    allowPersistOnSymptomRollback = false
+  ) => {
     const allSymptoms = [...symptomsTriggered];
     if (customSymptom.trim()) allSymptoms.push(customSymptom.trim());
 
@@ -110,7 +113,11 @@ export default function Scat6ConcussionAssessment({
       medicalClearanceGranted: medicalClearance,
     });
 
-    if (!result.allowed) {
+    const isSymptomRollback =
+      (!isSymptomFree24h || allSymptoms.length > 0) &&
+      Boolean(stageDoctorSignature && stageDoctorSignature.trim().length > 0);
+
+    if (!result.allowed && !(allowPersistOnSymptomRollback || isSymptomRollback)) {
       setStageFeedback({
         allowed: false,
         message: result.error || result.actionReason,
@@ -134,14 +141,18 @@ export default function Scat6ConcussionAssessment({
         bess_total_errors: 0,
         current_rtp_stage: result.nextStage,
         clinical_verdict: result.nextStage === 6 ? "cleared_no_concussion" : "recovering",
-        recommendations: `Перехід на Ступінь ${result.nextStage}: ${CONCUSSION_GRTP_STAGES[result.nextStage].title}. ${stageNotes}`.trim(),
+        recommendations: `${
+          result.allowed
+            ? `Перехід на Ступінь ${result.nextStage}: ${CONCUSSION_GRTP_STAGES[result.nextStage].title}.`
+            : result.actionReason
+        } ${stageNotes}`.trim(),
       });
 
       if (res.assessment) {
         setAssessments([res.assessment, ...assessments]);
         setSelectedStage(result.nextStage);
         setStageFeedback({
-          allowed: true,
+          allowed: result.allowed,
           message: result.actionReason,
         });
         setSymptomsTriggered([]);
@@ -425,7 +436,12 @@ export default function Scat6ConcussionAssessment({
               {symptomsTriggered.length > 0 && (
                 <button
                   type="button"
-                  onClick={() => handleStageTransition(Math.max(1, selectedStage - 1) as ConcussionStageNumber)}
+                  onClick={() =>
+                    handleStageTransition(
+                      Math.max(1, selectedStage - 1) as ConcussionStageNumber,
+                      true
+                    )
+                  }
                   disabled={isPending}
                   className="px-4 py-2 rounded-lg bg-rose-600/30 hover:bg-rose-600 text-rose-200 hover:text-white border border-rose-500/40 text-xs font-bold transition"
                 >
@@ -524,7 +540,7 @@ export default function Scat6ConcussionAssessment({
           </div>
 
           {/* Бали числових тестів (без копіювання авторського тексту запитань) */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
             <div>
               <label className="block text-slate-400 font-bold mb-1">
                 Орієнтація Maddocks (0–5)
@@ -553,6 +569,21 @@ export default function Scat6ConcussionAssessment({
                 className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white font-mono"
               />
               <span className="text-[10px] text-slate-500">За шкалою симптомів SCAT6</span>
+            </div>
+
+            <div>
+              <label className="block text-slate-400 font-bold mb-1">
+                Тяжкість симптомів (0–132)
+              </label>
+              <input
+                type="number"
+                min={0}
+                max={132}
+                value={symptomSeverity}
+                onChange={(e) => setSymptomSeverity(Number(e.target.value))}
+                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white font-mono"
+              />
+              <span className="text-[10px] text-slate-500">Сумарний бал тяжкості</span>
             </div>
 
             <div>

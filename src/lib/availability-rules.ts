@@ -169,6 +169,7 @@ export interface RawPlayerInput {
 export interface CalculationOptions {
   date?: string | Date;
   rtpLogsByInjury?: Record<string, Partial<RtpPhaseLog> | { phase: number; max_minutes?: number }>;
+  latestRtpByInjury?: Record<string, Partial<RtpPhaseLog> | { phase: number; max_minutes?: number }>;
   requireScreening?: boolean;
 }
 
@@ -177,7 +178,7 @@ export function calculatePlayerAvailability(
   options: CalculationOptions = {}
 ): PlayerAvailabilityItem {
   const targetDate = options.date ? new Date(options.date) : new Date();
-  const rtpLogs = options.rtpLogsByInjury || {};
+  const rtpLogs = options.rtpLogsByInjury || options.latestRtpByInjury || {};
 
   // Фільтруємо лише відкриті травми (active або rehabilitation)
   const openInjuries = (player.injuries || []).filter(

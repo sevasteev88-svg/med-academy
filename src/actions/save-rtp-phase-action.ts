@@ -41,7 +41,11 @@ export async function saveRtpPhaseAction({
     return { error: auth.error };
   }
 
-  const clubId = injury.club_id || auth.user.clubId || DEFAULT_CLUB_ID;
+  if (injury.club_id && injury.club_id !== auth.user.clubId) {
+    return { error: "Доступ заборонено: травма належить іншому клубу" };
+  }
+
+  const clubId = auth.user.clubId || injury.club_id || DEFAULT_CLUB_ID;
 
   const payload: RtpPhaseLog = {
     injury_id: injuryId,
@@ -90,7 +94,8 @@ export async function saveRtpPhaseAction({
   const { error: updateErr } = await supabase
     .from("injuries")
     .update(updates)
-    .eq("id", injuryId);
+    .eq("id", injuryId)
+    .eq("club_id", auth.user.clubId);
 
   if (updateErr && logErr) {
     return { error: `Помилка збереження RTP етапу: ${updateErr.message}` };

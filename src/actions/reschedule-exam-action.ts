@@ -17,7 +17,8 @@ export async function rescheduleExamAction(injuryId: string, nextExamDate: strin
   const { error } = await supabase
     .from("injuries")
     .update({ next_exam_date: nextExamDate })
-    .eq("id", injuryId);
+    .eq("id", injuryId)
+    .eq("club_id", auth.user.clubId);
 
   if (error) {
     return { error: error.message };

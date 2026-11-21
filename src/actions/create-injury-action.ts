@@ -2,7 +2,7 @@
 
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
-import { assertTeamStaff, isDoctor } from "@/lib/auth";
+import { assertTeamStaff, assertPlayerAccess, isDoctor } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import type {
   InjuryLocation,
@@ -38,17 +38,27 @@ type CreateInjuryInput = {
 };
 
 async function insertInjury(input: CreateInjuryInput) {
+  const auth = await assertTeamStaff();
+  if ("error" in auth) return { error: auth.error };
+
+  const playerAccess = await assertPlayerAccess(auth.user, input.playerId, { allowCoach: true });
+  if ("error" in playerAccess) return { error: playerAccess.error };
+
   const supabase = await createClient();
 
-  // Отримуємо команду гравця для перевірки прав тренера
-  const { data: player } = await supabase
-    .from("players")
-    .select("team_id")
-    .eq("id", input.playerId)
-    .single();
+  if (input.previousInjuryId) {
+    const { data: prevInjury } = await supabase
+      .from("injuries")
+      .select("id")
+      .eq("id", input.previousInjuryId)
+      .eq("player_id", input.playerId)
+      .eq("club_id", auth.user.clubId)
+      .maybeSingle();
 
-  const auth = await assertTeamStaff(player?.team_id || undefined);
-  if ("error" in auth) return { error: auth.error };
+    if (!prevInjury) {
+      return { error: "Попередню травму для зв'язку рецидиву не знайдено" };
+    }
+  }
 
   // Якщо створює тренер, фіксуємо це в описі або метаданих
   const isCoachAuthor = auth.user.role === "coach";

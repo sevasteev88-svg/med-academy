@@ -5,7 +5,12 @@ import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/utils/supabase/server";
 import { createAdminClient } from "@/utils/supabase/admin";
-import { assertDoctor, assertAdmin, DEFAULT_CLUB_ID } from "@/lib/auth";
+import {
+  assertDoctor,
+  assertAdmin,
+  assertPlayerAccess,
+  DEFAULT_CLUB_ID,
+} from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import {
   ALL_CONSENT_SCOPES,
@@ -40,36 +45,25 @@ async function insertFallbackLog(
   payloadObj: unknown
 ) {
   let targetInjuryId: string | null = null;
+  let clubId: string | null = null;
   if (playerId) {
-    const { data: inj } = await supabase
-      .from("injuries")
-      .select("id")
-      .eq("player_id", playerId)
-      .order("date_of_injury", { ascending: false })
-      .limit(1);
+    const [{ data: pl }, { data: inj }] = await Promise.all([
+      supabase.from("players").select("club_id").eq("id", playerId).maybeSingle(),
+      supabase
+        .from("injuries")
+        .select("id")
+        .eq("player_id", playerId)
+        .order("date_of_injury", { ascending: false })
+        .limit(1),
+    ]);
+    clubId = (pl as any)?.club_id || null;
     if (inj && inj.length > 0) {
       targetInjuryId = inj[0].id;
-    } else {
-      const { data: created } = await supabase
-        .from("injuries")
-        .insert({
-          player_id: playerId,
-          date_of_injury: new Date().toISOString().split("T")[0],
-          injury_type: "other",
-          location: "other",
-          severity: "minimal",
-          mechanism: "non_contact",
-          status: "closed",
-          description: "Системний облік згод та представників",
-          vas_score: 0,
-        } as any)
-        .select("id")
-        .maybeSingle();
-      if (created) targetInjuryId = created.id;
     }
   }
 
   await supabase.from("injury_logs").insert({
+    ...(clubId ? { club_id: clubId } : {}),
     injury_id: targetInjuryId,
     date: new Date().toISOString().split("T")[0],
     category: "note",
@@ -94,6 +88,12 @@ export async function saveGuardianAction(input: {
   const auth = await assertDoctor();
   if ("error" in auth) return { error: auth.error };
 
+  const access = await assertPlayerAccess(auth.user, input.playerId, {
+    allowCoach: false,
+  });
+  if ("error" in access) return { error: access.error };
+
+  const clubId = access.player.club_id || auth.user.clubId;
   const fullName = input.fullName.trim();
   const phone = input.phone.trim();
   if (!fullName || !phone) {
@@ -101,9 +101,25 @@ export async function saveGuardianAction(input: {
   }
 
   const admin = createAdminClient();
+  if (input.id) {
+    const { data: existing } = await admin
+      .from("guardians")
+      .select("id, player_id, club_id")
+      .eq("id", input.id)
+      .maybeSingle();
+
+    if (
+      existing &&
+      (existing.player_id !== input.playerId ||
+        (existing.club_id && existing.club_id !== clubId))
+    ) {
+      return { error: "Законний представник не належить цьому гравцю або клубу." };
+    }
+  }
+
   const guardianRecord: Guardian = {
     id: input.id || crypto.randomUUID(),
-    club_id: auth.user.clubId || DEFAULT_CLUB_ID,
+    club_id: clubId,
     player_id: input.playerId,
     full_name: fullName,
     relation: input.relation || "mother",
@@ -131,11 +147,19 @@ export async function deleteGuardianAction(input: {
   const auth = await assertDoctor();
   if ("error" in auth) return { error: auth.error };
 
+  const access = await assertPlayerAccess(auth.user, input.playerId, {
+    allowCoach: false,
+  });
+  if ("error" in access) return { error: access.error };
+
+  const clubId = access.player.club_id || auth.user.clubId;
   const admin = createAdminClient();
   const { error } = await admin
     .from("guardians")
     .delete()
-    .eq("id", input.guardianId);
+    .eq("id", input.guardianId)
+    .eq("player_id", input.playerId)
+    .eq("club_id", clubId);
 
   if (error) {
     await insertFallbackLog(admin, input.playerId, "[GUARDIAN]", {
@@ -161,6 +185,11 @@ export async function togglePlayerAssentAction(input: {
   const auth = await assertDoctor();
   if ("error" in auth) return { error: auth.error };
 
+  const access = await assertPlayerAccess(auth.user, input.playerId, {
+    allowCoach: false,
+  });
+  if ("error" in access) return { error: access.error };
+
   const admin = createAdminClient();
   const nowIso = input.acknowledged ? new Date().toISOString() : null;
 
@@ -170,7 +199,8 @@ export async function togglePlayerAssentAction(input: {
       assent_acknowledged: input.acknowledged,
       assent_acknowledged_at: nowIso,
     } as any)
-    .eq("id", input.playerId);
+    .eq("id", input.playerId)
+    .eq("club_id", access.player.club_id || auth.user.clubId);
 
   if (error) {
     // Зберігаємо також в останній запис згоди або системний лог
@@ -201,20 +231,28 @@ export async function sendConsentRequestAction(input: {
   const auth = await assertDoctor();
   if ("error" in auth) return { error: auth.error };
 
+  const access = await assertPlayerAccess(auth.user, input.playerId, {
+    allowCoach: false,
+  });
+  if ("error" in access) return { error: access.error };
+
+  const clubId = access.player.club_id || auth.user.clubId;
   const supabase = await createClient();
   const admin = createAdminClient();
 
   let { data: player } = await supabase
     .from("players")
-    .select("id, first_name, last_name, date_of_birth")
+    .select("id, club_id, first_name, last_name, date_of_birth")
     .eq("id", input.playerId)
+    .eq("club_id", clubId)
     .maybeSingle();
 
   if (!player) {
     const { data: adminPlayer } = await admin
       .from("players")
-      .select("id, first_name, last_name, date_of_birth")
+      .select("id, club_id, first_name, last_name, date_of_birth")
       .eq("id", input.playerId)
+      .eq("club_id", clubId)
       .maybeSingle();
     player = adminPlayer;
   }
@@ -223,7 +261,6 @@ export async function sendConsentRequestAction(input: {
     return { error: "Гравця не знайдено." };
   }
 
-  const clubId = (player as any).club_id || auth.user.clubId || DEFAULT_CLUB_ID;
   const age = calculatePlayerAge(player.date_of_birth);
   const isAdultSelf = age >= 18 && !input.guardianId;
 
@@ -386,10 +423,15 @@ export async function sendBulkConsentRequestsAction(input: {
     error?: string;
   }> = [];
 
+  if (!input.playerIds || input.playerIds.length === 0) {
+    return { success: true, sentCount: 0, failedCount: 0, results: [] };
+  }
+
   const admin = createAdminClient();
   const { data: players } = await admin
     .from("players")
     .select("id, first_name, last_name, date_of_birth")
+    .eq("club_id", auth.user.clubId)
     .in("id", input.playerIds);
 
   for (const p of players || []) {
@@ -936,12 +978,13 @@ export async function revokeConsentWithOtpAction(input: {
           retention_status: retentionStatus,
           evidence: updatedEvidence,
         } as any)
-        .eq("id", activeRec.id);
+        .eq("id", activeRec.id)
+        .eq("club_id", clubId);
 
       if (updErr) {
         await insertFallbackLog(admin, request.player_id, "[CONSENT_RECORD]", {
           ...activeRec,
-           id: crypto.randomUUID(),
+          id: activeRec.id,
           revoked_at: nowIso,
           retention_status: retentionStatus,
           evidence: updatedEvidence,
@@ -993,8 +1036,13 @@ export async function revokeConsentByStaffAction(input: {
   const auth = await assertDoctor();
   if ("error" in auth) return { error: auth.error };
 
+  const access = await assertPlayerAccess(auth.user, input.playerId, {
+    allowCoach: false,
+  });
+  if ("error" in access) return { error: access.error };
+
   const admin = createAdminClient();
-  const clubId = auth.user.clubId || DEFAULT_CLUB_ID;
+  const clubId = access.player.club_id || auth.user.clubId;
   const clubSettings = await getClubMessagingSettings(clubId);
   const revocationPolicy =
     clubSettings.consent_revocation_policy || "anonymize";
@@ -1026,12 +1074,13 @@ export async function revokeConsentByStaffAction(input: {
       retention_status: retentionStatus,
       evidence: updatedEvidence,
     } as any)
-    .eq("id", activeRec.id);
+    .eq("id", activeRec.id)
+    .eq("club_id", clubId);
 
   if (updErr) {
     await insertFallbackLog(admin, input.playerId, "[CONSENT_RECORD]", {
       ...activeRec,
-      id: crypto.randomUUID(),
+      id: activeRec.id,
       revoked_at: nowIso,
       retention_status: retentionStatus,
       evidence: updatedEvidence,
@@ -1075,6 +1124,11 @@ export async function confirmPaperConsentAction(input: {
   const auth = await assertDoctor();
   if ("error" in auth) return { error: auth.error };
 
+  const access = await assertPlayerAccess(auth.user, input.playerId, {
+    allowCoach: false,
+  });
+  if ("error" in access) return { error: access.error };
+
   if (input.signedScopes.length === 0) {
     return { error: "Відмітьте хоча б одну підписану область згоди." };
   }
@@ -1085,8 +1139,15 @@ export async function confirmPaperConsentAction(input: {
     return { error: "Завантажте скан-копію або фото підписаної паперової форми." };
   }
 
+  if (input.guardianId) {
+    const guardians = await fetchPlayerGuardians(input.playerId);
+    if (!guardians.some((g) => g.id === input.guardianId)) {
+      return { error: "Законний представник не належить цьому гравцю." };
+    }
+  }
+
   const admin = createAdminClient();
-  const clubId = auth.user.clubId || DEFAULT_CLUB_ID;
+  const clubId = access.player.club_id || auth.user.clubId;
   const nowIso = new Date().toISOString();
   const safeName = input.scanFileName.replace(/[^a-zA-Z0-9._-]/g, "_");
   const scanPath = `club_${clubId}/player_${input.playerId}/${Date.now()}_${safeName}`;
@@ -1168,7 +1229,8 @@ export async function confirmPaperConsentAction(input: {
         assent_acknowledged: true,
         assent_acknowledged_at: nowIso,
       } as any)
-      .eq("id", input.playerId);
+      .eq("id", input.playerId)
+      .eq("club_id", clubId);
   }
 
   await logAudit({

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
+import { assertTeamStaff } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { hasConsent } from "@/lib/consents";
 import { callAI, createAnonymizer, AI_DISCLAIMER } from "@/lib/ai";
@@ -12,19 +13,18 @@ import { callAI, createAnonymizer, AI_DISCLAIMER } from "@/lib/ai";
  * Claude аналізує → регідрує прізвища для лікаря → додає дисклеймер (п. 1.5.5).
  */
 export async function POST(request: NextRequest) {
-  // Перевірка авторизації
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: "Не авторизовано" }, { status: 401 });
+  // Перевірка авторизації та ролі штабу
+  const auth = await assertTeamStaff();
+  if ("error" in auth) {
+    return NextResponse.json({ error: auth.error }, { status: 403 });
   }
+  const { user } = auth;
+  const supabase = await createClient();
 
   try {
     const data = await request.json();
 
-    // 1. Збір ID гравців для перевірки згоди ai_processing (п. 1.5.3)
+    // 1. Збір ID гравців для перевірки належності клубу та згоди ai_processing (п. 1.5.3)
     const allPlayerIds = new Set<string>();
     const extractId = (item: any) => item?.players?.id || item?.playerId || item?.player_id;
 
@@ -45,9 +45,19 @@ export async function POST(request: NextRequest) {
       if (id) allPlayerIds.add(id);
     });
 
+    const validClubPlayerIds = new Set<string>();
+    if (allPlayerIds.size > 0) {
+      const { data: clubPlayers } = await supabase
+        .from("players")
+        .select("id")
+        .eq("club_id", user.clubId)
+        .in("id", Array.from(allPlayerIds));
+      (clubPlayers || []).forEach((p: any) => validClubPlayerIds.add(p.id));
+    }
+
     const consentMap = new Map<string, boolean>();
     await Promise.all(
-      Array.from(allPlayerIds).map(async (pId) => {
+      Array.from(validClubPlayerIds).map(async (pId) => {
         const allowed = await hasConsent(pId, "ai_processing");
         consentMap.set(pId, allowed);
       })
@@ -55,6 +65,7 @@ export async function POST(request: NextRequest) {
 
     const isAllowed = (item: any) => {
       const id = extractId(item);
+      if (id && !validClubPlayerIds.has(id)) return false;
       return !id || consentMap.get(id) !== false;
     };
 
@@ -120,6 +131,7 @@ export async function POST(request: NextRequest) {
         endpoint: "/api/ai/weekly-report",
       },
       userId: user.id,
+      clubId: user.clubId,
     });
 
     return NextResponse.json({

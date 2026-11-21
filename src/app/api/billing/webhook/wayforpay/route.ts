@@ -1,15 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
-import crypto from "crypto";
 import { createAdminClient } from "@/utils/supabase/admin";
-import { calculateNextPeriodEnd, calculateGracePeriodEnd } from "@/lib/billing";
+import {
+  calculateNextPeriodEnd,
+  calculateGracePeriodEnd,
+  generateWayForPaySignature,
+  verifyWayForPayWebhookSignature,
+} from "@/lib/billing";
 import type { PaymentStatus, SubscriptionStatus } from "@/types/billing";
-
-function getMerchantSecret(): string {
-  return process.env.WAYFORPAY_SECRET_KEY || "flk3409refn54t54t*FNJret";
-}
 
 export async function POST(request: NextRequest) {
   try {
+    const merchantSecret = process.env.WAYFORPAY_SECRET_KEY;
+    if (!merchantSecret) {
+      return NextResponse.json(
+        { error: "Payment gateway secret is not configured" },
+        { status: 500 }
+      );
+    }
+
     const rawBody = await request.text();
     let body: any;
     try {
@@ -20,8 +28,16 @@ export async function POST(request: NextRequest) {
       body = Object.fromEntries(formData.entries());
     }
 
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ error: "Invalid request payload" }, { status: 400 });
+    }
+
+    // 0. Обов'язкова перевірка HMAC-MD5 підпису WayForPay ДО будь-яких операцій з БД
+    if (!verifyWayForPayWebhookSignature(body, merchantSecret)) {
+      return NextResponse.json({ error: "Invalid merchantSignature" }, { status: 403 });
+    }
+
     const {
-      merchantAccount,
       orderReference,
       amount,
       currency,
@@ -51,11 +67,10 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
 
     const responseTime = Math.floor(Date.now() / 1000);
-    const signFields = [orderReference, "accept", responseTime.toString()];
-    const responseSignature = crypto
-      .createHmac("md5", getMerchantSecret())
-      .update(signFields.join(";"), "utf8")
-      .digest("hex");
+    const responseSignature = generateWayForPaySignature(
+      [String(orderReference), "accept", responseTime.toString()],
+      merchantSecret
+    );
 
     if (existingHook) {
       // Вже оброблено — повертаємо підтвердження без повторних змін
@@ -67,18 +82,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 2. Фіксація вебхука в журналі payment_webhooks
-    await supabase.from("payment_webhooks").insert({
-      provider: "wayforpay",
-      event_type: transactionStatus || "unknown",
-      order_reference: orderReference,
-      signature: merchantSignature || "no-sig",
-      payload: body,
-      is_success: transactionStatus === "Approved",
-      error_message: transactionStatus === "Approved" ? null : reason || "Declined",
-    });
-
-    // 3. Знаходимо відповідну транзакцію в базі
+    // 2. Знаходимо відповідну транзакцію в базі та перевіряємо суму/валюту при успішній оплаті
     const { data: tx } = await supabase
       .from("payment_transactions")
       .select("id, player_id, club_id, amount_uah")
@@ -86,6 +90,39 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
 
     const isSuccess = transactionStatus === "Approved";
+    if (tx && isSuccess) {
+      const paidAmount = Number(amount);
+      const expectedAmount = Number(tx.amount_uah);
+      const normalizedCurrency = String(currency || "").toUpperCase();
+      if (
+        !Number.isFinite(paidAmount) ||
+        Math.abs(paidAmount - expectedAmount) >= 0.01 ||
+        normalizedCurrency !== "UAH"
+      ) {
+        console.warn("WayForPay amount/currency mismatch:", {
+          orderReference,
+          paidAmount,
+          expectedAmount,
+          normalizedCurrency,
+        });
+        return NextResponse.json(
+          { error: "Amount or currency mismatch" },
+          { status: 400 }
+        );
+      }
+    }
+
+    // 3. Фіксація вебхука в журналі payment_webhooks
+    await supabase.from("payment_webhooks").insert({
+      provider: "wayforpay",
+      event_type: transactionStatus || "unknown",
+      order_reference: orderReference,
+      signature: merchantSignature || "no-sig",
+      payload: body,
+      is_success: isSuccess,
+      error_message: isSuccess ? null : reason || "Declined",
+    });
+
     const paymentStatus: PaymentStatus = isSuccess ? "success" : "failed";
 
     if (tx) {

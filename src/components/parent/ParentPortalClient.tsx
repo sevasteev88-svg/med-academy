@@ -538,6 +538,7 @@ export default function ParentPortalClient({ rawToken, initialData }: Props) {
 
             <SubscriptionPaywall
               playerId={data.player.id}
+              parentToken={rawToken}
               playerName={`${data.player.lastName} ${data.player.firstName}`}
               teamName={data.player.teamName}
               subscription={{
@@ -1784,6 +1785,50 @@ export default function ParentPortalClient({ rawToken, initialData }: Props) {
         {/* ВКЛАДКА 3: ЛІКАР І ДОВІДКИ */}
         {activeTab === "message" && (
           <div className="space-y-4">
+            {/* Прямий зв'язок з лікарем клубу */}
+            {(data.doctorContact?.telegramUrl || data.doctorContact?.phone) && (
+              <section className="rounded-2xl bg-gradient-to-br from-sky-950/80 via-slate-900 to-slate-900 border border-sky-500/40 p-5 space-y-3 shadow-lg">
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div>
+                    <h2 className="text-sm font-black text-white flex items-center gap-1.5">
+                      <span>👨‍⚕️</span> Прямий зв&apos;язок з лікарем клубу
+                    </h2>
+                    {data.doctorContact?.name && (
+                      <div className="text-xs font-semibold text-sky-300 mt-0.5">
+                        {data.doctorContact.name}
+                      </div>
+                    )}
+                    <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                      Для термінових запитань про травму чи самопочуття ви можете написати лікарю напряму в Telegram або зателефонувати. Форма нижче також зберігає звернення в медкарту і дублює його в мед-чат клубу.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2.5">
+                  {data.doctorContact?.telegramUrl && (
+                    <a
+                      href={data.doctorContact.telegramUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs sm:text-sm font-bold transition shadow-md shadow-sky-950/40"
+                    >
+                      <span>💬</span>
+                      <span>Написати лікарю в Telegram</span>
+                    </a>
+                  )}
+                  {data.doctorContact?.phone && (
+                    <a
+                      href={`tel:${data.doctorContact.phone.replace(/[\s()-]/g, "")}`}
+                      className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 text-xs sm:text-sm font-bold transition"
+                    >
+                      <span>📞</span>
+                      <span>Зателефонувати ({data.doctorContact.phone})</span>
+                    </a>
+                  )}
+                </div>
+              </section>
+            )}
+
             {/* Завантаження довідки від педіатра / аналізів */}
             <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-3">
               <div>
@@ -1997,6 +2042,7 @@ export default function ParentPortalClient({ rawToken, initialData }: Props) {
                 <div className="pt-2">
                   <SubscriptionPaywall
                     playerId={data.player.id}
+                    parentToken={rawToken}
                     playerName={`${data.player.lastName} ${data.player.firstName}`}
                     teamName={data.player.teamName}
                     subscription={{

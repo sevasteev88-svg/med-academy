@@ -2,7 +2,7 @@
 
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
-import { assertDoctor } from "@/lib/auth";
+import { assertDoctor, assertPlayerAccess } from "@/lib/auth";
 import { hasConsent } from "@/lib/consents";
 import type { NutritionProfile } from "@/types/nutrition";
 
@@ -11,6 +11,9 @@ export async function saveNutritionAction(
 ) {
   const auth = await assertDoctor();
   if ("error" in auth) return { error: auth.error };
+
+  const playerAccess = await assertPlayerAccess(auth.user, input.player_id, { allowCoach: false });
+  if ("error" in playerAccess) return { error: playerAccess.error };
 
   const hasAnySupplements =
     input.supplements_creatine ||

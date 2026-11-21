@@ -1,7 +1,11 @@
 "use server";
 
 import { createAdminClient } from "@/utils/supabase/admin";
-import { getCurrentUser, DEFAULT_CLUB_ID } from "@/lib/auth";
+import {
+  assertTeamStaff,
+  assertPlayerAccess,
+  isCoach,
+} from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import {
   calculateDaysLeft,
@@ -37,11 +41,19 @@ export async function sendParentPassportReminderAction(params: {
   simulate?: boolean;
 }): Promise<SendReminderResult> {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return { success: false, isSimulated: false, error: "Не авторизовано" };
+    const auth = await assertTeamStaff();
+    if ("error" in auth) {
+      return { success: false, isSimulated: false, error: auth.error };
     }
 
+    const access = await assertPlayerAccess(auth.user, params.playerId, {
+      allowCoach: true,
+    });
+    if ("error" in access) {
+      return { success: false, isSimulated: false, error: access.error };
+    }
+
+    const clubId = access.player.club_id || auth.user.clubId;
     const supabase = createAdminClient();
 
     // 1. Отримуємо дані гравця
@@ -49,6 +61,7 @@ export async function sendParentPassportReminderAction(params: {
       .from("players")
       .select("id, first_name, last_name, club_id, team_id")
       .eq("id", params.playerId)
+      .eq("club_id", clubId)
       .maybeSingle();
 
     if (pErr || !player) {
@@ -59,7 +72,7 @@ export async function sendParentPassportReminderAction(params: {
     const { data: club } = await supabase
       .from("clubs")
       .select("id, name, settings")
-      .eq("id", player.club_id)
+      .eq("id", clubId)
       .maybeSingle();
 
     const clubName = club?.name || "ФК «Академія»";
@@ -69,6 +82,7 @@ export async function sendParentPassportReminderAction(params: {
       .from("player_subscriptions")
       .select("*")
       .eq("player_id", player.id)
+      .eq("club_id", clubId)
       .maybeSingle();
 
     const now = new Date();
@@ -167,6 +181,7 @@ export async function sendParentPassportReminderAction(params: {
             parse_mode: "HTML",
             disable_web_page_preview: false,
           }),
+          signal: AbortSignal.timeout(15000),
         });
 
         const tgData = await resp.json();
@@ -235,8 +250,10 @@ export async function sendBulkParentPassportRemindersAction(params?: {
   simulate?: boolean;
 }): Promise<BulkReminderResult> {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
+    const scopedTeamId =
+      params?.teamId && params.teamId !== "all" ? params.teamId : undefined;
+    const auth = await assertTeamStaff(scopedTeamId);
+    if ("error" in auth) {
       return {
         success: false,
         totalTargeted: 0,
@@ -244,21 +261,49 @@ export async function sendBulkParentPassportRemindersAction(params?: {
         simulatedCount: 0,
         failedCount: 0,
         results: [],
-        error: "Не авторизовано",
+        error: auth.error,
       };
     }
 
+    const { user } = auth;
     const supabase = createAdminClient();
-    const clubId = user.clubId || DEFAULT_CLUB_ID;
+    const clubId = user.clubId;
 
-    // Отримуємо всіх гравців клубу / команди
-    let query = supabase.from("players").select("id").eq("club_id", clubId).is("archived_at", null);
-    if (params?.teamId && params.teamId !== "all") {
-      query = query.eq("team_id", params.teamId);
+    // 1. Отримуємо клуб та активних гравців команди/клубу паралельно
+    let playersQuery = supabase
+      .from("players")
+      .select("id, first_name, last_name, team_id")
+      .eq("club_id", clubId)
+      .is("archived_at", null);
+
+    if (scopedTeamId) {
+      playersQuery = playersQuery.eq("team_id", scopedTeamId);
+    } else if (isCoach(user.role)) {
+      const coachTeamIds = user.teamIds ?? [];
+      if (coachTeamIds.length === 0) {
+        return {
+          success: true,
+          totalTargeted: 0,
+          sentCount: 0,
+          simulatedCount: 0,
+          failedCount: 0,
+          results: [],
+        };
+      }
+      playersQuery = playersQuery.in("team_id", coachTeamIds);
     }
 
-    const { data: players } = await query;
-    if (!players || players.length === 0) {
+    const [clubRes, playersRes] = await Promise.all([
+      supabase
+        .from("clubs")
+        .select("id, name, settings")
+        .eq("id", clubId)
+        .maybeSingle(),
+      playersQuery,
+    ]);
+
+    const players = playersRes.data || [];
+    if (players.length === 0) {
       return {
         success: true,
         totalTargeted: 0,
@@ -269,17 +314,31 @@ export async function sendBulkParentPassportRemindersAction(params?: {
       };
     }
 
-    // Отримуємо підписки
+    const club = clubRes.data;
+    const clubName = club?.name || "ФК «Академія»";
+    const paymentUrl =
+      (club?.settings as any)?.monobank_jar_url ||
+      process.env.NEXT_PUBLIC_MONOBANK_JAR_URL ||
+      DEFAULT_MONOBANK_JAR_URL;
+
+    // 2. Отримуємо підписки всіх гравців клубу/команди одним запитом
     const playerIds = players.map((p) => p.id);
     const { data: subs } = await supabase
       .from("player_subscriptions")
-      .select("player_id, status, current_period_end")
+      .select("*")
+      .eq("club_id", clubId)
       .in("player_id", playerIds);
 
     const subMap = new Map((subs || []).map((s) => [s.player_id, s]));
 
-    // Відбираємо гравців, яким потрібне нагадування
-    const targetPlayerIds: string[] = [];
+    // 3. Відбираємо гравців, яким потрібне нагадування
+    const targets: Array<{
+      player: (typeof players)[number];
+      sub: any;
+      daysLeft: number;
+      currentPeriodEnd: string;
+      urgency: ReturnType<typeof classifyPassportExpirationStatus>["urgency"];
+    }> = [];
     const now = new Date();
 
     for (const p of players) {
@@ -292,34 +351,190 @@ export async function sendBulkParentPassportRemindersAction(params?: {
       const classification = classifyPassportExpirationStatus(daysLeft, status);
 
       if (classification.shouldRemind) {
-        targetPlayerIds.push(p.id);
+        targets.push({
+          player: p,
+          sub: s,
+          daysLeft,
+          currentPeriodEnd: end,
+          urgency: classification.urgency,
+        });
       }
     }
+
+    if (targets.length === 0) {
+      return {
+        success: true,
+        totalTargeted: 0,
+        sentCount: 0,
+        simulatedCount: 0,
+        failedCount: 0,
+        results: [],
+      };
+    }
+
+    // 4. Пакетно завантажуємо батьків (guardians) та Telegram-прив'язки для цільових гравців
+    const targetPlayerIds = targets.map((t) => t.player.id);
+    const [guardiansRes, bindingsRes] = await Promise.all([
+      supabase
+        .from("guardians")
+        .select("*")
+        .in("player_id", targetPlayerIds)
+        .order("is_primary", { ascending: false }),
+      supabase
+        .from("player_telegram_bindings")
+        .select("player_id, telegram_chat_id")
+        .in("player_id", targetPlayerIds)
+        .eq("status", "active"),
+    ]);
+
+    const guardianByPlayer = new Map<string, any>();
+    for (const g of guardiansRes.data || []) {
+      if (g.player_id && !guardianByPlayer.has(g.player_id)) {
+        guardianByPlayer.set(g.player_id, g);
+      }
+    }
+
+    const tgChatByPlayer = new Map<string, string>();
+    for (const b of bindingsRes.data || []) {
+      if (b.player_id && b.telegram_chat_id && !tgChatByPlayer.has(b.player_id)) {
+        tgChatByPlayer.set(b.player_id, b.telegram_chat_id);
+      }
+    }
+
+    const isExplicitSimulate = params?.simulate === true;
+    const botToken = process.env.TELEGRAM_BOT_TOKEN;
 
     let sentCount = 0;
     let simulatedCount = 0;
     let failedCount = 0;
     const results: ParentReminderRecord[] = [];
 
-    for (const pid of targetPlayerIds) {
-      const res = await sendParentPassportReminderAction({
-        playerId: pid,
-        simulate: params?.simulate,
-      });
+    // 5. Відправляємо або симулюємо нагадування чанками по 5 паралельно
+    const CHUNK_SIZE = 5;
+    for (let i = 0; i < targets.length; i += CHUNK_SIZE) {
+      const chunk = targets.slice(i, i + CHUNK_SIZE);
+      const chunkSettled = await Promise.allSettled(
+        chunk.map(async (target) => {
+          const { player, sub, daysLeft, currentPeriodEnd, urgency } = target;
+          const primaryGuardian = guardianByPlayer.get(player.id) || null;
+          const parentName =
+            primaryGuardian?.full_name ||
+            sub?.payer_name ||
+            `Батьки ${player.last_name} ${player.first_name}`;
+          const parentPhone = primaryGuardian?.phone || sub?.payer_phone || null;
+          const telegramChatId =
+            primaryGuardian?.telegram_chat_id || tgChatByPlayer.get(player.id) || null;
 
-      if (res.record) {
-        results.push(res.record);
-        if (res.record.status === "sent") sentCount++;
-        else if (res.record.status === "simulated") simulatedCount++;
-        else failedCount++;
-      } else {
-        failedCount++;
+          const playerName = `${player.last_name} ${player.first_name}`;
+          const expiryDateStr = currentPeriodEnd ? currentPeriodEnd.split("T")[0] : null;
+          const messageText = buildPassportReminderTelegramMessage({
+            parentName,
+            playerName,
+            clubName,
+            daysLeft,
+            expiryDateStr,
+            paymentUrl,
+            planAmountUah: sub ? Number(sub.amount_uah) : 200,
+          });
+
+          const isStubMode =
+            isExplicitSimulate ||
+            !botToken ||
+            process.env.NODE_ENV !== "production" ||
+            !telegramChatId;
+
+          const reminderId = `rem_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+          const sentAt = new Date().toISOString();
+
+          const record: ParentReminderRecord = {
+            id: reminderId,
+            playerId: player.id,
+            playerName,
+            parentName,
+            parentPhone,
+            telegramChatId: telegramChatId || `sim_chat_${player.id.slice(-6)}`,
+            status: isStubMode ? "simulated" : "sent",
+            urgency,
+            daysLeft,
+            messageText,
+            paymentUrl,
+            sentAt,
+          };
+
+          if (!isStubMode && telegramChatId && botToken) {
+            try {
+              const resp = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  chat_id: telegramChatId,
+                  text: messageText,
+                  parse_mode: "HTML",
+                  disable_web_page_preview: false,
+                }),
+                signal: AbortSignal.timeout(15000),
+              });
+              const tgData = await resp.json();
+              if (!tgData.ok) {
+                record.status = "failed";
+                record.errorMessage = tgData.description || "Помилка Telegram API";
+              }
+            } catch (tgErr: any) {
+              record.status = "failed";
+              record.errorMessage = tgErr?.message || "Помилка зв'язку з Telegram";
+            }
+          }
+
+          memoryParentPassportReminders.set(reminderId, record);
+
+          if (sub) {
+            const currentMeta = (sub.metadata || {}) as Record<string, any>;
+            const pastReminders = Array.isArray(currentMeta.reminders) ? currentMeta.reminders : [];
+            await supabase
+              .from("player_subscriptions")
+              .update({
+                metadata: {
+                  ...currentMeta,
+                  last_reminder_at: sentAt,
+                  reminders_count: pastReminders.length + 1,
+                  reminders: [
+                    ...pastReminders,
+                    {
+                      id: reminderId,
+                      sent_at: sentAt,
+                      status: record.status,
+                      days_left: daysLeft,
+                      urgency,
+                    },
+                  ],
+                },
+                updated_at: sentAt,
+              })
+              .eq("id", sub.id);
+          }
+
+          return record;
+        })
+      );
+
+      for (const settled of chunkSettled) {
+        if (settled.status === "fulfilled") {
+          const rec = settled.value;
+          results.push(rec);
+          if (rec.status === "sent") sentCount++;
+          else if (rec.status === "simulated") simulatedCount++;
+          else failedCount++;
+        } else {
+          failedCount++;
+        }
       }
     }
 
+    revalidatePath("/team/subscriptions");
+
     return {
       success: true,
-      totalTargeted: targetPlayerIds.length,
+      totalTargeted: targets.length,
       sentCount,
       simulatedCount,
       failedCount,

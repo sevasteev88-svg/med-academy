@@ -1,7 +1,7 @@
 "use server";
 
 import { createClient } from "@/utils/supabase/server";
-import { assertDoctor } from "@/lib/auth";
+import { assertDoctor, assertPlayerAccess, assertTeamAccess } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import {
   validateEhrExportConsent,
@@ -355,10 +355,22 @@ export async function commitEhrImportAction(params: {
 
   let playerId = params.targetPlayerId;
 
+  if (!params.createNewPlayer && playerId) {
+    const playerAccess = await assertPlayerAccess(user, playerId, { allowCoach: false });
+    if ("error" in playerAccess) {
+      return { success: false, error: playerAccess.error };
+    }
+  }
+
   // 1. Створення нового гравця, якщо обрано відповідний режим
   if (params.createNewPlayer || !playerId) {
     let teamId = params.targetTeamId;
-    if (!teamId) {
+    if (teamId) {
+      const teamAccess = await assertTeamAccess(user, teamId, { allowCoach: false });
+      if ("error" in teamAccess) {
+        return { success: false, error: teamAccess.error };
+      }
+    } else {
       const { data: defaultTeam } = await supabase
         .from("teams")
         .select("id")

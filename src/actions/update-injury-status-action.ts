@@ -14,13 +14,21 @@ export async function updateInjuryStatusAction(
   // Отримуємо травму та гравця для перевірки доступу тренера
   const { data: injury } = await supabase
     .from("injuries")
-    .select("id, player_id, players(team_id)")
+    .select("id, club_id, player_id, players(team_id)")
     .eq("id", injuryId)
-    .single();
+    .maybeSingle();
+
+  if (!injury) {
+    return { error: "Травму не знайдено" };
+  }
 
   const playerTeamId = (injury?.players as any)?.team_id || undefined;
   const auth = await assertTeamStaff(playerTeamId);
   if ("error" in auth) return { error: auth.error };
+
+  if (injury.club_id && injury.club_id !== auth.user.clubId) {
+    return { error: "Доступ заборонено: травма належить іншому клубу" };
+  }
 
   const update: Record<string, any> = { status: newStatus };
 
@@ -35,7 +43,8 @@ export async function updateInjuryStatusAction(
   const { error } = await supabase
     .from("injuries")
     .update(update)
-    .eq("id", injuryId);
+    .eq("id", injuryId)
+    .eq("club_id", auth.user.clubId);
 
   if (error) return { error: error.message };
 

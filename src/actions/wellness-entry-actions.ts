@@ -3,17 +3,28 @@
 import { createClient } from "@/utils/supabase/server";
 import { createAdminClient } from "@/utils/supabase/admin";
 import { revalidatePath } from "next/cache";
-import { assertAuth, isCoach, DEFAULT_CLUB_ID } from "@/lib/auth";
+import {
+  assertAuth,
+  assertTeamStaff,
+  assertPlayerOrStaffAccess,
+  isCoach,
+  DEFAULT_CLUB_ID,
+} from "@/lib/auth";
 import { getPlayerConsentSummary } from "@/lib/consents";
 import { getClubDate, getPlayerClubTimezone } from "@/lib/club-timezone";
-import type {
-  WellnessEntry,
-  WellnessEntrySource,
-  WellnessScore,
-  CoachWellnessEntry,
+import {
+  PAIN_LOCATIONS_LIST,
+  type WellnessEntry,
+  type WellnessEntrySource,
+  type WellnessScore,
+  type CoachWellnessEntry,
 } from "@/types/wellness";
 import { logAudit } from "@/lib/audit";
 import { submitPlayerSelfRpeAction } from "./training-session-actions";
+import {
+  escapeTelegramHtml,
+  sendClubMedicalChatAlert,
+} from "@/lib/medical-telegram";
 
 export interface SubmitWellnessEntryInput {
   playerId: string;
@@ -51,6 +62,11 @@ export async function checkPlayerWellnessAccessAction(playerId: string): Promise
     return { canFill: false, reason: "Не вказано гравця", isMinor: false, age: 18 };
   }
 
+  const authCheck = await assertPlayerOrStaffAccess(playerId, { allowCoach: true });
+  if ("error" in authCheck) {
+    return { canFill: false, reason: authCheck.error, isMinor: false, age: 18 };
+  }
+
   const summary = await getPlayerConsentSummary(playerId);
 
   if (summary.isMinor) {
@@ -72,6 +88,37 @@ export async function checkPlayerWellnessAccessAction(playerId: string): Promise
   };
 }
 
+function mapWellnessSurveyRow(s: any, clubId: string): WellnessEntry {
+  let extra: any = {};
+  if (s.notes && typeof s.notes === "string" && s.notes.startsWith("{")) {
+    try { extra = JSON.parse(s.notes); } catch {}
+  }
+  return {
+    id: s.id,
+    club_id: s.club_id || clubId,
+    player_id: s.player_id,
+    date: s.date,
+    sleep_quality: s.sleep_quality,
+    fatigue: s.fatigue_level,
+    soreness: s.muscle_soreness,
+    stress: s.stress_level,
+    sleep_hours: extra.sleep_hours ?? null,
+    pain: Boolean(extra.pain),
+    pain_vas: extra.pain_vas ?? null,
+    pain_locations: extra.pain_locations || (s.soreness_location ? [s.soreness_location] : []),
+    pain_symptoms: extra.pain_symptoms || extra.painSymptoms || [],
+    pain_comment: extra.pain_comment || extra.painComment || null,
+    illness: Boolean(extra.illness),
+    body_temperature: extra.body_temperature ?? extra.temperature ?? null,
+    illness_symptoms: extra.illness_symptoms || extra.illnessSymptoms || [],
+    illness_comment: extra.illness_comment || extra.illnessComment || null,
+    comment: extra.comment || (s.notes?.startsWith("{") ? null : s.notes),
+    submitted_at: s.created_at,
+    source: extra.source || "player",
+    doctor_recommendation: extra.doctor_recommendation || extra.doctorRecommendation || null,
+  };
+}
+
 /**
  * Отримує сьогоднішній запис анкети для гравця (якщо вже заповнено).
  */
@@ -80,6 +127,11 @@ export async function getTodayWellnessEntryForPlayerAction(playerId: string): Pr
   today: string;
   timezone: string;
 }> {
+  const authCheck = await assertPlayerOrStaffAccess(playerId, { allowCoach: true });
+  if ("error" in authCheck) {
+    return { entry: null, today: "", timezone: "Europe/Kyiv" };
+  }
+
   const { clubId, timezone } = await getPlayerClubTimezone(playerId);
   const today = getClubDate(timezone);
   const supabase = createAdminClient();
@@ -108,34 +160,7 @@ export async function getTodayWellnessEntryForPlayerAction(playerId: string): Pr
       .maybeSingle();
 
     if (s) {
-      let extra: any = {};
-      if (s.notes && typeof s.notes === "string" && s.notes.startsWith("{")) {
-        try { extra = JSON.parse(s.notes); } catch {}
-      }
-      const entry: WellnessEntry = {
-        id: s.id,
-        club_id: s.club_id || clubId,
-        player_id: s.player_id,
-        date: s.date,
-        sleep_quality: s.sleep_quality,
-        fatigue: s.fatigue_level,
-        soreness: s.muscle_soreness,
-        stress: s.stress_level,
-        sleep_hours: extra.sleep_hours ?? null,
-        pain: Boolean(extra.pain),
-        pain_vas: extra.pain_vas ?? null,
-        pain_locations: extra.pain_locations || (s.soreness_location ? [s.soreness_location] : []),
-        pain_symptoms: extra.pain_symptoms || extra.painSymptoms || [],
-        pain_comment: extra.pain_comment || extra.painComment || null,
-        illness: Boolean(extra.illness),
-        body_temperature: extra.body_temperature || extra.temperature || null,
-        illness_symptoms: extra.illness_symptoms || extra.illnessSymptoms || [],
-        illness_comment: extra.illness_comment || extra.illnessComment || null,
-        comment: extra.comment || (s.notes?.startsWith("{") ? null : s.notes),
-        submitted_at: s.created_at,
-        source: extra.source || "player",
-        doctor_recommendation: extra.doctor_recommendation || extra.doctorRecommendation || null,
-      };
+      const entry = mapWellnessSurveyRow(s, clubId);
       return { entry, today, timezone };
     }
   } catch {}
@@ -153,12 +178,14 @@ export async function getTodayWellnessEntryForPlayerAction(playerId: string): Pr
     }
   } catch {}
 
-  // 2. Резервна перевірка в injury_logs
+  // 2. Резервна перевірка в injury_logs (з екрануванням спецсимволів LIKE та фільтром club_id)
   try {
+    const safePlayerId = playerId.replace(/[%_\\]/g, "\\$&");
     const { data: logs } = await supabase
       .from("injury_logs")
       .select("note")
-      .like("note", `[WELLNESS_ENTRY] %"player_id":"${playerId}"%"date":"${today}"%`)
+      .eq("club_id", clubId)
+      .like("note", `[WELLNESS_ENTRY] %"player_id":"${safePlayerId}"%"date":"${today}"%`)
       .order("created_at", { ascending: false })
       .limit(1);
 
@@ -180,6 +207,11 @@ export async function getTodayWellnessEntryForPlayerAction(playerId: string): Pr
  * - Правка дозволена ТІЛЬКИ в той самий день.
  */
 export async function submitWellnessEntryAction(input: SubmitWellnessEntryInput) {
+  const authCheck = await assertPlayerOrStaffAccess(input.playerId, { allowCoach: true });
+  if ("error" in authCheck) {
+    return { error: authCheck.error };
+  }
+
   // 1. Перевірка згоди батьків для неповнолітніх (< 18 років)
   const access = await checkPlayerWellnessAccessAction(input.playerId);
   if (!access.canFill) {
@@ -375,6 +407,82 @@ export async function submitWellnessEntryAction(input: SubmitWellnessEntryInput)
     } catch {}
   }
 
+  // Дублюємо будь-який біль, ознаки хвороби або коментар гравця у закритий мед-чат клубу
+  const hasPain =
+    Boolean(entryPayload.pain) ||
+    (entryPayload.pain_vas !== null &&
+      entryPayload.pain_vas !== undefined &&
+      Number(entryPayload.pain_vas) > 0);
+  const hasIllness = Boolean(entryPayload.illness);
+  const hasAnyComment = Boolean(
+    entryPayload.comment || entryPayload.pain_comment || entryPayload.illness_comment
+  );
+
+  if ((hasPain || hasIllness || hasAnyComment) && entryPayload.source !== "staff") {
+    try {
+      const { data: playerInfo } = await supabase
+        .from("players")
+        .select("first_name, last_name, teams(name)")
+        .eq("id", input.playerId)
+        .maybeSingle();
+
+      const fullName = playerInfo
+        ? `${(playerInfo as any).last_name || ""} ${(playerInfo as any).first_name || ""}`.trim() || "Гравець"
+        : "Гравець";
+      const teamName = (playerInfo as any)?.teams?.name || "";
+      const painVasVal =
+        entryPayload.pain_vas !== null && entryPayload.pain_vas !== undefined
+          ? Number(entryPayload.pain_vas)
+          : null;
+      const severityIcon = (painVasVal !== null && painVasVal >= 7) || hasIllness ? "🚨" : "🩺";
+
+      const lines = [
+        `${severityIcon} <b>Ранкове самопочуття гравця</b>`,
+        `👤 <b>Гравець:</b> ${escapeTelegramHtml(fullName)}${teamName ? ` (${escapeTelegramHtml(teamName)})` : ""}`,
+      ];
+
+      if (hasPain) {
+        const locLabels = (entryPayload.pain_locations || []).map(
+          (id) => PAIN_LOCATIONS_LIST.find((l) => l.id === id)?.label || id
+        );
+        const painParts = [
+          painVasVal !== null ? `ВАШ ${painVasVal}/10` : "Так",
+          locLabels.length > 0 ? locLabels.join(", ") : "",
+          entryPayload.pain_symptoms?.length
+            ? `симптоми: ${entryPayload.pain_symptoms.join(", ")}`
+            : "",
+        ].filter(Boolean);
+        lines.push(`🩹 <b>Біль:</b> ${escapeTelegramHtml(painParts.join(" · "))}`);
+        if (entryPayload.pain_comment) {
+          lines.push(`📝 <b>Деталі болю:</b> ${escapeTelegramHtml(entryPayload.pain_comment)}`);
+        }
+      }
+
+      if (hasIllness) {
+        const illParts = [
+          entryPayload.body_temperature ? `t° ${entryPayload.body_temperature}°C` : "Так",
+          entryPayload.illness_symptoms?.length
+            ? `симптоми: ${entryPayload.illness_symptoms.join(", ")}`
+            : "",
+        ].filter(Boolean);
+        lines.push(`🤒 <b>Нездужання:</b> ${escapeTelegramHtml(illParts.join(" · "))}`);
+        if (entryPayload.illness_comment) {
+          lines.push(`📝 <b>Деталі хвороби:</b> ${escapeTelegramHtml(entryPayload.illness_comment)}`);
+        }
+      }
+
+      if (entryPayload.comment) {
+        lines.push(`💬 <b>Коментар:</b> ${escapeTelegramHtml(entryPayload.comment)}`);
+      }
+
+      await sendClubMedicalChatAlert({
+        clubId,
+        playerId: input.playerId,
+        htmlText: lines.join("\n"),
+      });
+    } catch {}
+  }
+
   revalidatePath("/team/readiness");
   revalidatePath("/coach-briefing");
   revalidatePath("/rehab-portal");
@@ -401,16 +509,44 @@ export async function getWellnessEntriesForDashboardAction(
   entries: (WellnessEntry | CoachWellnessEntry)[];
   isCoachRole: boolean;
 }> {
-  const auth = await assertAuth();
+  const auth = teamId ? await assertTeamStaff(teamId) : await assertAuth();
   if ("error" in auth) {
     return { entries: [], isCoachRole: false };
   }
 
   const role = auth.user.role;
   const userIsCoach = isCoach(role);
-  const clubId = auth.user.clubId || DEFAULT_CLUB_ID;
+  const clubId = auth.user.clubId;
   const targetDate = date || getClubDate();
   const supabase = createAdminClient();
+
+  let allowedPlayerIds: Set<string> | null = null;
+  if (userIsCoach || teamId) {
+    const coachTeams = auth.user.teamIds && auth.user.teamIds.length > 0
+      ? auth.user.teamIds
+      : (auth.user.teamId ? [auth.user.teamId] : []);
+
+    let playersQuery = supabase
+      .from("players")
+      .select("id")
+      .eq("club_id", clubId)
+      .is("archived_at", null);
+
+    if (teamId) {
+      playersQuery = playersQuery.eq("team_id", teamId);
+    } else if (userIsCoach) {
+      if (coachTeams.length === 0) {
+        return { entries: [], isCoachRole: true };
+      }
+      playersQuery = playersQuery.in("team_id", coachTeams);
+    }
+
+    const { data: scopedPlayers } = await playersQuery;
+    allowedPlayerIds = new Set((scopedPlayers || []).map((p) => p.id));
+    if (allowedPlayerIds.size === 0) {
+      return { entries: [], isCoachRole: userIsCoach };
+    }
+  }
 
   let rawEntries: WellnessEntry[] = [];
 
@@ -422,6 +558,10 @@ export async function getWellnessEntriesForDashboardAction(
       .eq("club_id", clubId)
       .eq("date", targetDate);
 
+    if (allowedPlayerIds) {
+      q = q.in("player_id", Array.from(allowedPlayerIds));
+    }
+
     const { data, error } = await q;
     if (!error && data) {
       rawEntries = data as WellnessEntry[];
@@ -431,35 +571,21 @@ export async function getWellnessEntriesForDashboardAction(
   // Якщо таблиця ще не заповнена, пробуємо wellness_surveys у Supabase
   if (rawEntries.length === 0) {
     try {
-      const { data: wsData } = await supabase
+      let wsQ = supabase
         .from("wellness_surveys")
         .select("*")
+        .eq("club_id", clubId)
         .eq("date", targetDate);
+
+      if (allowedPlayerIds) {
+        wsQ = wsQ.in("player_id", Array.from(allowedPlayerIds));
+      }
+
+      const { data: wsData } = await wsQ;
 
       if (wsData && wsData.length > 0) {
         for (const s of wsData) {
-          let extra: any = {};
-          if (s.notes && typeof s.notes === "string" && s.notes.startsWith("{")) {
-            try { extra = JSON.parse(s.notes); } catch {}
-          }
-          rawEntries.push({
-            id: s.id,
-            club_id: s.club_id || clubId,
-            player_id: s.player_id,
-            date: s.date,
-            sleep_quality: s.sleep_quality,
-            fatigue: s.fatigue_level,
-            soreness: s.muscle_soreness,
-            stress: s.stress_level,
-            sleep_hours: extra.sleep_hours ?? null,
-            pain: Boolean(extra.pain),
-            pain_vas: extra.pain_vas ?? null,
-            pain_locations: extra.pain_locations || (s.soreness_location ? [s.soreness_location] : []),
-            illness: Boolean(extra.illness),
-            comment: extra.comment || (s.notes?.startsWith("{") ? null : s.notes),
-            submitted_at: s.created_at,
-            source: extra.source || "player",
-          });
+          rawEntries.push(mapWellnessSurveyRow(s, clubId));
         }
       }
     } catch {}
@@ -509,8 +635,12 @@ export async function getWellnessEntriesForDashboardAction(
     } catch {}
   }
 
-  // 3. МАСКУВАННЯ: якщо роль 'coach', прибираємо stress і comment
-  const sanitizedEntries = rawEntries.map((entry) => {
+  // 3. Фільтрація по доступних гравцях та МАСКУВАННЯ для ролі 'coach'
+  const scopedEntries = allowedPlayerIds
+    ? rawEntries.filter((entry) => allowedPlayerIds!.has(entry.player_id))
+    : rawEntries;
+
+  const sanitizedEntries = scopedEntries.map((entry) => {
     if (userIsCoach) {
       return {
         ...entry,
@@ -567,6 +697,23 @@ export async function getPlayerWeeklySummaryAction(playerId: string): Promise<{
     };
   }
 
+  const authCheck = await assertPlayerOrStaffAccess(playerId, { allowCoach: true });
+  if ("error" in authCheck) {
+    return {
+      entries: [],
+      todayEntry: null,
+      compliance7Days: 0,
+      compliance28Days: 0,
+      streakDays: 0,
+      isAcknowledged: false,
+      reviewedByRole: null,
+      reviewedByName: null,
+      reviewedAt: null,
+      statusMessage: authCheck.error,
+      monotonyNotice: { isMonotonous: false, consecutiveDays: 0, prompt: null },
+    };
+  }
+
   const { clubId, timezone } = await getPlayerClubTimezone(playerId);
   const today = getClubDate(timezone);
   const supabase = createAdminClient();
@@ -605,28 +752,7 @@ export async function getPlayerWeeklySummaryAction(playerId: string): Promise<{
 
       if (wsData && wsData.length > 0) {
         for (const s of wsData) {
-          let extra: any = {};
-          if (s.notes && typeof s.notes === "string" && s.notes.startsWith("{")) {
-            try { extra = JSON.parse(s.notes); } catch {}
-          }
-          allEntries.push({
-            id: s.id,
-            club_id: s.club_id || clubId,
-            player_id: s.player_id,
-            date: s.date,
-            sleep_quality: s.sleep_quality,
-            fatigue: s.fatigue_level,
-            soreness: s.muscle_soreness,
-            stress: s.stress_level,
-            sleep_hours: extra.sleep_hours ?? null,
-            pain: Boolean(extra.pain),
-            pain_vas: extra.pain_vas ?? null,
-            pain_locations: extra.pain_locations || (s.soreness_location ? [s.soreness_location] : []),
-            illness: Boolean(extra.illness),
-            comment: extra.comment || (s.notes?.startsWith("{") ? null : s.notes),
-            submitted_at: s.created_at,
-            source: extra.source || "player",
-          });
+          allEntries.push(mapWellnessSurveyRow(s, clubId));
         }
       }
     } catch {}
@@ -792,111 +918,5 @@ export async function getPlayerWeeklySummaryAction(playerId: string): Promise<{
     reviewedAt,
     statusMessage,
     monotonyNotice,
-  };
-}
-
-/**
- * 8.5, 8.7 Одноразове ранкове нагадування про незаповнену анкету
- * Правило: Тільки один раз вранці (наприклад о 08:30). Жодних повторних нагадувань протягом дня!
- */
-export async function sendMorningWellnessRemindersAction(): Promise<{
-  success: boolean;
-  skipped?: boolean;
-  reason?: string;
-  sentCount?: number;
-  missingPlayersCount?: number;
-  date?: string;
-}> {
-  const supabase = createAdminClient();
-  const timezone = "Europe/Kyiv";
-  const today = getClubDate(timezone);
-
-  // 1. Отримуємо налаштування клубу та перевіряємо, чи вже надсилалося нагадування сьогодні
-  const { data: club } = await supabase
-    .from("clubs")
-    .select("settings")
-    .eq("id", DEFAULT_CLUB_ID)
-    .maybeSingle();
-
-  const currentSettings = (club as any)?.settings || {};
-  const reminderConfig = currentSettings?.readiness_config?.morningReminder || {
-    enabled: true,
-    time: "08:30",
-    channel: "push",
-    lastSentDate: null,
-  };
-
-  if (!reminderConfig.enabled) {
-    return { success: true, skipped: true, reason: "Нагадування вимкнені в налаштуваннях" };
-  }
-
-  // СУВОРЕ ПРАВИЛО: Жодних повторних нагадувань протягом дня!
-  if (reminderConfig.lastSentDate === today) {
-    return {
-      success: true,
-      skipped: true,
-      reason: `Сьогодні (${today}) ранкове нагадування вже надсилалося. Повторні нагадування заблоковано.`,
-    };
-  }
-
-  // 2. Отримуємо всіх активних гравців
-  const { data: activePlayers } = await supabase
-    .from("players")
-    .select("id, first_name, last_name, team_id")
-    .is("archived_at", null);
-
-  const players = activePlayers || [];
-  if (players.length === 0) {
-    return { success: true, sentCount: 0, missingPlayersCount: 0, date: today };
-  }
-
-  // 3. Знаходимо, хто вже заповнив анкету сьогодні
-  const { data: todayEntries } = await supabase
-    .from("wellness_entries")
-    .select("player_id")
-    .eq("date", today);
-
-  const filledPlayerIds = new Set((todayEntries || []).map((e: any) => e.player_id));
-  const missingPlayers = players.filter((p) => !filledPlayerIds.has(p.id));
-
-  // 4. Фіксуємо факт відправки сьогоднішнього ранкового нагадування
-  const updatedReminderConfig = {
-    ...reminderConfig,
-    lastSentDate: today,
-  };
-
-  const updatedSettings = {
-    ...currentSettings,
-    readiness_config: {
-      ...(currentSettings.readiness_config || {}),
-      morningReminder: updatedReminderConfig,
-    },
-  };
-
-  await supabase
-    .from("clubs")
-    .update({ settings: updatedSettings } as any)
-    .eq("id", DEFAULT_CLUB_ID);
-
-  // 5. Логуємо аудит
-  await logAudit({
-    action: "morning_wellness_reminder_sent",
-    entity: "wellness_entries",
-    entityId: DEFAULT_CLUB_ID,
-    userId: "system",
-    clubId: DEFAULT_CLUB_ID,
-    meta: {
-      date: today,
-      channel: reminderConfig.channel,
-      missingCount: missingPlayers.length,
-      totalCount: players.length,
-    },
-  });
-
-  return {
-    success: true,
-    sentCount: missingPlayers.length,
-    missingPlayersCount: missingPlayers.length,
-    date: today,
   };
 }
