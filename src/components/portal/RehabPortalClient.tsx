@@ -43,6 +43,7 @@ export default function RehabPortalClient({
 }: Props) {
   const [tokenInput, setTokenInput] = useState<string>(tokenFromUrl);
   const [pin, setPin] = useState<string>("");
+  const [showPinForm, setShowPinForm] = useState<boolean>(Boolean(tokenFromUrl || playerPreview));
   const [authError, setAuthError] = useState<string | null>(null);
   const [authenticatedPlayer, setAuthenticatedPlayer] = useState<any | null>(
     initialSessionData?.player || null
@@ -1996,68 +1997,100 @@ export default function RehabPortalClient({
         )}
       </div>
 
-      <form onSubmit={handleVerify} className="space-y-4">
-        {!tokenFromUrl && (
+      {!tokenFromUrl && !playerPreview && (
+        <div className="space-y-3">
+          <div className="p-4 rounded-2xl bg-sky-500/10 border border-sky-500/25 space-y-2 text-left">
+            <div className="flex items-center gap-2 text-sky-300 font-bold text-xs">
+              <span className="text-base">📲</span>
+              <span>Вхід за персональним QR-кодом</span>
+            </div>
+            <p className="text-[11px] text-slate-300 leading-relaxed">
+              Кабінет гравця відкривається без пароля та PIN — просто відскануй свій персональний QR-код або перейди за посиланням від тренера чи лікаря.
+            </p>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Немає QR-коду під рукою? Попроси його у тренера або лікаря клубу (розділ «Команда → QR-картки»).
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowPinForm((prev) => !prev)}
+            className="w-full py-2.5 px-3 rounded-xl bg-slate-950/70 hover:bg-slate-800/70 border border-slate-800 text-slate-300 text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+          >
+            <span>🔑</span>
+            <span>
+              {showPinForm
+                ? "Сховати резервний вхід за PIN"
+                : "Резервний вхід за токеном і 6-значним PIN"}
+            </span>
+          </button>
+        </div>
+      )}
+
+      {showPinForm && (
+        <form onSubmit={handleVerify} className="space-y-4">
+          {!tokenFromUrl && (
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-300 block">
+                Персональний токен або посилання:
+              </label>
+              <input
+                type="text"
+                value={tokenInput}
+                onChange={(e) => {
+                  const cleaned = cleanToken(e.target.value);
+                  setTokenInput(cleaned);
+                  setAuthError(null);
+                }}
+                placeholder="Вставте посилання або персональний токен"
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-400 transition-colors font-mono"
+              />
+            </div>
+          )}
+
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-300 block">
-              Персональний токен або посилання:
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-slate-300">
+                Ваш 6-значний PIN-код:
+              </label>
+              <span className="text-[10px] text-slate-500">
+                (6 цифр)
+              </span>
+            </div>
             <input
-              type="text"
-              value={tokenInput}
+              type="password"
+              maxLength={6}
+              pattern="\d*"
+              inputMode="numeric"
+              value={pin}
               onChange={(e) => {
-                const cleaned = cleanToken(e.target.value);
-                setTokenInput(cleaned);
+                setPin(e.target.value.replace(/\D/g, ""));
                 setAuthError(null);
               }}
-              placeholder="Вставте посилання або персональний токен"
-              className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-400 transition-colors font-mono"
+              placeholder="••••••"
+              className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-3 text-center text-xl font-mono tracking-widest text-white focus:outline-none focus:border-sky-400 transition-colors"
             />
           </div>
-        )}
 
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-semibold text-slate-300">
-              Ваш 6-значний PIN-код:
-            </label>
-            <span className="text-[10px] text-slate-500">
-              (6 цифр)
-            </span>
-          </div>
-          <input
-            type="password"
-            maxLength={6}
-            pattern="\d*"
-            inputMode="numeric"
-            value={pin}
-            onChange={(e) => {
-              setPin(e.target.value.replace(/\D/g, ""));
-              setAuthError(null);
-            }}
-            placeholder="••••••"
-            className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-3 text-center text-xl font-mono tracking-widest text-white focus:outline-none focus:border-sky-400 transition-colors"
-          />
-        </div>
+          {authError && (
+            <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/25 text-rose-300 text-xs text-center font-medium animate-shake">
+              {authError}
+            </div>
+          )}
 
-        {authError && (
-          <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/25 text-rose-300 text-xs text-center font-medium animate-shake">
-            {authError}
-          </div>
-        )}
-
-        <button
-          type="submit"
-          disabled={isVerifying || pin.length !== 6 || (!tokenInput && !tokenFromUrl)}
-          className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-bold text-xs uppercase tracking-wider transition-all shadow-lg shadow-sky-600/30 active:scale-95 disabled:opacity-50"
-        >
-          {isVerifying ? "Перевірка PIN-коду..." : "Увійти в кабінет →"}
-        </button>
-      </form>
+          <button
+            type="submit"
+            disabled={isVerifying || pin.length !== 6 || (!tokenInput && !tokenFromUrl)}
+            className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-bold text-xs uppercase tracking-wider transition-all shadow-lg shadow-sky-600/30 active:scale-95 disabled:opacity-50"
+          >
+            {isVerifying ? "Перевірка PIN-коду..." : "Увійти в кабінет →"}
+          </button>
+        </form>
+      )}
 
       <div className="pt-2 text-center border-t border-sky-500/10">
         <p className="text-[11px] text-slate-500">
-          Забули PIN або не маєте персонального посилання? Зверніться до клубного лікаря для скидання.
+          Потрібен новий QR-код або скидання PIN? Зверніться до тренера чи клубного лікаря.
         </p>
       </div>
     </div>

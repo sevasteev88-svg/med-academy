@@ -1,17 +1,62 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
-import { verifyAndActivateDeviceInternal } from "@/lib/player-device-server";
+import {
+  verifyAndActivateDeviceInternal,
+  validateDeviceSessionRecord,
+} from "@/lib/player-device-server";
 import {
   createDeviceSessionCookieValue,
+  verifyDeviceSessionCookieValue,
+  extractDeviceSessionPayloadForDbVerification,
   DEVICE_COOKIE_NAME,
   DEVICE_SESSION_MAX_AGE_SECONDS,
   generateDeviceSessionSecret,
   hashTokenSha256,
   parseDeviceName,
 } from "@/lib/player-device-auth";
+import { verifySessionToken } from "@/lib/player-auth";
 import { createAdminClient } from "@/utils/supabase/admin";
 import { getPlayerConsentSummary } from "@/lib/consents";
 import { getPlayerSessionSecret } from "@/lib/server-secrets";
+
+function attachDeviceSessionCookies(
+  response: NextResponse,
+  deviceId: string,
+  sessionSecret: string,
+  playerId: string
+) {
+  const deviceCookieVal = createDeviceSessionCookieValue(deviceId, sessionSecret, playerId);
+
+  response.cookies.set(DEVICE_COOKIE_NAME, deviceCookieVal, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: DEVICE_SESSION_MAX_AGE_SECONDS,
+  });
+
+  const standardPayload = {
+    playerId,
+    portalToken: "device_session",
+    mustChangePin: false,
+    issuedAt: Math.floor(Date.now() / 1000),
+    expiresAt: Math.floor(Date.now() / 1000) + DEVICE_SESSION_MAX_AGE_SECONDS,
+  };
+  const jsonStr = JSON.stringify(standardPayload);
+  const encodedPayload = Buffer.from(jsonStr).toString("base64url");
+  const signature = crypto
+    .createHmac("sha256", getPlayerSessionSecret())
+    .update(encodedPayload)
+    .digest("base64url");
+
+  response.cookies.set("rehab_player_session", `${encodedPayload}.${signature}`, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: DEVICE_SESSION_MAX_AGE_SECONDS,
+  });
+}
 
 const BOT_USER_AGENTS = [
   "telegrambot",
@@ -73,11 +118,61 @@ export async function GET(
     });
   }
 
-  // Якщо на цьому пристрої вже є діюча сесія кабінету гравця — одразу перенаправляємо
+  // Якщо на цьому пристрої вже є діюча валідна сесія кабінету гравця — перевіряємо її (та за потреби перепідписуємо)
   const existingDeviceCookie = request.cookies.get(DEVICE_COOKIE_NAME)?.value;
   const existingPlayerSession = request.cookies.get("rehab_player_session")?.value;
   if (existingDeviceCookie || existingPlayerSession) {
-    return NextResponse.redirect(new URL("/rehab-portal", request.url));
+    try {
+      let scannedTokenPlayerId: string | null = null;
+      const cleanScanToken = token?.trim();
+      if (cleanScanToken) {
+        const supabase = createAdminClient();
+        const { data: tokenRow } = await supabase
+          .from("player_activation_tokens")
+          .select("player_id")
+          .eq("token_hash", hashTokenSha256(cleanScanToken))
+          .maybeSingle();
+        scannedTokenPlayerId = tokenRow?.player_id || null;
+      }
+
+      if (existingDeviceCookie) {
+        let parsed = verifyDeviceSessionCookieValue(existingDeviceCookie);
+        let needsResign = false;
+        if (!parsed) {
+          parsed = extractDeviceSessionPayloadForDbVerification(existingDeviceCookie);
+          needsResign = Boolean(parsed);
+        }
+
+        if (parsed) {
+          const validation = await validateDeviceSessionRecord(parsed.deviceId, parsed.sessionSecret);
+          if (
+            validation.valid &&
+            validation.playerId &&
+            validation.playerId === parsed.playerId &&
+            (!scannedTokenPlayerId || scannedTokenPlayerId === validation.playerId)
+          ) {
+            const response = NextResponse.redirect(new URL("/rehab-portal", request.url));
+            if (needsResign) {
+              attachDeviceSessionCookies(
+                response,
+                parsed.deviceId,
+                parsed.sessionSecret,
+                validation.playerId
+              );
+            }
+            return response;
+          }
+        }
+      } else if (existingPlayerSession) {
+        const verifiedPin = verifySessionToken(existingPlayerSession);
+        if (
+          verifiedPin?.playerId &&
+          (!scannedTokenPlayerId || scannedTokenPlayerId === verifiedPin.playerId)
+        ) {
+          return NextResponse.redirect(new URL("/rehab-portal", request.url));
+        }
+      }
+    } catch {}
   }
 
   const ip =
@@ -102,50 +197,17 @@ export async function GET(
   ) {
     const redirectUrl = new URL("/rehab-portal?activated=1", request.url);
     const response = NextResponse.redirect(redirectUrl);
-
-    // Основна довготривала кука пристрою (90 днів)
-    const deviceCookieVal = createDeviceSessionCookieValue(
+    attachDeviceSessionCookies(
+      response,
       result.deviceId,
       result.deviceSessionSecret,
       result.playerId
     );
-
-    response.cookies.set(DEVICE_COOKIE_NAME, deviceCookieVal, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      maxAge: DEVICE_SESSION_MAX_AGE_SECONDS,
-    });
-
-    // Кука стандартної сесії для зворотної сумісності кабінету
-    const standardPayload = {
-      playerId: result.playerId,
-      portalToken: "device_session",
-      mustChangePin: false,
-      issuedAt: Math.floor(Date.now() / 1000),
-      expiresAt: Math.floor(Date.now() / 1000) + DEVICE_SESSION_MAX_AGE_SECONDS,
-    };
-    const jsonStr = JSON.stringify(standardPayload);
-    const encodedPayload = Buffer.from(jsonStr).toString("base64url");
-    const signature = crypto
-      .createHmac("sha256", getPlayerSessionSecret())
-      .update(encodedPayload)
-      .digest("base64url");
-
-    response.cookies.set("rehab_player_session", `${encodedPayload}.${signature}`, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      maxAge: DEVICE_SESSION_MAX_AGE_SECONDS,
-    });
-
     return response;
   }
 
   // 1.5. Повторний вхід гравця за тим самим персональним посиланням:
-  // Якщо токен вже активовано раніше, але його 14-денний термін ще діє — не показуємо помилку і не вимагаємо PIN!
+  // Якщо токен вже активовано раніше, але його 365-денний термін ще діє — не показуємо помилку і не вимагаємо PIN!
   // Ми просто оновлюємо сесію на цьому пристрої та впускаємо гравця в кабінет.
   if (!result.success && result.error?.includes("вже був використаний")) {
     try {
@@ -179,42 +241,7 @@ export async function GET(
             expires_at: expiresAtDev,
           });
 
-          const deviceCookieVal = createDeviceSessionCookieValue(
-            deviceId,
-            sessionSecret,
-            tokenRecord.player_id
-          );
-
-          response.cookies.set(DEVICE_COOKIE_NAME, deviceCookieVal, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: "lax",
-            path: "/",
-            maxAge: DEVICE_SESSION_MAX_AGE_SECONDS,
-          });
-
-          const standardPayload = {
-            playerId: tokenRecord.player_id,
-            portalToken: "device_session",
-            mustChangePin: false,
-            issuedAt: Math.floor(Date.now() / 1000),
-            expiresAt: Math.floor(Date.now() / 1000) + DEVICE_SESSION_MAX_AGE_SECONDS,
-          };
-          const jsonStr = JSON.stringify(standardPayload);
-          const encodedPayload = Buffer.from(jsonStr).toString("base64url");
-          const signature = crypto
-            .createHmac("sha256", getPlayerSessionSecret())
-            .update(encodedPayload)
-            .digest("base64url");
-
-          response.cookies.set("rehab_player_session", `${encodedPayload}.${signature}`, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: "lax",
-            path: "/",
-            maxAge: DEVICE_SESSION_MAX_AGE_SECONDS,
-          });
-
+          attachDeviceSessionCookies(response, deviceId, sessionSecret, tokenRecord.player_id);
           return response;
         }
       }

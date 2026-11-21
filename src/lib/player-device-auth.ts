@@ -118,6 +118,45 @@ export function verifyDeviceSessionCookieValue(cookieVal: string): { deviceId: s
 }
 
 /**
+ * Безпечно витягує payload куки пристрою для прямої перевірки 256-бітного sessionSecret
+ * за SHA-256 хeшем у таблиці public.player_devices (випадок ротації PLAYER_SESSION_SECRET).
+ * УВАГА: сам по собі цей payload НІКОЛИ не вважається довіреним і ОБОВ'ЯЗКОВО має
+ * пройти перевірку validateDeviceSessionRecord() у БД та звірку playerId.
+ */
+export function extractDeviceSessionPayloadForDbVerification(
+  cookieVal: string
+): { deviceId: string; sessionSecret: string; playerId: string } | null {
+  if (!cookieVal || !cookieVal.includes(".")) return null;
+  const [encoded, signature] = cookieVal.split(".");
+  if (!encoded || !signature) return null;
+
+  try {
+    const raw = Buffer.from(encoded, "base64url").toString("utf-8");
+    const parsed = JSON.parse(raw);
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      typeof parsed.deviceId !== "string" ||
+      parsed.deviceId.length === 0 ||
+      typeof parsed.playerId !== "string" ||
+      parsed.playerId.length === 0 ||
+      typeof parsed.sessionSecret !== "string" ||
+      parsed.sessionSecret.length < 32
+    ) {
+      return null;
+    }
+
+    return {
+      deviceId: parsed.deviceId,
+      sessionSecret: parsed.sessionSecret,
+      playerId: parsed.playerId,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Встановлює довготривалу безпечну httpOnly куку для пристрою (90 днів)
  */
 export async function setDeviceSessionCookie(deviceId: string, sessionSecret: string, playerId: string) {

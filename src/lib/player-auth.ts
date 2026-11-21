@@ -118,16 +118,32 @@ export async function setPlayerSessionCookie(payload: Omit<PlayerSessionPayload,
 export async function getPlayerSession(): Promise<PlayerSessionPayload | null> {
   const cookieStore = await cookies();
 
-  // 1. Проверяем сессию пристрою (8.2 QR-активация пристрою на 90 дней)
+  // 1. Проверяем сессию пристрою (8.2 QR-активация пристрою на 365 днів)
   const deviceCookie = cookieStore.get("rehab_device_session")?.value;
   if (deviceCookie) {
     try {
-      const { verifyDeviceSessionCookieValue } = await import("@/lib/player-device-auth");
+      const {
+        verifyDeviceSessionCookieValue,
+        extractDeviceSessionPayloadForDbVerification,
+        setDeviceSessionCookie,
+      } = await import("@/lib/player-device-auth");
       const { validateDeviceSessionRecord } = await import("@/lib/player-device-server");
-      const parsed = verifyDeviceSessionCookieValue(deviceCookie);
+
+      let parsed = verifyDeviceSessionCookieValue(deviceCookie);
+      let needsResign = false;
+
+      if (!parsed) {
+        parsed = extractDeviceSessionPayloadForDbVerification(deviceCookie);
+        needsResign = Boolean(parsed);
+      }
+
       if (parsed) {
         const validation = await validateDeviceSessionRecord(parsed.deviceId, parsed.sessionSecret);
-        if (validation.valid && validation.playerId) {
+        if (validation.valid && validation.playerId && validation.playerId === parsed.playerId) {
+          if (needsResign) {
+            await setDeviceSessionCookie(parsed.deviceId, parsed.sessionSecret, validation.playerId);
+          }
+
           const now = Math.floor(Date.now() / 1000);
           return {
             playerId: validation.playerId,
@@ -137,9 +153,11 @@ export async function getPlayerSession(): Promise<PlayerSessionPayload | null> {
             expiresAt: now + 90 * 24 * 60 * 60,
           };
         } else {
-          // Устройство отозвано (revoked) или истекло — моментально сбрасываем куки!
-          cookieStore.set("rehab_device_session", "", { path: "/", maxAge: 0 });
-          cookieStore.set(COOKIE_NAME, "", { path: "/", maxAge: 0 });
+          // Устройство отозвано (revoked) или истекло — сбрасываем куки безопасно (в RSC set() бросает ошибку)
+          try {
+            cookieStore.set("rehab_device_session", "", { path: "/", maxAge: 0 });
+            cookieStore.set(COOKIE_NAME, "", { path: "/", maxAge: 0 });
+          } catch {}
           return null;
         }
       }
