@@ -65,19 +65,35 @@ CREATE POLICY "player_photos_delete_doctor_admin"
     AND public.has_club_role(public.storage_object_club_id(name), ARRAY['doctor', 'admin'])
   );
 
--- 4. Дедуплікація та унікальний індекс у player_auth_ip_attempts (ідемпотентно)
+-- 4. Гарантована схема та дедуплікація/унікальний індекс у player_auth_ip_attempts (ідемпотентно)
+CREATE TABLE IF NOT EXISTS public.player_auth_ip_attempts (
+  ip_address text PRIMARY KEY,
+  failed_attempts integer NOT NULL DEFAULT 0,
+  locked_until timestamptz,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.player_auth_ip_attempts
+  ADD COLUMN IF NOT EXISTS ip_address text,
+  ADD COLUMN IF NOT EXISTS failed_attempts integer NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS locked_until timestamptz,
+  ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
+
 DO $$
 BEGIN
   IF to_regclass('public.player_auth_ip_attempts') IS NOT NULL THEN
-    DELETE FROM public.player_auth_ip_attempts a
-    USING public.player_auth_ip_attempts b
-    WHERE a.ip_address = b.ip_address
-      AND (
-        a.updated_at < b.updated_at
-        OR (a.updated_at = b.updated_at AND a.ctid < b.ctid)
-      );
+    EXECUTE 'DELETE FROM public.player_auth_ip_attempts WHERE ip_address IS NULL';
 
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_player_auth_ip_attempts_unique_ip
-      ON public.player_auth_ip_attempts (ip_address);
+    EXECUTE $sql$
+      DELETE FROM public.player_auth_ip_attempts a
+      USING public.player_auth_ip_attempts b
+      WHERE a.ip_address = b.ip_address
+        AND (
+          a.updated_at < b.updated_at
+          OR (a.updated_at = b.updated_at AND a.ctid < b.ctid)
+        )
+    $sql$;
+
+    EXECUTE 'CREATE UNIQUE INDEX IF NOT EXISTS idx_player_auth_ip_attempts_unique_ip ON public.player_auth_ip_attempts (ip_address)';
   END IF;
 END $$;

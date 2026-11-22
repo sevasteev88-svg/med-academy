@@ -250,6 +250,44 @@ export function validateEhrImportPayload(
   };
 }
 
+const CYRILLIC_TO_LATIN: Record<string, string> = {
+  А: "A", Б: "B", В: "V", Г: "H", Ґ: "G", Д: "D", Е: "E", Є: "Ye",
+  Ж: "Zh", З: "Z", И: "Y", І: "I", Ї: "Yi", Й: "Y", К: "K", Л: "L",
+  М: "M", Н: "N", О: "O", П: "P", Р: "R", С: "S", Т: "T", У: "U",
+  Ф: "F", Х: "Kh", Ц: "Ts", Ч: "Ch", Ш: "Sh", Щ: "Shch", Ю: "Yu", Я: "Ya",
+  Ь: "", Ъ: "", Ё: "Yo", Э: "E", Ы: "Y",
+  а: "a", б: "b", в: "v", г: "h", ґ: "g", д: "d", е: "e", є: "ye",
+  ж: "zh", з: "z", и: "y", і: "i", ї: "yi", й: "y", к: "k", л: "l",
+  м: "m", н: "n", о: "o", п: "p", р: "r", с: "s", т: "t", у: "u",
+  ф: "f", х: "kh", ц: "ts", ч: "ch", ш: "sh", щ: "shch", ю: "yu", я: "ya",
+  ь: "", ъ: "", ё: "yo", э: "e", ы: "y",
+};
+
+/**
+ * Транслітерація кирилиці та типографських символів у ASCII/Latin
+ * для коректного відображення стандартним шрифтом jsPDF helvetica.
+ */
+export function transliterateCyrillicForPdf(input: string): string {
+  if (!input) return "";
+  let out = "";
+  for (const ch of String(input)) {
+    if (ch in CYRILLIC_TO_LATIN) {
+      out += CYRILLIC_TO_LATIN[ch];
+    } else if (ch === "—" || ch === "–") {
+      out += "-";
+    } else if (ch === "«" || ch === "»" || ch === "“" || ch === "”") {
+      out += '"';
+    } else if (ch === "’" || ch === "‘") {
+      out += "'";
+    } else if (ch === "°") {
+      out += " deg";
+    } else {
+      out += ch;
+    }
+  }
+  return out.replace(/[^\x09\x0A\x0D\x20-\x7E]/g, "");
+}
+
 /**
  * Генерація офіційного витягу медичної картки у PDF з водяним знаком «Конфіденційно»
  */
@@ -259,6 +297,8 @@ export function generateEhrTransferPdfBase64(payload: EhrTransferPayload): strin
     unit: "mm",
     format: "a4",
   });
+
+  const safe = (v: unknown): string => transliterateCyrillicForPdf(v == null ? "" : String(v));
 
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -291,9 +331,9 @@ export function generateEhrTransferPdfBase64(payload: EhrTransferPayload): strin
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
   doc.setTextColor(71, 85, 105); // slate-600
-  doc.text(`Origin Club: ${payload.club_origin.name}  |  Export ID: ${payload.export_id}`, margin, currentY);
+  doc.text(safe(`Origin Club: ${payload.club_origin.name}  |  Export ID: ${payload.export_id}`), margin, currentY);
   currentY += 4;
-  doc.text(`Date of Export: ${payload.export_timestamp.split("T")[0]}  |  Doctor: ${payload.exporting_doctor.name}`, margin, currentY);
+  doc.text(safe(`Date of Export: ${payload.export_timestamp.split("T")[0]}  |  Doctor: ${payload.exporting_doctor.name}`), margin, currentY);
   currentY += 8;
 
   // Лінія розділювача
@@ -305,16 +345,16 @@ export function generateEhrTransferPdfBase64(payload: EhrTransferPayload): strin
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
   doc.setTextColor(15, 23, 42);
-  doc.text(`PLAYER: ${payload.player.last_name.toUpperCase()} ${payload.player.first_name.toUpperCase()}`, margin, currentY);
+  doc.text(safe(`PLAYER: ${payload.player.last_name.toUpperCase()} ${payload.player.first_name.toUpperCase()}`), margin, currentY);
   currentY += 5;
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
-  doc.text(`Date of Birth: ${payload.player.date_of_birth}  |  Position: ${payload.player.position}  |  Side: ${payload.player.dominant_side || "Right"}`, margin, currentY);
+  doc.text(safe(`Date of Birth: ${payload.player.date_of_birth}  |  Position: ${payload.player.position}  |  Side: ${payload.player.dominant_side || "Right"}`), margin, currentY);
   currentY += 4;
-  doc.text(`Transfer Purpose: ${TRANSFER_PURPOSE_LABELS[payload.consent_record.purpose] || payload.consent_record.purpose}`, margin, currentY);
+  doc.text(safe(`Transfer Purpose: ${TRANSFER_PURPOSE_LABELS[payload.consent_record.purpose] || payload.consent_record.purpose}`), margin, currentY);
   currentY += 4;
-  doc.text(`Recipient Organization: ${payload.consent_record.recipient_club}`, margin, currentY);
+  doc.text(safe(`Recipient Organization: ${payload.consent_record.recipient_club}`), margin, currentY);
   currentY += 8;
 
   // 3. Розділи клінічних даних
@@ -345,14 +385,14 @@ export function generateEhrTransferPdfBase64(payload: EhrTransferPayload): strin
         ? `${inj.date_of_injury} - ${inj.actual_return_date}`
         : `${inj.date_of_injury} (Ongoing)`;
       doc.text(
-        `${idx + 1}. [${inj.severity.toUpperCase()}] ${inj.injury_type} (${inj.location}, ${inj.side}) — Dates: ${days} — Status: ${inj.status}`,
+        safe(`${idx + 1}. [${inj.severity.toUpperCase()}] ${inj.injury_type} (${inj.location}, ${inj.side}) - Dates: ${days} - Status: ${inj.status}`),
         margin + 2,
         currentY
       );
       currentY += 4;
       if (inj.description) {
         doc.setTextColor(100, 116, 139);
-        doc.text(`   Notes: ${inj.description.slice(0, 90)}`, margin + 2, currentY);
+        doc.text(safe(`   Notes: ${inj.description.slice(0, 90)}`), margin + 2, currentY);
         doc.setTextColor(15, 23, 42);
         currentY += 4;
       }
@@ -374,7 +414,7 @@ export function generateEhrTransferPdfBase64(payload: EhrTransferPayload): strin
     payload.data.screenings.forEach((sc, idx) => {
       checkPageBreak(10);
       doc.text(
-        `${idx + 1}. Season: ${sc.season} | Date: ${sc.date} | Status: ${sc.overall_status.toUpperCase()} | Cardio Clearance: ${sc.cardio_clearance ? "YES" : "NO"} | Valid Until: ${sc.valid_until}`,
+        safe(`${idx + 1}. Season: ${sc.season} | Date: ${sc.date} | Status: ${sc.overall_status.toUpperCase()} | Cardio Clearance: ${sc.cardio_clearance ? "YES" : "NO"} | Valid Until: ${sc.valid_until}`),
         margin + 2,
         currentY
       );
@@ -397,7 +437,7 @@ export function generateEhrTransferPdfBase64(payload: EhrTransferPayload): strin
     payload.data.lsi.forEach((item, idx) => {
       checkPageBreak(10);
       doc.text(
-        `${idx + 1}. Date: ${item.date} | Metric: ${item.metric_name} | Involved: ${item.involved_value} | Uninvolved: ${item.uninvolved_value} | LSI: ${item.lsi_percentage}% (${item.status})`,
+        safe(`${idx + 1}. Date: ${item.date} | Metric: ${item.metric_name} | Involved: ${item.involved_value} | Uninvolved: ${item.uninvolved_value} | LSI: ${item.lsi_percentage}% (${item.status})`),
         margin + 2,
         currentY
       );
@@ -420,7 +460,7 @@ export function generateEhrTransferPdfBase64(payload: EhrTransferPayload): strin
     payload.data.anthropometry.slice(0, 10).forEach((a, idx) => {
       checkPageBreak(8);
       doc.text(
-        `${idx + 1}. Date: ${a.date} | Height: ${a.height ? `${a.height} cm` : "—"} | Weight: ${a.weight ? `${a.weight} kg` : "—"} | Fat: ${a.fat_percentage ? `${a.fat_percentage}%` : "—"}`,
+        safe(`${idx + 1}. Date: ${a.date} | Height: ${a.height ? `${a.height} cm` : "-"} | Weight: ${a.weight ? `${a.weight} kg` : "-"} | Fat: ${a.fat_percentage ? `${a.fat_percentage}%` : "-"}`),
         margin + 2,
         currentY
       );
@@ -443,7 +483,7 @@ export function generateEhrTransferPdfBase64(payload: EhrTransferPayload): strin
     payload.data.prescriptions.forEach((pr, idx) => {
       checkPageBreak(10);
       doc.text(
-        `${idx + 1}. Date: ${pr.date} | Medication: ${pr.medication_name} | Dosage: ${pr.dosage} | WADA Prohibited: ${pr.is_wada_prohibited ? "YES (Check TUE)" : "NO"} | Doctor: ${pr.prescribed_by}`,
+        safe(`${idx + 1}. Date: ${pr.date} | Medication: ${pr.medication_name} | Dosage: ${pr.dosage} | WADA Prohibited: ${pr.is_wada_prohibited ? "YES (Check TUE)" : "NO"} | Doctor: ${pr.prescribed_by}`),
         margin + 2,
         currentY
       );
@@ -462,7 +502,7 @@ export function generateEhrTransferPdfBase64(payload: EhrTransferPayload): strin
 
     doc.line(margin, pageHeight - 12, pageWidth - margin, pageHeight - 12);
     doc.text(
-      `MedAcademy EHR Transfer v1.0.0  |  Integrity Hash: ${payload.content_sha256.slice(0, 24)}...  |  Page ${i} of ${totalPages}`,
+      safe(`MedAcademy EHR Transfer v1.0.0  |  Integrity Hash: ${payload.content_sha256.slice(0, 24)}...  |  Page ${i} of ${totalPages}`),
       margin,
       pageHeight - 8
     );

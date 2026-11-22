@@ -344,6 +344,7 @@ export default function AppNav({
   // Пацієнти, батьки та Telegram Mini App не бачать основну навігацію
   if (
     pathname.startsWith("/rehab-portal") ||
+    pathname.startsWith("/parent/") ||
     pathname.startsWith("/consent/") ||
     pathname.startsWith("/tg-coach")
   ) {

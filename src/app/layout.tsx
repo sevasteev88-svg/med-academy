@@ -3,6 +3,7 @@ import { cache } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import AppNav from "@/components/layout/AppNav";
+import LayoutMain from "@/components/layout/LayoutMain";
 import PwaRegister from "@/components/layout/PwaRegister";
 import DemoModeBanner from "@/components/layout/DemoModeBanner";
 import ForcePasswordChangeModal from "@/components/layout/ForcePasswordChangeModal";
@@ -100,7 +101,7 @@ export default async function RootLayout({
             clubLogoUrl={clubLogoUrl}
           />
         )}
-        <main className={`${user ? "md:ml-16 pt-14 md:pt-0 pb-24 md:pb-6" : ""} flex-1 min-w-0 overflow-x-hidden`}>
+        <LayoutMain hasStaffNav={Boolean(user)}>
           {user && user.clubId === DEMO_CLUB_ID && (
             <DemoModeBanner isDemoClub={true} />
           )}
@@ -108,8 +109,8 @@ export default async function RootLayout({
             <ForcePasswordChangeModal userEmail={user.email} />
           )}
           {children}
-        </main>
-        <PwaRegister />
+        </LayoutMain>
+        <PwaRegister clubLogoUrl={clubLogoUrl} clubName={clubName} />
       </body>
     </html>
   );

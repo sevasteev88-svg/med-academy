@@ -2,11 +2,20 @@
 
 import { useEffect, useState } from "react";
 
-export default function PwaRegister() {
+export default function PwaRegister({
+  clubLogoUrl,
+  clubName,
+}: {
+  clubLogoUrl?: string | null;
+  clubName?: string;
+} = {}) {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
   const [isIos, setIsIos] = useState(false);
   const [showIosTip, setShowIosTip] = useState(false);
+
+  const logoSrc = clubLogoUrl || "/logo-chr.png";
+  const logoAlt = clubName || "Клуб";
 
   useEffect(() => {
     // Register Service Worker
@@ -34,18 +43,19 @@ export default function PwaRegister() {
     const userAgent = window.navigator.userAgent.toLowerCase();
     const isAppleIos = /iphone|ipad|ipod/.test(userAgent);
     const isStandalone = (window.navigator as any).standalone === true;
+    let iosTimer: ReturnType<typeof setTimeout> | null = null;
 
     if (isAppleIos && !isStandalone) {
       setIsIos(true);
       const dismissedIos = localStorage.getItem("pwa_ios_tip_dismissed");
       if (!dismissedIos) {
         // Show after 3 seconds on iOS
-        const timer = setTimeout(() => setShowIosTip(true), 3000);
-        return () => clearTimeout(timer);
+        iosTimer = setTimeout(() => setShowIosTip(true), 3000);
       }
     }
 
     return () => {
+      if (iosTimer) clearTimeout(iosTimer);
       window.removeEventListener("beforeinstallprompt", handleBeforeInstall);
     };
   }, []);
@@ -86,7 +96,7 @@ export default function PwaRegister() {
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-10 h-10 rounded-xl bg-slate-950 border border-sky-500/30 flex items-center justify-center text-xl overflow-hidden shrink-0">
-                <img src="/logo-chr.png" alt="Клуб" className="w-8 h-8 object-contain" />
+                <img src={logoSrc} alt={logoAlt} className="w-8 h-8 object-contain" />
               </div>
               <div className="min-w-0">
                 <h4 className="text-xs font-bold text-white truncate">Встановити додаток</h4>
@@ -135,7 +145,7 @@ export default function PwaRegister() {
       {showIosTip && (
         <div className="fixed bottom-20 left-4 right-4 z-50 p-4 rounded-2xl bg-slate-900/95 border border-sky-500/40 backdrop-blur-xl shadow-2xl shadow-sky-950/60 flex items-start gap-3 animate-slideUp">
           <div className="w-9 h-9 rounded-xl bg-slate-950 border border-sky-500/30 flex items-center justify-center text-lg overflow-hidden shrink-0">
-            <img src="/logo-chr.png" alt="Клуб" className="w-7 h-7 object-contain" />
+            <img src={logoSrc} alt={logoAlt} className="w-7 h-7 object-contain" />
           </div>
           <div className="flex-1 text-xs text-slate-300">
             <p className="font-bold text-white mb-0.5">Встановити на iPhone / iPad</p>
