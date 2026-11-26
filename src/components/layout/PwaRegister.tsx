@@ -26,6 +26,13 @@ export default function PwaRegister({
         .catch((err) => console.log("PWA Service Worker error:", err));
     }
 
+    // На сторінках кабінету гравця та батьків є власна модалка PwaInstallPromptModal —
+    // не показуємо дублюючий глобальний банер штабу.
+    const pathname = window.location.pathname;
+    if (pathname.startsWith("/rehab-portal") || pathname.startsWith("/parent")) {
+      return;
+    }
+
     // Android/Chrome install event
     const handleBeforeInstall = (e: any) => {
       e.preventDefault();

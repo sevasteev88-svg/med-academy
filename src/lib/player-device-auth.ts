@@ -5,7 +5,7 @@ import { getPlayerSessionSecret } from "./server-secrets.ts";
 export const DEVICE_COOKIE_NAME = "rehab_device_session";
 export const DEVICE_SESSION_MAX_AGE_SECONDS = 365 * 24 * 60 * 60; // 365 днів (1 сезон)
 export const ACTIVATION_TOKEN_MAX_AGE_SECONDS = 365 * 24 * 60 * 60; // 365 днів (1 сезон)
-export const MAX_ACTIVE_DEVICES_PER_PLAYER = 2; // Максимум 2 активні пристрої
+export const MAX_ACTIVE_DEVICES_PER_PLAYER = 5; // Максимум 5 активних пристроїв (Safari + Telegram + PWA тощо)
 
 /**
  * Генерує криптографічно стійкий 128-бітний токен активації (16 байт = 32 hex-символи)
@@ -143,6 +143,117 @@ export function extractDeviceSessionPayloadForDbVerification(
     if (
       !parsed ||
       typeof parsed !== "object" ||
+      typeof parsed.deviceId !== "string" ||
+      parsed.deviceId.length === 0 ||
+      typeof parsed.playerId !== "string" ||
+      parsed.playerId.length === 0 ||
+      typeof parsed.sessionSecret !== "string" ||
+      parsed.sessionSecret.length < 32
+    ) {
+      return null;
+    }
+
+    return {
+      deviceId: parsed.deviceId,
+      sessionSecret: parsed.sessionSecret,
+      playerId: parsed.playerId,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Створює доменно-відокремлений HMAC-токен перенесення сесії (PWA bootstrap)
+ * для збереження в start_url при додаванні на головний екран (iOS/Android).
+ * Прив'язаний до існуючого запису player_devices і миттєво втрачає силу при відкликанні пристрою.
+ */
+export function createPwaBootstrapToken(
+  deviceId: string,
+  sessionSecret: string,
+  playerId: string
+): string {
+  const payloadStr = JSON.stringify({
+    deviceId,
+    sessionSecret,
+    playerId,
+    purpose: "pwa_bootstrap",
+    iat: Math.floor(Date.now() / 1000),
+  });
+  const encoded = Buffer.from(payloadStr).toString("base64url");
+  const signature = crypto
+    .createHmac("sha256", getPlayerSessionSecret())
+    .update(`pwa_bootstrap:${encoded}`)
+    .digest("base64url");
+  return `${encoded}.${signature}`;
+}
+
+/**
+ * Валідує підпис та структуру токена перенесення PWA-сесії.
+ */
+export function verifyPwaBootstrapToken(
+  token: string
+): { deviceId: string; sessionSecret: string; playerId: string } | null {
+  if (!token || !token.includes(".")) return null;
+  const [encoded, signature] = token.split(".");
+  if (!encoded || !signature) return null;
+
+  const expectedSig = crypto
+    .createHmac("sha256", getPlayerSessionSecret())
+    .update(`pwa_bootstrap:${encoded}`)
+    .digest("base64url");
+  const sigBuf = Buffer.from(signature);
+  const expBuf = Buffer.from(expectedSig);
+  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+    return null;
+  }
+
+  try {
+    const raw = Buffer.from(encoded, "base64url").toString("utf-8");
+    const parsed = JSON.parse(raw);
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      parsed.purpose !== "pwa_bootstrap" ||
+      typeof parsed.deviceId !== "string" ||
+      parsed.deviceId.length === 0 ||
+      typeof parsed.playerId !== "string" ||
+      parsed.playerId.length === 0 ||
+      typeof parsed.sessionSecret !== "string" ||
+      parsed.sessionSecret.length < 32
+    ) {
+      return null;
+    }
+
+    return {
+      deviceId: parsed.deviceId,
+      sessionSecret: parsed.sessionSecret,
+      playerId: parsed.playerId,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Витягує payload PWA-токена для прямої перевірки 256-бітного sessionSecret у БД
+ * (на випадок ротації PLAYER_SESSION_SECRET).
+ * ОБОВ'ЯЗКОВО перевіряється через validateDeviceSessionRecord() у БД.
+ */
+export function extractPwaBootstrapPayloadForDbVerification(
+  token: string
+): { deviceId: string; sessionSecret: string; playerId: string } | null {
+  if (!token || !token.includes(".")) return null;
+  const [encoded, signature] = token.split(".");
+  if (!encoded || !signature) return null;
+
+  try {
+    const raw = Buffer.from(encoded, "base64url").toString("utf-8");
+    const parsed = JSON.parse(raw);
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      parsed.purpose !== "pwa_bootstrap" ||
       typeof parsed.deviceId !== "string" ||
       parsed.deviceId.length === 0 ||
       typeof parsed.playerId !== "string" ||

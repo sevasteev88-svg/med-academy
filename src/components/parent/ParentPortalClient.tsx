@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import {
   ALL_CONSENT_SCOPES,
@@ -26,6 +26,7 @@ import { PAIN_LOCATIONS_LIST } from "@/types/wellness";
 import type { ConsentScope } from "@/types/database";
 import ParentWellnessQuiz from "./ParentWellnessQuiz";
 import SubscriptionPaywall from "@/components/portal/SubscriptionPaywall";
+import PwaInstallPromptModal from "@/components/portal/PwaInstallPromptModal";
 
 type Props = {
   rawToken: string;
@@ -165,8 +166,23 @@ export default function ParentPortalClient({ rawToken, initialData }: Props) {
 
   // Стан продовження підписки у вкладці Дозволи та підписка
   const [showRenewPaywall, setShowRenewPaywall] = useState<boolean>(false);
+  const [showInstallModal, setShowInstallModal] = useState<boolean>(false);
+  const [isStandalone, setIsStandalone] = useState<boolean>(false);
 
   const [isPending, startTransition] = useTransition();
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      if (rawToken && rawToken.trim()) {
+        localStorage.setItem("med_parent_portal_token", rawToken.trim());
+      }
+    } catch {}
+    const standaloneMode =
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (window.navigator as unknown as { standalone?: boolean }).standalone === true;
+    setIsStandalone(standaloneMode);
+  }, [rawToken]);
 
   const missingScopes = data.consents.missingScopes;
   const grantedScopesCount = ALL_CONSENT_SCOPES.length - missingScopes.length;
@@ -489,8 +505,22 @@ export default function ParentPortalClient({ rawToken, initialData }: Props) {
     },
   }[data.clearance.status];
 
+  const parentPortalPath = `/parent/${encodeURIComponent(rawToken)}`;
+  const copyParentUrl =
+    typeof window !== "undefined"
+      ? `${window.location.origin}${parentPortalPath}`
+      : undefined;
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 pb-12">
+      <PwaInstallPromptModal
+        variant="parent"
+        externalOpen={showInstallModal}
+        onClose={() => setShowInstallModal(false)}
+        pwaInstallPath={parentPortalPath}
+        copyEntryUrl={copyParentUrl}
+      />
+
       {/* Шапка */}
       <header className="border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md sticky top-0 z-20">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
@@ -511,13 +541,25 @@ export default function ParentPortalClient({ rawToken, initialData }: Props) {
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => window.print()}
-            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 border border-slate-700 transition cursor-pointer"
-          >
-            🖨️ Довідка
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {!isStandalone && (
+              <button
+                type="button"
+                onClick={() => setShowInstallModal(true)}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 text-xs font-bold transition cursor-pointer"
+                title="Додати кабінет батьків на головний екран"
+              >
+                📲 <span className="hidden xs:inline">На екран</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 border border-slate-700 transition cursor-pointer"
+            >
+              🖨️ Довідка
+            </button>
+          </div>
         </div>
       </header>
 

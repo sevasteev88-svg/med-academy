@@ -20,6 +20,7 @@ import {
   URGENT_CASE_WARNING,
 } from "@/lib/constants";
 import PwaInstallPromptModal from "@/components/portal/PwaInstallPromptModal";
+import QrScannerModal from "@/components/portal/QrScannerModal";
 import PlayerWellnessQuiz from "@/components/wellness/PlayerWellnessQuiz";
 import SubscriptionPaywall from "@/components/portal/SubscriptionPaywall";
 import PlayerPostSessionCard from "@/components/portal/PlayerPostSessionCard";
@@ -33,6 +34,37 @@ interface Props {
     position: string;
   } | null;
   isJustActivated?: boolean;
+  pwaBootstrapToken?: string | null;
+}
+
+function extractActivationHref(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  const actMatch = trimmed.match(/\/a\/([a-zA-Z0-9_-]{8,128})/);
+  if (actMatch) {
+    return `/a/${actMatch[1]}`;
+  }
+
+  const pwaMatch = trimmed.match(/\/api\/rehab-portal\/pwa-entry\?k=([a-zA-Z0-9_.-]{20,512})/);
+  if (pwaMatch) {
+    return `/api/rehab-portal/pwa-entry?k=${encodeURIComponent(pwaMatch[1])}`;
+  }
+
+  const tokMatch = trimmed.match(/token=([a-zA-Z0-9_-]{8,128})/);
+  if (tokMatch) {
+    return `/rehab-portal?token=${tokMatch[1]}`;
+  }
+
+  if (/^[a-f0-9]{32}$/i.test(trimmed)) {
+    return `/a/${trimmed}`;
+  }
+
+  if (/^[a-zA-Z0-9_-]{8,128}$/.test(trimmed)) {
+    return `/rehab-portal?token=${trimmed}`;
+  }
+
+  return null;
 }
 
 export default function RehabPortalClient({
@@ -40,10 +72,16 @@ export default function RehabPortalClient({
   tokenFromUrl = "",
   playerPreview,
   isJustActivated = false,
+  pwaBootstrapToken = null,
 }: Props) {
   const [tokenInput, setTokenInput] = useState<string>(tokenFromUrl);
   const [pin, setPin] = useState<string>("");
   const [showPinForm, setShowPinForm] = useState<boolean>(Boolean(tokenFromUrl || playerPreview));
+  const [showInstallModal, setShowInstallModal] = useState<boolean>(false);
+  const [showQrScanner, setShowQrScanner] = useState<boolean>(false);
+  const [quickLinkInput, setQuickLinkInput] = useState<string>("");
+  const [quickLinkError, setQuickLinkError] = useState<string | null>(null);
+  const [isStandalone, setIsStandalone] = useState<boolean>(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [authenticatedPlayer, setAuthenticatedPlayer] = useState<any | null>(
     initialSessionData?.player || null
@@ -132,11 +170,19 @@ export default function RehabPortalClient({
     }
 
     if (typeof window !== "undefined") {
+      const standaloneMode =
+        window.matchMedia("(display-mode: standalone)").matches ||
+        (window.navigator as unknown as { standalone?: boolean }).standalone === true;
+      setIsStandalone(standaloneMode);
+
       // Якщо є активна сесія і токен у search params — видаляємо його з адресного рядка
       if (initialSessionData?.player && window.location.search.includes("token=")) {
         window.history.replaceState({}, "", "/rehab-portal");
       }
-      if (window.location.search.includes("activated=")) {
+      if (
+        window.location.search.includes("activated=") &&
+        !window.location.search.includes("pwa=")
+      ) {
         window.history.replaceState({}, "", "/rehab-portal");
       }
 
@@ -609,23 +655,39 @@ export default function RehabPortalClient({
     const pastCheckins = authenticatedPlayer.pastCheckins || [];
     const weeklySummary = authenticatedPlayer.weeklySummary;
 
+    const pwaInstallPath = pwaBootstrapToken
+      ? `/rehab-portal?pwa=${encodeURIComponent(pwaBootstrapToken)}`
+      : undefined;
+    const copyEntryUrl =
+      pwaBootstrapToken && typeof window !== "undefined"
+        ? `${window.location.origin}/api/rehab-portal/pwa-entry?k=${encodeURIComponent(pwaBootstrapToken)}`
+        : undefined;
+
     return (
       <div className="max-w-lg mx-auto p-4 sm:p-6 rounded-3xl bg-slate-900/95 border border-sky-500/25 backdrop-blur-xl space-y-5 shadow-2xl shadow-black/60 animate-fadeIn">
         {/* 8.2 Пропозиція «Додати на головний екран» (PWA) */}
-        <PwaInstallPromptModal forceOpen={isJustActivated} />
+        <PwaInstallPromptModal
+          forceOpen={isJustActivated}
+          externalOpen={showInstallModal}
+          onClose={() => setShowInstallModal(false)}
+          variant="player"
+          pwaInstallPath={pwaInstallPath}
+          cleanPath="/rehab-portal"
+          copyEntryUrl={copyEntryUrl}
+        />
 
         {/* Top Player Profile Bar */}
-        <div className="flex items-center justify-between pb-3 border-b border-sky-500/15">
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between gap-2 pb-3 border-b border-sky-500/15">
+          <div className="flex items-center gap-3 min-w-0">
             <div className="w-11 h-11 rounded-2xl bg-slate-950 border border-sky-500/30 flex items-center justify-center text-xl overflow-hidden shrink-0 shadow-md">
               <img src="/logo-chr.png" alt="Клуб" className="w-8 h-8 object-contain" />
             </div>
-            <div>
-              <h2 className="text-base font-bold text-white leading-tight">
+            <div className="min-w-0">
+              <h2 className="text-base font-bold text-white leading-tight truncate">
                 {authenticatedPlayer.name}
               </h2>
               {/* 8. Заголовок гравця без сирих англійських enum */}
-              <p className="text-xs text-slate-400 mt-0.5">
+              <p className="text-xs text-slate-400 mt-0.5 truncate">
                 {authenticatedPlayer.team} ·{" "}
                 <span className={primaryInjury ? "text-rose-300 font-medium" : "text-emerald-400 font-medium"}>
                   {injuryLabel}
@@ -634,13 +696,25 @@ export default function RehabPortalClient({
             </div>
           </div>
 
-          <button
-            onClick={handleLogout}
-            disabled={isLoggingOut}
-            className="text-[11px] text-slate-500 hover:text-slate-300 font-medium"
-          >
-            {isLoggingOut ? "Вихід..." : "Вийти"}
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {!isStandalone && (
+              <button
+                type="button"
+                onClick={() => setShowInstallModal(true)}
+                className="px-2.5 py-1.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-300 text-[11px] font-bold transition-colors cursor-pointer"
+                title="Додати кабінет на головний екран"
+              >
+                📲 На екран
+              </button>
+            )}
+            <button
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+              className="text-[11px] text-slate-500 hover:text-slate-300 font-medium cursor-pointer"
+            >
+              {isLoggingOut ? "Вихід..." : "Вийти"}
+            </button>
+          </div>
         </div>
 
         {/* Soft-lock: якщо підписка очікує оплати */}
@@ -1955,9 +2029,33 @@ export default function RehabPortalClient({
     );
   }
 
-  // 3. Login Screen (Personal Token + 6-digit PIN)
+  // 3. Login Screen (Personal QR / Link + Fallback 6-digit PIN)
+  const handleQuickLinkNavigate = (rawValue: string) => {
+    const href = extractActivationHref(rawValue);
+    if (!href) {
+      setQuickLinkError(
+        "Не вдалося розпізнати посилання або QR-код. Попросіть у тренера чи лікаря ваше посилання (/a/...)."
+      );
+      return;
+    }
+    setQuickLinkError(null);
+    if (typeof window !== "undefined") {
+      window.location.href = href;
+    }
+  };
+
   return (
     <div className="max-w-md mx-auto p-6 rounded-3xl bg-slate-900/90 border border-sky-500/25 backdrop-blur-xl space-y-6 shadow-2xl shadow-sky-950/40">
+      <QrScannerModal
+        isOpen={showQrScanner}
+        onClose={() => setShowQrScanner(false)}
+        onScan={(decoded) => {
+          setShowQrScanner(false);
+          handleQuickLinkNavigate(decoded);
+        }}
+        title="Сканувати QR-код гравця"
+      />
+
       <div className="text-center space-y-2">
         <div className="w-16 h-16 mx-auto rounded-2xl bg-slate-950 border border-sky-500/30 flex items-center justify-center p-2 shadow-lg shadow-sky-500/20">
           <img src="/logo-chr.png" alt="Клуб" className="w-full h-full object-contain" />
@@ -2000,17 +2098,70 @@ export default function RehabPortalClient({
 
       {!tokenFromUrl && !playerPreview && (
         <div className="space-y-3">
-          <div className="p-4 rounded-2xl bg-sky-500/10 border border-sky-500/25 space-y-2 text-left">
+          <div className="p-4 rounded-2xl bg-sky-500/10 border border-sky-500/25 space-y-2.5 text-left">
             <div className="flex items-center gap-2 text-sky-300 font-bold text-xs">
               <span className="text-base">📲</span>
               <span>Вхід за персональним QR-кодом</span>
             </div>
             <p className="text-[11px] text-slate-300 leading-relaxed">
-              Кабінет гравця відкривається без пароля та PIN — просто відскануй свій персональний QR-код або перейди за посиланням від тренера чи лікаря.
+              Кабінет гравця відкривається без пароля та PIN — просто відскануй свій персональний QR-код або встав посилання від тренера чи лікаря.
             </p>
+            {isStandalone && (
+              <p className="text-[11px] text-emerald-300/90 leading-snug">
+                Щоб увійти прямо всередині цього застосунку (без відкриття браузера), натисни кнопку сканування нижче або встав посилання з месенджера.
+              </p>
+            )}
             <p className="text-[11px] text-slate-400 leading-relaxed">
               Немає QR-коду під рукою? Попроси його у тренера або лікаря клубу (розділ «Команда → QR-картки»).
             </p>
+
+            <button
+              type="button"
+              onClick={() => {
+                setQuickLinkError(null);
+                setShowQrScanner(true);
+              }}
+              className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-lg shadow-sky-600/25 active:scale-95 cursor-pointer"
+            >
+              <span>📷</span>
+              <span>Відсканувати QR-код камерою</span>
+            </button>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleQuickLinkNavigate(quickLinkInput);
+              }}
+              className="space-y-1.5 pt-1"
+            >
+              <label className="text-[11px] font-semibold text-slate-300 block">
+                Або встав посилання від тренера/лікаря:
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={quickLinkInput}
+                  onChange={(e) => {
+                    setQuickLinkInput(e.target.value);
+                    setQuickLinkError(null);
+                  }}
+                  placeholder="https://.../a/..."
+                  className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-400 font-mono"
+                />
+                <button
+                  type="submit"
+                  disabled={!quickLinkInput.trim()}
+                  className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-white font-bold text-xs transition-colors shrink-0 cursor-pointer"
+                >
+                  Увійти
+                </button>
+              </div>
+              {quickLinkError && (
+                <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/25 text-rose-300 text-[11px] text-center">
+                  {quickLinkError}
+                </div>
+              )}
+            </form>
           </div>
 
           <button

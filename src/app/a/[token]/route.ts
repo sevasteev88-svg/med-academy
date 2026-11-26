@@ -10,6 +10,7 @@ import {
   extractDeviceSessionPayloadForDbVerification,
   DEVICE_COOKIE_NAME,
   DEVICE_SESSION_MAX_AGE_SECONDS,
+  MAX_ACTIVE_DEVICES_PER_PLAYER,
   generateDeviceSessionSecret,
   hashTokenSha256,
   parseDeviceName,
@@ -230,14 +231,38 @@ export async function GET(
           const sessionSecret = generateDeviceSessionSecret();
           const deviceId = crypto.randomUUID();
           const devTokenHash = hashTokenSha256(sessionSecret);
+          const nowIso = new Date().toISOString();
           const expiresAtDev = new Date(Date.now() + DEVICE_SESSION_MAX_AGE_SECONDS * 1000).toISOString();
+
+          const { data: activeDevices } = await supabase
+            .from("player_devices")
+            .select("id")
+            .eq("player_id", tokenRecord.player_id)
+            .is("revoked_at", null)
+            .gt("expires_at", nowIso)
+            .order("last_seen_at", { ascending: true });
+
+          if (activeDevices && activeDevices.length >= MAX_ACTIVE_DEVICES_PER_PLAYER) {
+            const toRevoke = activeDevices.slice(
+              0,
+              activeDevices.length - MAX_ACTIVE_DEVICES_PER_PLAYER + 1
+            );
+            for (const dev of toRevoke) {
+              await supabase
+                .from("player_devices")
+                .update({ revoked_at: nowIso })
+                .eq("id", dev.id);
+            }
+          }
 
           await supabase.from("player_devices").insert({
             id: deviceId,
             player_id: tokenRecord.player_id,
             device_token_hash: devTokenHash,
             device_name: parseDeviceName(userAgent),
-            last_seen_at: new Date().toISOString(),
+            user_agent: userAgent,
+            ip_address: ip,
+            last_seen_at: nowIso,
             expires_at: expiresAtDev,
           });
 

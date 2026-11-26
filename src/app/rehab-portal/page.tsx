@@ -1,27 +1,74 @@
+import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getAuthorizedPlayerCabinetData, getPlayerByPortalToken } from "@/actions/rehab-portal-action";
 import RehabPortalClient from "@/components/portal/RehabPortalClient";
+import {
+  DEVICE_COOKIE_NAME,
+  createPwaBootstrapToken,
+  extractDeviceSessionPayloadForDbVerification,
+  verifyDeviceSessionCookieValue,
+} from "@/lib/player-device-auth";
 
-export const metadata = {
-  title: "Щоденне самопочуття · Кабінет гравця",
-  description: "Особистий кабінет футболіста для щоденної оцінки самопочуття, сну та відновлення",
-};
+export const dynamic = "force-dynamic";
+
+async function getCurrentPwaBootstrapToken(): Promise<string | null> {
+  try {
+    const cookieStore = await cookies();
+    const deviceCookie = cookieStore.get(DEVICE_COOKIE_NAME)?.value;
+    if (!deviceCookie) return null;
+
+    const parsed =
+      verifyDeviceSessionCookieValue(deviceCookie) ||
+      extractDeviceSessionPayloadForDbVerification(deviceCookie);
+    if (!parsed) return null;
+
+    return createPwaBootstrapToken(parsed.deviceId, parsed.sessionSecret, parsed.playerId);
+  } catch {
+    return null;
+  }
+}
+
+export async function generateMetadata(): Promise<Metadata> {
+  const pwaToken = await getCurrentPwaBootstrapToken();
+  return {
+    title: "Щоденне самопочуття · Кабінет гравця",
+    description: "Особистий кабінет футболіста для щоденної оцінки самопочуття, сну та відновлення",
+    manifest: pwaToken
+      ? `/api/rehab-portal/manifest?k=${encodeURIComponent(pwaToken)}`
+      : "/api/rehab-portal/manifest",
+    appleWebApp: {
+      capable: true,
+      statusBarStyle: "black-translucent",
+      title: "Кабінет гравця",
+    },
+  };
+}
 
 export default async function RehabPortalPage({
   searchParams,
 }: {
-  searchParams: Promise<{ token?: string; activated?: string }>;
+  searchParams: Promise<{ token?: string; activated?: string; pwa?: string }>;
 }) {
-  const { token, activated } = await searchParams;
+  const { token, activated, pwa } = await searchParams;
   const isJustActivated = Boolean(activated);
 
   // 1. Перевіряємо чи є вже валідна сесія в httpOnly cookie
   const sessionData = await getAuthorizedPlayerCabinetData();
 
-  // Якщо сесія вже активна і токен є в URL — прибираємо токен з адресного рядка чистим редиректом
-  if (sessionData.success && token) {
+  // Якщо сесії немає, але передано PWA bootstrap-токен (перший запуск ярлика на iOS) — відновлюємо cookie
+  if (sessionData.unauthorized && pwa) {
+    redirect(`/api/rehab-portal/pwa-entry?k=${encodeURIComponent(pwa)}`);
+  }
+
+  // Якщо сесія вже активна і токен/pwa є в URL — прибираємо їх з адресного рядка чистим редиректом
+  if (sessionData.success && (token || pwa)) {
     redirect("/rehab-portal");
   }
+
+  const pwaBootstrapToken = sessionData.success
+    ? await getCurrentPwaBootstrapToken()
+    : null;
 
   // 2. Якщо сесії немає, але передано персональний token — перевіряємо його валідність
   let playerPreview: { name: string; team: string; position: string } | null = null;
@@ -57,6 +104,7 @@ export default async function RehabPortalPage({
           tokenFromUrl={token || ""}
           playerPreview={playerPreview}
           isJustActivated={isJustActivated}
+          pwaBootstrapToken={pwaBootstrapToken}
         />
       </div>
 

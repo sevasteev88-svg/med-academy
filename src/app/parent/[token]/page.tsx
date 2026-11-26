@@ -1,13 +1,27 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { getParentPortalDataAction } from "@/actions/parent-portal-actions";
 import ParentPortalClient from "@/components/parent/ParentPortalClient";
 
 export const dynamic = "force-dynamic";
 
-export const metadata = {
-  title: "Сімейний кабінет батьків · Med-Academy",
-  description: "Статус медичного допуску, домашнє ЛФК, дозволи та зв'язок з лікарем клубу",
-};
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ token: string }>;
+}): Promise<Metadata> {
+  const { token } = await params;
+  return {
+    title: "Сімейний кабінет батьків · Med-Academy",
+    description: "Статус медичного допуску, домашнє ЛФК, дозволи та зв'язок з лікарем клубу",
+    manifest: `/api/parent/manifest?token=${encodeURIComponent(token)}`,
+    appleWebApp: {
+      capable: true,
+      statusBarStyle: "black-translucent",
+      title: "Кабінет батьків",
+    },
+  };
+}
 
 export default async function ParentPortalPage({
   params,

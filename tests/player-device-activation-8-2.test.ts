@@ -227,42 +227,31 @@ describe("8.2 Активація пристрою по QR (player-device-activat
     });
   });
 
-  describe("4. Ліміт пристроїв гравця (максимум 2) та ротація", () => {
-    it("підтримує максимум 2 активних пристрої і при додаванні 3-го відкликає найстаріший", () => {
+  describe("4. Ліміт пристроїв гравця (максимум MAX_ACTIVE_DEVICES_PER_PLAYER) та ротація", () => {
+    it("підтримує максимум MAX_ACTIVE_DEVICES_PER_PLAYER активних пристроїв і при перевищенні відкликає найстаріший", () => {
       const playerId = "player-rotation";
 
-      // Додаємо 1-й пристрій
-      const dev1Id = "dev-1";
-      memoryPlayerDevices.set(dev1Id, {
-        id: dev1Id,
-        player_id: playerId,
-        device_token_hash: "hash1",
-        device_name: "iPhone (Safari)",
-        last_seen_at: new Date(Date.now() - 2000).toISOString(),
-        expires_at: new Date(Date.now() + 90 * 86400 * 1000).toISOString(),
-        revoked_at: null,
-        created_at: new Date(Date.now() - 2000).toISOString(),
-      });
-
-      // Додаємо 2-й пристрій
-      const dev2Id = "dev-2";
-      memoryPlayerDevices.set(dev2Id, {
-        id: dev2Id,
-        player_id: playerId,
-        device_token_hash: "hash2",
-        device_name: "Android (Chrome)",
-        last_seen_at: new Date(Date.now() - 1000).toISOString(),
-        expires_at: new Date(Date.now() + 90 * 86400 * 1000).toISOString(),
-        revoked_at: null,
-        created_at: new Date(Date.now() - 1000).toISOString(),
-      });
+      for (let i = 1; i <= MAX_ACTIVE_DEVICES_PER_PLAYER; i++) {
+        const devId = `dev-${i}`;
+        const ts = new Date(Date.now() - (MAX_ACTIVE_DEVICES_PER_PLAYER - i + 1) * 1000).toISOString();
+        memoryPlayerDevices.set(devId, {
+          id: devId,
+          player_id: playerId,
+          device_token_hash: `hash-${i}`,
+          device_name: i % 2 === 0 ? "Android (Chrome)" : "iPhone (Safari)",
+          last_seen_at: ts,
+          expires_at: new Date(Date.now() + 90 * 86400 * 1000).toISOString(),
+          revoked_at: null,
+          created_at: ts,
+        });
+      }
 
       const active = Array.from(memoryPlayerDevices.values()).filter(
         (d) => d.player_id === playerId && !d.revoked_at
       );
-      assert.equal(active.length, 2);
+      assert.equal(active.length, MAX_ACTIVE_DEVICES_PER_PLAYER);
 
-      // Додаємо 3-й пристрій з ротацією
+      // Додаємо наступний пристрій з ротацією
       if (active.length >= MAX_ACTIVE_DEVICES_PER_PLAYER) {
         const oldest = active.sort(
           (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
@@ -270,11 +259,11 @@ describe("8.2 Активація пристрою по QR (player-device-activat
         oldest.revoked_at = new Date().toISOString();
       }
 
-      const dev3Id = "dev-3";
-      memoryPlayerDevices.set(dev3Id, {
-        id: dev3Id,
+      const extraId = `dev-${MAX_ACTIVE_DEVICES_PER_PLAYER + 1}`;
+      memoryPlayerDevices.set(extraId, {
+        id: extraId,
         player_id: playerId,
-        device_token_hash: "hash3",
+        device_token_hash: "hash-extra",
         device_name: "iPad (Safari)",
         last_seen_at: new Date().toISOString(),
         expires_at: new Date(Date.now() + 90 * 86400 * 1000).toISOString(),
@@ -285,9 +274,13 @@ describe("8.2 Активація пристрою по QR (player-device-activat
       const activeAfterRotation = Array.from(memoryPlayerDevices.values()).filter(
         (d) => d.player_id === playerId && !d.revoked_at
       );
-      assert.equal(activeAfterRotation.length, 2, "Активних пристроїв має залишитися рівно 2");
+      assert.equal(
+        activeAfterRotation.length,
+        MAX_ACTIVE_DEVICES_PER_PLAYER,
+        `Активних пристроїв має залишитися рівно ${MAX_ACTIVE_DEVICES_PER_PLAYER}`
+      );
 
-      const dev1 = memoryPlayerDevices.get(dev1Id);
+      const dev1 = memoryPlayerDevices.get("dev-1");
       assert.ok(dev1?.revoked_at, "Найстаріший пристрій повинен бути відкликаний");
     });
   });

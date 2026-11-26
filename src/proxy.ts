@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_EXACT_PATHS = new Set(["/login", "/register", "/privacy", "/demo"]);
+const PUBLIC_EXACT_PATHS = new Set(["/login", "/register", "/privacy", "/demo", "/parent"]);
 
 const PUBLIC_PREFIX_PATHS = [
   "/rehab-portal",
@@ -10,6 +10,8 @@ const PUBLIC_PREFIX_PATHS = [
   "/a/",
   "/auth/",
   "/tg-coach",
+  "/api/rehab-portal/",
+  "/api/parent/",
   "/api/tg-coach",
   "/api/telegram/webhook",
   "/api/billing/webhook/",
@@ -60,6 +62,13 @@ export async function proxy(request: NextRequest) {
 
   // Захищені API маршрути: повертаємо 401 JSON замість HTML-редіректу на /login
   if (!user) {
+    if (
+      path === "/" &&
+      (request.cookies.has("rehab_device_session") ||
+        request.cookies.has("rehab_player_session"))
+    ) {
+      return NextResponse.redirect(new URL("/rehab-portal", request.url));
+    }
     if (path.startsWith("/api/")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
